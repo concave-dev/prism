@@ -45,8 +45,8 @@ func validateConfig(config *ManagerConfig) error {
 		return fmt.Errorf("invalid bind address: %s", config.BindAddr)
 	}
 
-	if config.BindPort < 1 || config.BindPort > 65535 {
-		return fmt.Errorf("bind port must be between 1 and 65535, got: %d", config.BindPort)
+	if config.BindPort < 0 || config.BindPort > 65535 {
+		return fmt.Errorf("bind port must be between 0 and 65535, got: %d", config.BindPort)
 	}
 
 	if config.EventBufferSize < 1 {
