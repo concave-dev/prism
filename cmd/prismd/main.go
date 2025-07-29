@@ -5,31 +5,28 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"net"
 	"os"
 	"os/signal"
 	"strconv"
-	"strings"
 	"syscall"
 
 	"github.com/concave-dev/prism/internal/logging"
 	"github.com/concave-dev/prism/internal/serf"
+	"github.com/spf13/cobra"
 )
 
 const (
-	// Version information
-	Version = "0.1.0-dev"
+	Version = "0.1.0-dev" // Version information
 
-	// Default configuration values
-	DefaultBind   = "127.0.0.1:4200"
-	DefaultRole   = "agent"
-	DefaultRegion = "default"
+	DefaultBind   = "127.0.0.1:4200" // Default bind address
+	DefaultRole   = "agent"          // Default role
+	DefaultRegion = "default"        // Default region
 )
 
-// Holds the daemon configuration
-type Config struct {
+// Global configuration
+var config struct {
 	BindAddr  string   // Network address to bind to
 	BindPort  int      // Network port to bind to
 	NodeName  string   // Name of this node
@@ -37,65 +34,93 @@ type Config struct {
 	Region    string   // Region/datacenter identifier
 	JoinAddrs []string // List of cluster addresses to join
 	LogLevel  string   // Log level: DEBUG, INFO, WARN, ERROR
-	Version   bool     // Show version flag
 }
 
-// Parses and validates command line flags
-func parseFlags() (*Config, error) {
-	var cfg Config
+// Root command
+var rootCmd = &cobra.Command{
+	Use:   "prismd",
+	Short: "Prism distributed job scheduler daemon",
+	Long: `Prism daemon (prismd) is the main process for Prism cluster nodes.
 
-	// Define flags
-	bind := flag.String("bind", DefaultBind, "Address and port to bind to (e.g., 0.0.0.0:7946)")
-	role := flag.String("role", DefaultRole, "Node role: agent, scheduler, or control")
-	region := flag.String("region", DefaultRegion, "Region/datacenter identifier")
-	nodeName := flag.String("node-name", "", "Node name (defaults to hostname)")
-	join := flag.String("join", "", "Comma-separated list of addresses to join")
-	logLevel := flag.String("log-level", "INFO", "Log level: DEBUG, INFO, WARN, ERROR")
-	version := flag.Bool("version", false, "Show version information")
+Prism is a distributed job scheduler and cluster orchestrator that can run
+nodes in different roles: agents (execute jobs), schedulers (make placement
+decisions), or control plane nodes (manage cluster state).`,
+	Version: Version,
+	Example: `  # Start an agent node
+  prismd --bind=0.0.0.0:4200 --role=agent
 
-	flag.Parse()
+  # Start a scheduler and join existing cluster  
+  prismd --bind=0.0.0.0:4201 --role=scheduler --join=127.0.0.1:4200
 
-	// Handle version flag
-	if *version {
-		cfg.Version = true
-		return &cfg, nil
-	}
+  # Start control node in specific region
+  prismd --bind=0.0.0.0:4202 --role=control --region=us-west-1`,
+	PreRunE: validateConfig,
+	RunE:    runDaemon,
+}
 
+func init() {
+	// Network flags
+	rootCmd.Flags().StringVar(&config.BindAddr, "bind", DefaultBind,
+		"Address and port to bind to (e.g., 0.0.0.0:4200)")
+
+	// Node configuration flags
+	rootCmd.Flags().StringVar(&config.Role, "role", DefaultRole,
+		"Node role: agent, scheduler, or control")
+	rootCmd.Flags().StringVar(&config.Region, "region", DefaultRegion,
+		"Region/datacenter identifier")
+	rootCmd.Flags().StringVar(&config.NodeName, "node-name", "",
+		"Node name (defaults to hostname)")
+
+	// Cluster flags
+	rootCmd.Flags().StringSliceVar(&config.JoinAddrs, "join", nil,
+		"Comma-separated list of addresses to join")
+
+	// Operational flags
+	rootCmd.Flags().StringVar(&config.LogLevel, "log-level", "INFO",
+		"Log level: DEBUG, INFO, WARN, ERROR")
+}
+
+// Validates configuration before running
+func validateConfig(cmd *cobra.Command, args []string) error {
 	// Parse bind address
-	addr, port, err := parseBindAddress(*bind)
+	addr, port, err := parseBindAddress(config.BindAddr)
 	if err != nil {
-		return nil, fmt.Errorf("invalid bind address: %w", err)
+		return fmt.Errorf("invalid bind address: %w", err)
 	}
-	cfg.BindAddr = addr
-	cfg.BindPort = port
+	config.BindAddr = addr
+	config.BindPort = port
 
 	// Set node name (default to hostname if not provided)
-	if *nodeName == "" {
+	if config.NodeName == "" {
 		hostname, err := os.Hostname()
 		if err != nil {
-			return nil, fmt.Errorf("failed to get hostname: %w", err)
+			return fmt.Errorf("failed to get hostname: %w", err)
 		}
-		cfg.NodeName = hostname
-	} else {
-		cfg.NodeName = *nodeName
+		config.NodeName = hostname
 	}
 
-	// Set role
-	cfg.Role = *role
-	cfg.Region = *region
-	cfg.LogLevel = *logLevel
-
-	// Parse join addresses
-	if *join != "" {
-		cfg.JoinAddrs = parseJoinAddresses(*join)
+	// Validate role
+	validRoles := map[string]bool{
+		"agent":     true,
+		"scheduler": true,
+		"control":   true,
+	}
+	if !validRoles[config.Role] {
+		return fmt.Errorf("invalid role: %s (must be agent, scheduler, or control)", config.Role)
 	}
 
-	// Validate configuration
-	if err := validateDaemonConfig(&cfg); err != nil {
-		return nil, err
+	// Validate log level
+	validLogLevels := map[string]bool{
+		"DEBUG": true,
+		"INFO":  true,
+		"WARN":  true,
+		"ERROR": true,
+	}
+	if !validLogLevels[config.LogLevel] {
+		return fmt.Errorf("invalid log level: %s", config.LogLevel)
 	}
 
-	return &cfg, nil
+	return nil
 }
 
 // Parses bind address in format "host:port"
@@ -122,60 +147,18 @@ func parseBindAddress(bind string) (string, int, error) {
 	return host, port, nil
 }
 
-// Parses comma-separated join addresses
-func parseJoinAddresses(join string) []string {
-	addrs := make([]string, 0)
-	for _, addr := range strings.Split(join, ",") {
-		addr = strings.TrimSpace(addr)
-		if addr != "" {
-			addrs = append(addrs, addr)
-		}
-	}
-	return addrs
-}
-
-// Validates daemon configuration
-func validateDaemonConfig(cfg *Config) error {
-	if cfg.NodeName == "" {
-		return fmt.Errorf("node name cannot be empty")
-	}
-
-	// Validate role
-	validRoles := map[string]bool{
-		"agent":     true,
-		"scheduler": true,
-		"control":   true,
-	}
-	if !validRoles[cfg.Role] {
-		return fmt.Errorf("invalid role: %s (must be agent, scheduler, or control)", cfg.Role)
-	}
-
-	// Validate log level
-	validLogLevels := map[string]bool{
-		"DEBUG": true,
-		"INFO":  true,
-		"WARN":  true,
-		"ERROR": true,
-	}
-	if !validLogLevels[cfg.LogLevel] {
-		return fmt.Errorf("invalid log level: %s", cfg.LogLevel)
-	}
-
-	return nil
-}
-
 // Converts daemon config to SerfManager config
-func buildSerfConfig(cfg *Config) *serf.ManagerConfig {
+func buildSerfConfig() *serf.ManagerConfig {
 	serfConfig := serf.DefaultManagerConfig()
 
-	serfConfig.BindAddr = cfg.BindAddr
-	serfConfig.BindPort = cfg.BindPort
-	serfConfig.NodeName = cfg.NodeName
-	serfConfig.Region = cfg.Region
-	serfConfig.LogLevel = cfg.LogLevel
+	serfConfig.BindAddr = config.BindAddr
+	serfConfig.BindPort = config.BindPort
+	serfConfig.NodeName = config.NodeName
+	serfConfig.Region = config.Region
+	serfConfig.LogLevel = config.LogLevel
 
 	// Set roles based on daemon role
-	switch cfg.Role {
+	switch config.Role {
 	case "agent":
 		serfConfig.Roles = []string{"agent"}
 	case "scheduler":
@@ -185,20 +168,20 @@ func buildSerfConfig(cfg *Config) *serf.ManagerConfig {
 	}
 
 	// Add custom tags
-	serfConfig.Tags["daemon_role"] = cfg.Role
+	serfConfig.Tags["daemon_role"] = config.Role
 	serfConfig.Tags["prism_version"] = Version
 
 	return serfConfig
 }
 
 // Runs the daemon with graceful shutdown handling
-func runDaemon(cfg *Config) error {
+func runDaemon(cmd *cobra.Command, args []string) error {
 	logging.Info("Starting Prism daemon v%s", Version)
-	logging.Info("Node: %s, Role: %s, Region: %s", cfg.NodeName, cfg.Role, cfg.Region)
-	logging.Info("Binding to %s:%d", cfg.BindAddr, cfg.BindPort)
+	logging.Info("Node: %s, Role: %s, Region: %s", config.NodeName, config.Role, config.Region)
+	logging.Info("Binding to %s:%d", config.BindAddr, config.BindPort)
 
 	// Create SerfManager
-	serfConfig := buildSerfConfig(cfg)
+	serfConfig := buildSerfConfig()
 	manager, err := serf.NewSerfManager(serfConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create serf manager: %w", err)
@@ -210,9 +193,9 @@ func runDaemon(cfg *Config) error {
 	}
 
 	// Join cluster if addresses provided
-	if len(cfg.JoinAddrs) > 0 {
-		logging.Info("Joining cluster via %v", cfg.JoinAddrs)
-		if err := manager.Join(cfg.JoinAddrs); err != nil {
+	if len(config.JoinAddrs) > 0 {
+		logging.Info("Joining cluster via %v", config.JoinAddrs)
+		if err := manager.Join(config.JoinAddrs); err != nil {
 			logging.Error("Failed to join cluster: %v", err)
 			// Don't fail startup - node can still operate independently
 		}
@@ -230,7 +213,7 @@ func runDaemon(cfg *Config) error {
 	logging.Info("Daemon running... Press Ctrl+C to shutdown")
 
 	// Start daemon services based on role
-	switch cfg.Role {
+	switch config.Role {
 	case "agent":
 		logging.Info("Starting agent services...")
 		// TODO: Start job execution engine
@@ -262,31 +245,9 @@ func runDaemon(cfg *Config) error {
 	return nil
 }
 
-// Prints version information
-func printVersion() {
-	fmt.Printf("Prism daemon (prismd) version %s\n", Version)
-	fmt.Printf("A distributed job scheduler and cluster orchestrator\n")
-}
-
 // Main entry point
 func main() {
-	// Parse command line flags
-	cfg, err := parseFlags()
-	if err != nil {
-		logging.Error("Configuration error: %v", err)
-		flag.Usage()
-		os.Exit(1)
-	}
-
-	// Handle version flag
-	if cfg.Version {
-		printVersion()
-		os.Exit(0)
-	}
-
-	// Run daemon
-	if err := runDaemon(cfg); err != nil {
-		logging.Error("Daemon failed: %v", err)
+	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
 }
