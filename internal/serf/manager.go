@@ -5,7 +5,9 @@ package serf
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -82,6 +84,18 @@ func (sm *SerfManager) Start() error {
 	serfConfig.MemberlistConfig.BindPort = sm.config.BindPort
 	serfConfig.EventCh = sm.eventQueue
 	serfConfig.Tags = sm.buildNodeTags()
+
+	// Configure logging based on log level
+	if sm.config.LogLevel == "ERROR" {
+		// Suppress Serf internal logs completely
+		serfConfig.LogOutput = io.Discard
+		// Also suppress memberlist logs
+		serfConfig.MemberlistConfig.LogOutput = io.Discard
+	} else {
+		// Use standard output for logs
+		serfConfig.LogOutput = os.Stderr
+		serfConfig.MemberlistConfig.LogOutput = os.Stderr
+	}
 
 	// Create Serf instance
 	var err error
