@@ -5,6 +5,8 @@ package main
 
 import (
 	"fmt"
+	"io"
+	"log"
 	"os"
 	"sort"
 	"strings"
@@ -26,7 +28,11 @@ var config struct {
 	ServerAddr string // Address of Prism server to connect to
 	LogLevel   string // Log level for CLI operations
 	Timeout    int    // Connection timeout in seconds
+	Verbose    bool   // Show verbose output
 }
+
+// Store original log output for restoration
+var originalLogOutput io.Writer
 
 // Root command
 var rootCmd = &cobra.Command{
@@ -46,7 +52,10 @@ to Prism clusters and provides a unified interface for cluster operations.`,
   prismctl status
 
   # Connect to remote cluster
-  prismctl --server=192.168.1.100:4200 members`,
+  prismctl --server=192.168.1.100:4200 members
+  
+  # Show verbose output
+  prismctl --verbose members`,
 }
 
 // Members command
@@ -61,7 +70,10 @@ known nodes including their roles, status, regions, and last seen times.`,
   prismctl members
 
   # List members from specific server
-  prismctl --server=192.168.1.100:4200 members`,
+  prismctl --server=192.168.1.100:4200 members
+  
+  # Show verbose output during connection
+  prismctl --verbose members`,
 	RunE: handleMembers,
 }
 
@@ -77,27 +89,50 @@ This provides a high-level overview of cluster health and composition.`,
   prismctl status
 
   # Show status from specific server
-  prismctl --server=192.168.1.100:4200 status`,
+  prismctl --server=192.168.1.100:4200 status
+  
+  # Show verbose output during connection
+  prismctl --verbose status`,
 	RunE: handleStatus,
 }
 
 func init() {
+	// Store original log output
+	originalLogOutput = log.Writer()
+
 	// Global flags
 	rootCmd.PersistentFlags().StringVar(&config.ServerAddr, "server", DefaultAddr,
 		"Address of Prism server to connect to")
-	rootCmd.PersistentFlags().StringVar(&config.LogLevel, "log-level", "WARN",
+	rootCmd.PersistentFlags().StringVar(&config.LogLevel, "log-level", "ERROR",
 		"Log level: DEBUG, INFO, WARN, ERROR")
 	rootCmd.PersistentFlags().IntVar(&config.Timeout, "timeout", 10,
 		"Connection timeout in seconds")
+	rootCmd.PersistentFlags().BoolVarP(&config.Verbose, "verbose", "v", false,
+		"Show verbose output")
 
 	// Add subcommands
 	rootCmd.AddCommand(membersCmd)
 	rootCmd.AddCommand(statusCmd)
 }
 
+// Sets up logging based on verbose flag
+func setupLogging() {
+	if config.Verbose {
+		// Restore normal logging
+		log.SetOutput(originalLogOutput)
+	} else {
+		// Suppress all log output
+		log.SetOutput(io.Discard)
+	}
+}
+
 // Handles the members subcommand
 func handleMembers(cmd *cobra.Command, args []string) error {
-	logging.Info("Connecting to Prism cluster via %s", config.ServerAddr)
+	setupLogging()
+
+	if config.Verbose {
+		logging.Info("Connecting to Prism cluster via %s", config.ServerAddr)
+	}
 
 	// Create temporary Serf manager to query cluster
 	manager, err := createTempManager("prismctl-members")
@@ -123,7 +158,11 @@ func handleMembers(cmd *cobra.Command, args []string) error {
 
 // Handles the status subcommand
 func handleStatus(cmd *cobra.Command, args []string) error {
-	logging.Info("Connecting to Prism cluster via %s", config.ServerAddr)
+	setupLogging()
+
+	if config.Verbose {
+		logging.Info("Connecting to Prism cluster via %s", config.ServerAddr)
+	}
 
 	// Create temporary Serf manager to query cluster
 	manager, err := createTempManager("prismctl-status")
@@ -153,7 +192,13 @@ func createTempManager(suffix string) (*serf.SerfManager, error) {
 	serfConfig.BindAddr = "127.0.0.1"
 	serfConfig.BindPort = 0 // Let OS choose available port
 	serfConfig.NodeName = fmt.Sprintf("%s-%d", suffix, time.Now().Unix())
-	serfConfig.LogLevel = config.LogLevel
+
+	// Set log level based on verbose flag
+	if config.Verbose {
+		serfConfig.LogLevel = "INFO" // Show Serf logs when verbose
+	} else {
+		serfConfig.LogLevel = "ERROR" // Suppress Serf logs by default
+	}
 
 	manager, err := serf.NewSerfManager(serfConfig)
 	if err != nil {
