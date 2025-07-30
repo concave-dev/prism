@@ -31,11 +31,18 @@ type PrismNode struct {
 
 // Manages Serf cluster membership and events for Prism
 type SerfManager struct {
-	serf       *serf.Serf            // Core Serf instance
-	NodeID     string                // Unique identifier for the node
-	NodeName   string                // Name of the node
-	EventCh    chan serf.Event       // Event handling
-	eventQueue chan serf.Event       // Internal buffered channel
+	serf     *serf.Serf // Core Serf instance
+	NodeID   string     // Unique identifier for the node
+	NodeName string     // Name of the node
+
+	// Two-Channel Producer-Consumer Pattern:
+	// This implements a decoupling pattern where internal processing never blocks
+	// external consumers, preventing deadlocks and ensuring cluster membership
+	// operations continue even if external event handlers are slow or absent.
+
+	EventCh    chan serf.Event // EXTERNAL: Optional event channel for consumers (can be slow/nil)
+	eventQueue chan serf.Event // INTERNAL: Direct from Serf, always processed (never blocks)
+
 	memberLock sync.RWMutex          // Member tracking
 	members    map[string]*PrismNode // Map of Prism nodes
 	ctx        context.Context       // Context
@@ -58,10 +65,15 @@ func NewSerfManager(config *ManagerConfig) (*SerfManager, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	manager := &SerfManager{
-		NodeID:     generateNodeID(config.NodeName, config.BindAddr, config.BindPort),
-		NodeName:   config.NodeName,
-		EventCh:    make(chan serf.Event, config.EventBufferSize),
-		eventQueue: make(chan serf.Event, config.EventBufferSize*2),
+		NodeID:   generateNodeID(config.NodeName, config.BindAddr, config.BindPort),
+		NodeName: config.NodeName,
+
+		// Channel Buffer Sizing Strategy:
+		// - EventCh: External consumers may be slow/absent, standard buffer size
+		// - eventQueue: Internal processing priority, 2x larger to prevent Serf blocking
+		EventCh:    make(chan serf.Event, config.EventBufferSize),   // External buffer
+		eventQueue: make(chan serf.Event, config.EventBufferSize*2), // Internal buffer (2x larger)
+
 		members:    make(map[string]*PrismNode),
 		ctx:        ctx,
 		cancel:     cancel,
@@ -82,7 +94,12 @@ func (sm *SerfManager) Start() error {
 	serfConfig.NodeName = sm.NodeName
 	serfConfig.MemberlistConfig.BindAddr = sm.config.BindAddr
 	serfConfig.MemberlistConfig.BindPort = sm.config.BindPort
+
+	// Producer-Consumer Connection: Serf writes events to our internal eventQueue
+	// This ensures internal processing (member tracking) always happens, regardless
+	// of external EventCh consumer availability
 	serfConfig.EventCh = sm.eventQueue
+
 	serfConfig.Tags = sm.buildNodeTags()
 
 	// Configure logging based on log level
@@ -239,6 +256,12 @@ func (sm *SerfManager) GetLocalMember() *PrismNode {
 }
 
 // Handles incoming Serf events in a separate goroutine
+//
+// This implements the core of the producer-consumer decoupling pattern:
+// Phase 1: ALWAYS process events internally (update member lists, handle failures)
+// Phase 2: OPTIONALLY forward to external consumers (non-blocking)
+//
+// This ensures cluster membership operations never depend on external consumers.
 func (sm *SerfManager) processEvents() {
 	defer sm.wg.Done()
 
@@ -247,12 +270,19 @@ func (sm *SerfManager) processEvents() {
 	for {
 		select {
 		case event := <-sm.eventQueue:
+			// PHASE 1: Internal Processing (ALWAYS happens)
+			// Critical cluster operations: member tracking, failure detection, etc.
+			// This MUST complete regardless of external consumer status
 			sm.handleEvent(event)
 
-			// Forward to external event channel (non-blocking)
+			// PHASE 2: External Forwarding (OPTIONAL, non-blocking)
+			// Best-effort delivery to external consumers
+			// If EventCh is full/slow, we drop the event to prevent blocking
 			select {
 			case sm.EventCh <- event:
+				// Successfully forwarded to external consumer
 			default:
+				// External consumer is slow/absent, drop event to prevent blocking
 				logging.Warn("Event channel full, dropping event: %T", event)
 			}
 
@@ -400,6 +430,8 @@ func (sm *SerfManager) memberFromSerf(member serf.Member) *PrismNode {
 
 // Constructs the tags map for this node
 func (sm *SerfManager) buildNodeTags() map[string]string {
+	// Pre-allocate map capacity: user tags + 2 system tags (region, roles)
+	// This avoids memory reallocations when adding the fixed system tags below
 	tags := make(map[string]string, len(sm.config.Tags)+2)
 
 	// Copy custom tags
@@ -407,9 +439,9 @@ func (sm *SerfManager) buildNodeTags() map[string]string {
 		tags[k] = v
 	}
 
-	// Add system tags
-	tags["region"] = sm.config.Region
-	tags["roles"] = formatRoles(sm.config.Roles)
+	// Add system tags (+2 capacity is for these)
+	tags["region"] = sm.config.Region            // +1: region identifier
+	tags["roles"] = formatRoles(sm.config.Roles) // +2: formatted role list
 
 	return tags
 }
