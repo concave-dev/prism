@@ -219,15 +219,7 @@ func (sm *SerfManager) GetMembers() map[string]*PrismNode {
 
 	members := make(map[string]*PrismNode, len(sm.members))
 	for id, node := range sm.members {
-		// Deep copy to prevent external modification
-		nodeCopy := *node
-		nodeCopy.Tags = make(map[string]string, len(node.Tags))
-		for k, v := range node.Tags {
-			nodeCopy.Tags[k] = v
-		}
-		nodeCopy.Roles = make([]string, len(node.Roles))
-		copy(nodeCopy.Roles, node.Roles)
-		members[id] = &nodeCopy
+		members[id] = sm.copyPrismNode(node)
 	}
 
 	return members
@@ -243,16 +235,24 @@ func (sm *SerfManager) GetMember(nodeID string) (*PrismNode, bool) {
 		return nil, false
 	}
 
-	// Return a copy to prevent external modification
-	memberCopy := *member
-	memberCopy.Tags = make(map[string]string, len(member.Tags))
-	for k, v := range member.Tags {
-		memberCopy.Tags[k] = v
-	}
-	memberCopy.Roles = make([]string, len(member.Roles))
-	copy(memberCopy.Roles, member.Roles)
+	return sm.copyPrismNode(member), true
+}
 
-	return &memberCopy, true
+// Creates a deep copy of a PrismNode to prevent external modification.
+// Only reference types (Tags, Roles) need manual copying; value types are copied by *node.
+func (sm *SerfManager) copyPrismNode(node *PrismNode) *PrismNode {
+	// Shallow copy handles all value types (ID, Name, Addr, Port, Status, Region, LastSeen)
+	nodeCopy := *node
+
+	// Deep copy reference types to prevent external corruption
+	nodeCopy.Tags = make(map[string]string, len(node.Tags))
+	for k, v := range node.Tags {
+		nodeCopy.Tags[k] = v
+	}
+	nodeCopy.Roles = make([]string, len(node.Roles))
+	copy(nodeCopy.Roles, node.Roles)
+
+	return &nodeCopy
 }
 
 // Returns information about the local Prism node
