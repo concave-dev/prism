@@ -2,8 +2,9 @@ package serf
 
 import (
 	"fmt"
-	"net"
 	"time"
+
+	"github.com/concave-dev/prism/internal/validate"
 )
 
 // Holds configuration for the SerfManager
@@ -41,12 +42,13 @@ func validateConfig(config *ManagerConfig) error {
 		return fmt.Errorf("node name cannot be empty")
 	}
 
-	if net.ParseIP(config.BindAddr) == nil {
-		return fmt.Errorf("invalid bind address: %s", config.BindAddr)
+	// Use built-in validators directly
+	if err := validate.ValidateField(config.BindAddr, "required,ip"); err != nil {
+		return fmt.Errorf("invalid bind address: %w", err)
 	}
 
-	if config.BindPort < 0 || config.BindPort > 65535 {
-		return fmt.Errorf("bind port must be between 0 and 65535, got: %d", config.BindPort)
+	if err := validate.ValidateField(config.BindPort, "min=0,max=65535"); err != nil {
+		return fmt.Errorf("invalid bind port: %w", err)
 	}
 
 	if config.EventBufferSize < 1 {
