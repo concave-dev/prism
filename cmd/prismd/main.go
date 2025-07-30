@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
 	"github.com/concave-dev/prism/internal/logging"
@@ -135,39 +134,6 @@ func validateConfig(cmd *cobra.Command, args []string) error {
 	if len(config.JoinAddrs) > 0 {
 		if err := validate.ValidateAddressList(config.JoinAddrs); err != nil {
 			return fmt.Errorf("invalid join addresses: %w", err)
-		}
-
-		// Prevent node from trying to join itself (common mistake in development)
-		selfAddr := fmt.Sprintf("%s:%d", config.BindAddr, config.BindPort)
-		for _, joinAddr := range config.JoinAddrs {
-			if err := validateNotSelfJoin(selfAddr, joinAddr, config.BindPort); err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
-}
-
-// validateNotSelfJoin checks if the node is trying to join itself
-func validateNotSelfJoin(selfAddr, joinAddr string, bindPort int) error {
-	// Parse join address
-	joinNetAddr, err := validate.ParseBindAddress(joinAddr)
-	if err != nil {
-		return nil // Invalid join address will be caught elsewhere
-	}
-
-	// Case 1: Exact string match
-	if selfAddr == joinAddr {
-		return fmt.Errorf("cannot join self: node bind address %s matches join address %s", selfAddr, joinAddr)
-	}
-
-	// Case 2: Bind to all interfaces (0.0.0.0) but join localhost/loopback
-	// This is the most common mistake: --bind=0.0.0.0:4200 --join=127.0.0.1:4200
-	if strings.HasPrefix(selfAddr, "0.0.0.0:") && joinNetAddr.Port == bindPort {
-		joinHost := joinNetAddr.Host
-		if joinHost == "127.0.0.1" || joinHost == "localhost" {
-			return fmt.Errorf("cannot join self: binding to all interfaces (0.0.0.0:%d) but joining localhost (%s) - same node", bindPort, joinAddr)
 		}
 	}
 
