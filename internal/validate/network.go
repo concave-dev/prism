@@ -67,7 +67,9 @@ func ValidateField(value interface{}, tag string) error {
 	return validate.Var(value, tag)
 }
 
-// ValidateAddressList validates a list of network addresses
+// ValidateAddressList validates a list of network addresses for cluster joining.
+// Multiple addresses provide fault tolerance - if first address is unreachable,
+// the system tries subsequent addresses until connection succeeds.
 func ValidateAddressList(addresses []string) error {
 	if len(addresses) == 0 {
 		return fmt.Errorf("address list cannot be empty")

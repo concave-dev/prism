@@ -6,14 +6,14 @@ package main
 import (
 	"context"
 	"fmt"
-	"net"
 	"os"
 	"os/signal"
-	"strconv"
+	"strings"
 	"syscall"
 
 	"github.com/concave-dev/prism/internal/logging"
 	"github.com/concave-dev/prism/internal/serf"
+	"github.com/concave-dev/prism/internal/validate"
 	"github.com/spf13/cobra"
 )
 
@@ -45,14 +45,17 @@ var rootCmd = &cobra.Command{
 Think Kubernetes for AI agents - with isolated VMs, sandboxed execution, 
 serverless functions, native memory, workflows, and other AI-first primitives.`,
 	Version: Version,
-	Example: `  # Start an agent node
+	Example: `  # Start an agent node (first node in cluster)
   prismd --bind=0.0.0.0:4200 --role=agent
 
   # Start a scheduler and join existing cluster  
   prismd --bind=0.0.0.0:4201 --role=scheduler --join=127.0.0.1:4200
 
+  # Join with multiple addresses for fault tolerance
+  prismd --bind=0.0.0.0:4202 --role=agent --join=node1:4200,node2:4200,node3:4200
+
   # Start control node in specific region
-  prismd --bind=0.0.0.0:4202 --role=control --region=us-west-1`,
+  prismd --bind=0.0.0.0:4203 --role=control --region=us-west-1 --join=127.0.0.1:4200`,
 	PreRunE: validateConfig,
 	RunE:    runDaemon,
 }
@@ -72,7 +75,8 @@ func init() {
 
 	// Cluster flags
 	rootCmd.Flags().StringSliceVar(&config.JoinAddrs, "join", nil,
-		"Comma-separated list of addresses to join")
+		"Comma-separated list of cluster addresses to join (e.g., node1:4200,node2:4200)\n"+
+			"Multiple addresses provide fault tolerance - if first node is down, tries next one")
 
 	// Operational flags
 	rootCmd.Flags().StringVar(&config.LogLevel, "log-level", "INFO",
@@ -81,13 +85,19 @@ func init() {
 
 // Validates configuration before running
 func validateConfig(cmd *cobra.Command, args []string) error {
-	// Parse bind address
-	addr, port, err := parseBindAddress(config.BindAddr)
+	// Parse and validate bind address using centralized validation
+	netAddr, err := validate.ParseBindAddress(config.BindAddr)
 	if err != nil {
 		return fmt.Errorf("invalid bind address: %w", err)
 	}
-	config.BindAddr = addr
-	config.BindPort = port
+
+	// Daemon requires non-zero ports (port 0 would let OS choose)
+	if err := validate.ValidateField(netAddr.Port, "required,min=1,max=65535"); err != nil {
+		return fmt.Errorf("daemon requires specific port (not 0): %w", err)
+	}
+
+	config.BindAddr = netAddr.Host
+	config.BindPort = netAddr.Port
 
 	// Set node name (default to hostname if not provided)
 	if config.NodeName == "" {
@@ -119,31 +129,49 @@ func validateConfig(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid log level: %s", config.LogLevel)
 	}
 
+	// Validate join addresses if provided
+	// Multiple join addresses provide fault tolerance - if first node is unreachable,
+	// Serf will automatically try the next one until connection succeeds
+	if len(config.JoinAddrs) > 0 {
+		if err := validate.ValidateAddressList(config.JoinAddrs); err != nil {
+			return fmt.Errorf("invalid join addresses: %w", err)
+		}
+
+		// Prevent node from trying to join itself (common mistake in development)
+		selfAddr := fmt.Sprintf("%s:%d", config.BindAddr, config.BindPort)
+		for _, joinAddr := range config.JoinAddrs {
+			if err := validateNotSelfJoin(selfAddr, joinAddr, config.BindPort); err != nil {
+				return err
+			}
+		}
+	}
+
 	return nil
 }
 
-// Parses bind address in format "host:port"
-func parseBindAddress(bind string) (string, int, error) {
-	host, portStr, err := net.SplitHostPort(bind)
+// validateNotSelfJoin checks if the node is trying to join itself
+func validateNotSelfJoin(selfAddr, joinAddr string, bindPort int) error {
+	// Parse join address
+	joinNetAddr, err := validate.ParseBindAddress(joinAddr)
 	if err != nil {
-		return "", 0, fmt.Errorf("invalid address format: %s", bind)
+		return nil // Invalid join address will be caught elsewhere
 	}
 
-	port, err := strconv.Atoi(portStr)
-	if err != nil {
-		return "", 0, fmt.Errorf("invalid port: %s", portStr)
+	// Case 1: Exact string match
+	if selfAddr == joinAddr {
+		return fmt.Errorf("cannot join self: node bind address %s matches join address %s", selfAddr, joinAddr)
 	}
 
-	if port < 1 || port > 65535 {
-		return "", 0, fmt.Errorf("port must be between 1 and 65535, got: %d", port)
+	// Case 2: Bind to all interfaces (0.0.0.0) but join localhost/loopback
+	// This is the most common mistake: --bind=0.0.0.0:4200 --join=127.0.0.1:4200
+	if strings.HasPrefix(selfAddr, "0.0.0.0:") && joinNetAddr.Port == bindPort {
+		joinHost := joinNetAddr.Host
+		if joinHost == "127.0.0.1" || joinHost == "localhost" {
+			return fmt.Errorf("cannot join self: binding to all interfaces (0.0.0.0:%d) but joining localhost (%s) - same node", bindPort, joinAddr)
+		}
 	}
 
-	// Validate IP address
-	if net.ParseIP(host) == nil {
-		return "", 0, fmt.Errorf("invalid IP address: %s", host)
-	}
-
-	return host, port, nil
+	return nil
 }
 
 // Converts daemon config to SerfManager config
@@ -192,11 +220,13 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	}
 
 	// Join cluster if addresses provided
+	// Serf will try each address in order until one succeeds (fault tolerance)
 	if len(config.JoinAddrs) > 0 {
 		logging.Info("Joining cluster via %v", config.JoinAddrs)
 		if err := manager.Join(config.JoinAddrs); err != nil {
 			logging.Error("Failed to join cluster: %v", err)
 			// Don't fail startup - node can still operate independently
+			// This allows for "split-brain" recovery and bootstrap scenarios
 		}
 	}
 
