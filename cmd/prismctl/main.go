@@ -13,6 +13,7 @@ import (
 
 	"github.com/concave-dev/prism/internal/logging"
 	"github.com/concave-dev/prism/internal/serf"
+	"github.com/concave-dev/prism/internal/validate"
 	"github.com/spf13/cobra"
 )
 
@@ -38,7 +39,8 @@ AI agents, MCP tools, and AI workflows in Prism clusters.
 
 Similar to kubectl for Kubernetes, prismctl lets you deploy agents, run 
 AI-generated code in sandboxes, manage workflows, and inspect cluster state.`,
-	Version: Version,
+	Version:           Version,
+	PersistentPreRunE: validateServerAddress,
 	Example: `  # List cluster members
   prismctl members
 
@@ -104,6 +106,22 @@ func init() {
 	// Add subcommands
 	rootCmd.AddCommand(membersCmd)
 	rootCmd.AddCommand(statusCmd)
+}
+
+// validateServerAddress validates the --server flag before running any command
+func validateServerAddress(cmd *cobra.Command, args []string) error {
+	// Parse and validate server address
+	netAddr, err := validate.ParseBindAddress(config.ServerAddr)
+	if err != nil {
+		return fmt.Errorf("invalid server address '%s': %w", config.ServerAddr, err)
+	}
+
+	// Client must connect to specific port (not 0)
+	if err := validate.ValidateField(netAddr.Port, "required,min=1,max=65535"); err != nil {
+		return fmt.Errorf("server port must be specific (not 0): %w", err)
+	}
+
+	return nil
 }
 
 // Sets up logging based on verbose flag and log level
