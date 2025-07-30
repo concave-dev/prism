@@ -331,6 +331,7 @@ func (sm *SerfManager) handleMemberEvent(event serf.MemberEvent) {
 				member.Name, member.Addr, member.Port)
 			sm.updateMember(member)
 
+		// Clean up of dead members
 		case serf.EventMemberReap:
 			logging.Info("Prism node reaped: %s (%s:%d)",
 				member.Name, member.Addr, member.Port)
@@ -451,7 +452,10 @@ func generateNodeID(name, addr string, port int) string {
 	return fmt.Sprintf("%s-%s-%d", name, addr, port)
 }
 
-// Parses comma-separated roles string
+// parseRoles converts a comma-separated string back to a []string slice.
+// This is needed because Serf tags are map[string]string (string-only),
+// so we must serialize/deserialize arrays to work around this limitation.
+// Example: "agent,scheduler,leader" → ["agent", "scheduler", "leader"]
 func parseRoles(rolesStr string) []string {
 	if rolesStr == "" {
 		return []string{}
@@ -467,10 +471,23 @@ func parseRoles(rolesStr string) []string {
 	return roles
 }
 
-// Formats roles slice as comma-separated string
+// formatRoles converts a []string slice to a comma-separated string.
+// This is needed because Serf tags are map[string]string (string-only),
+// so we must serialize arrays before storing them in tags.
+// Example: ["agent", "scheduler", "leader"] → "agent,scheduler,leader"
 func formatRoles(roles []string) string {
 	if len(roles) == 0 {
 		return ""
+	}
+
+	// Validate role names don't contain commas (would break our serialization)
+	for _, role := range roles {
+		if strings.Contains(role, ",") {
+			panic(fmt.Sprintf("role name cannot contain comma: '%s'. Use hyphens or underscores instead.", role))
+		}
+		if strings.TrimSpace(role) == "" {
+			panic("role name cannot be empty or whitespace-only")
+		}
 	}
 
 	result := roles[0]
