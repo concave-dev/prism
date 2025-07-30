@@ -1,40 +1,104 @@
 package logging
 
-import "log"
+import (
+	"fmt"
+	"os"
 
-// ANSI color codes
-const (
-	ColorReset  = "\033[0m"
-	ColorRed    = "\033[31m"
-	ColorGreen  = "\033[32m"
-	ColorYellow = "\033[33m"
-	ColorBlue   = "\033[34m"
-	ColorPurple = "\033[35m"
-	ColorCyan   = "\033[36m"
-	ColorWhite  = "\033[37m"
+	"github.com/charmbracelet/log"
+)
+
+var (
+	// Default logger instance with timestamp enabled
+	logger = log.NewWithOptions(os.Stderr, log.Options{
+		ReportTimestamp: true,
+	})
+
+	// Track if logging has been explicitly configured by CLI tools
+	cliConfigured = false
 )
 
 // Logs an informational message in blue
 func Info(format string, v ...interface{}) {
-	log.Printf("["+ColorBlue+"INFO"+ColorReset+"] "+format, v...)
+	logger.Info(fmt.Sprintf(format, v...))
 }
 
 // Logs a warning message in yellow
 func Warn(format string, v ...interface{}) {
-	log.Printf("["+ColorYellow+"WARN"+ColorReset+"] "+format, v...)
+	logger.Warn(fmt.Sprintf(format, v...))
 }
 
 // Logs an error message in red
 func Error(format string, v ...interface{}) {
-	log.Printf("["+ColorRed+"ERROR"+ColorReset+"] "+format, v...)
+	logger.Error(fmt.Sprintf(format, v...))
 }
 
-// Logs a success message in green
+// Logs a success message in green (using Info level with custom styling)
 func Success(format string, v ...interface{}) {
-	log.Printf("["+ColorGreen+"SUCCESS"+ColorReset+"] "+format, v...)
+	// Check if INFO level logs are enabled (Success uses INFO level internally)
+	if logger.GetLevel() > log.InfoLevel {
+		return // Skip if INFO level is suppressed
+	}
+
+	// Create a temporary logger with custom styling for success messages
+	styles := log.DefaultStyles()
+	styles.Levels[log.InfoLevel] = styles.Levels[log.InfoLevel].SetString("SUCCESS")
+	tempLogger := log.NewWithOptions(os.Stderr, log.Options{
+		ReportTimestamp: true,
+	})
+	tempLogger.SetStyles(styles)
+	tempLogger.Info(fmt.Sprintf(format, v...))
 }
 
 // Logs a debug message in purple
 func Debug(format string, v ...interface{}) {
-	log.Printf("["+ColorPurple+"DEBUG"+ColorReset+"] "+format, v...)
+	logger.Debug(fmt.Sprintf(format, v...))
+}
+
+// SetLevel configures the logging level
+func SetLevel(level string) {
+	switch level {
+	case "DEBUG":
+		logger.SetLevel(log.DebugLevel)
+	case "INFO":
+		logger.SetLevel(log.InfoLevel)
+	case "WARN":
+		logger.SetLevel(log.WarnLevel)
+	case "ERROR":
+		logger.SetLevel(log.ErrorLevel)
+	default:
+		logger.SetLevel(log.InfoLevel)
+	}
+}
+
+// SetOutput configures where logs are written (for suppressing output)
+// Pass nil or os.DevNull equivalent to suppress output
+func SetOutput(w *os.File) {
+	if w == nil {
+		// Suppress output by setting level to a high value
+		logger.SetLevel(log.FatalLevel + 1)
+	} else {
+		logger = log.NewWithOptions(w, log.Options{
+			ReportTimestamp: true,
+		})
+	}
+}
+
+// Disables INFO/WARN/DEBUG logs but keeps ERROR logs visible
+func SuppressOutput() {
+	logger.SetLevel(log.ErrorLevel) // Only show ERROR level and above
+	cliConfigured = true
+}
+
+// Restores normal logging to stderr (INFO level and above)
+func RestoreOutput() {
+	logger = log.NewWithOptions(os.Stderr, log.Options{
+		ReportTimestamp: true,
+	})
+	logger.SetLevel(log.InfoLevel)
+	cliConfigured = true
+}
+
+// IsConfiguredByCLI returns true if logging has been explicitly configured by CLI tools
+func IsConfiguredByCLI() bool {
+	return cliConfigured
 }

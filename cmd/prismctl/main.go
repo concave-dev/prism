@@ -5,8 +5,6 @@ package main
 
 import (
 	"fmt"
-	"io"
-	"log"
 	"os"
 	"sort"
 	"strings"
@@ -30,9 +28,6 @@ var config struct {
 	Timeout    int    // Connection timeout in seconds
 	Verbose    bool   // Show verbose output
 }
-
-// Store original log output for restoration
-var originalLogOutput io.Writer
 
 // Root command
 var rootCmd = &cobra.Command{
@@ -97,9 +92,6 @@ This provides a high-level overview of cluster health and composition.`,
 }
 
 func init() {
-	// Store original log output
-	originalLogOutput = log.Writer()
-
 	// Global flags
 	rootCmd.PersistentFlags().StringVar(&config.ServerAddr, "server", DefaultAddr,
 		"Address of Prism server to connect to")
@@ -115,14 +107,17 @@ func init() {
 	rootCmd.AddCommand(statusCmd)
 }
 
-// Sets up logging based on verbose flag
+// Sets up logging based on verbose flag and log level
 func setupLogging() {
+	// Configure our application logging level first
+	logging.SetLevel(config.LogLevel)
+
 	if config.Verbose {
-		// Restore normal logging
-		log.SetOutput(originalLogOutput)
+		// Show verbose output - restore normal logging
+		logging.RestoreOutput()
 	} else {
-		// Suppress all log output
-		log.SetOutput(io.Discard)
+		// Suppress verbose output by default
+		logging.SuppressOutput()
 	}
 }
 
