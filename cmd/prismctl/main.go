@@ -1,6 +1,6 @@
 // Package main implements the Prism CLI tool (prismctl).
-// This tool provides administrative commands for managing and inspecting
-// Prism clusters, similar to kubectl for Kubernetes or nomad CLI for Nomad.
+// This tool provides commands for deploying AI agents, managing MCP tools,
+// and running AI workflows in Prism clusters, similar to kubectl for Kubernetes.
 package main
 
 import (
@@ -32,13 +32,12 @@ var config struct {
 // Root command
 var rootCmd = &cobra.Command{
 	Use:   "prismctl",
-	Short: "CLI tool for managing Prism clusters",
-	Long: `Prism CLI (prismctl) is a command-line tool for managing and inspecting
-Prism clusters. It provides commands for viewing cluster status, managing
-nodes, and performing administrative tasks.
+	Short: "CLI tool for managing and deploying AI agents, MCP tools and workflows",
+	Long: `Prism CLI (prismctl) is a command-line tool for deploying and managing
+AI agents, MCP tools, and AI workflows in Prism clusters.
 
-Similar to kubectl for Kubernetes or nomad CLI for Nomad, prismctl connects
-to Prism clusters and provides a unified interface for cluster operations.`,
+Similar to kubectl for Kubernetes, prismctl lets you deploy agents, run 
+AI-generated code in sandboxes, manage workflows, and inspect cluster state.`,
 	Version: Version,
 	Example: `  # List cluster members
   prismctl members

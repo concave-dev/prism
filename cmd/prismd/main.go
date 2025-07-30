@@ -1,6 +1,6 @@
 // Package main implements the Prism daemon (prismd).
-// This is the main entry point for Prism cluster nodes that can act as agents,
-// schedulers, or control plane nodes in a distributed job scheduling system.
+// Prism is a distributed runtime platform for AI agents with primitives like
+// isolated VMs, sandboxed code execution, serverless functions, and workflows.
 package main
 
 import (
@@ -39,12 +39,11 @@ var config struct {
 // Root command
 var rootCmd = &cobra.Command{
 	Use:   "prismd",
-	Short: "Prism distributed job scheduler daemon",
-	Long: `Prism daemon (prismd) is the main process for Prism cluster nodes.
+	Short: "Prism distributed runtime platform daemon for AI agents, MCP tools and workflows",
+	Long: `Prism daemon (prismd) provides distributed runtime infrastructure for AI agents.
 
-Prism is a distributed job scheduler and cluster orchestrator that can run
-nodes in different roles: agents (execute jobs), schedulers (make placement
-decisions), or control plane nodes (manage cluster state).`,
+Think Kubernetes for AI agents - with isolated VMs, sandboxed execution, 
+serverless functions, native memory, workflows, and other AI-first primitives.`,
 	Version: Version,
 	Example: `  # Start an agent node
   prismd --bind=0.0.0.0:4200 --role=agent
