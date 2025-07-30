@@ -33,6 +33,11 @@ func Error(format string, v ...interface{}) {
 }
 
 // Logs a success message in green (using Info level with custom styling)
+//
+// Since the logging library doesn't have a native SUCCESS level, we "fake" it by:
+// 1. Using INFO level internally (so SUCCESS respects INFO level filtering)
+// 2. Creating a temporary logger with custom styling to display "SUCCESS" instead of "INFO"
+// 3. This ensures SUCCESS messages are suppressed when INFO is disabled
 func Success(format string, v ...interface{}) {
 	// Check if INFO level logs are enabled (Success uses INFO level internally)
 	if logger.GetLevel() > log.InfoLevel {
@@ -40,12 +45,15 @@ func Success(format string, v ...interface{}) {
 	}
 
 	// Create a temporary logger with custom styling for success messages
+	// We override the INFO level label to display "SUCCESS" instead
 	styles := log.DefaultStyles()
 	styles.Levels[log.InfoLevel] = styles.Levels[log.InfoLevel].SetString("SUCCESS")
 	tempLogger := log.NewWithOptions(os.Stderr, log.Options{
 		ReportTimestamp: true,
 	})
 	tempLogger.SetStyles(styles)
+
+	// Log using INFO level but with "SUCCESS" label
 	tempLogger.Info(fmt.Sprintf(format, v...))
 }
 
