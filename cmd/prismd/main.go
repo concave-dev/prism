@@ -9,7 +9,9 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
+	"github.com/concave-dev/prism/internal/api"
 	"github.com/concave-dev/prism/internal/logging"
 	"github.com/concave-dev/prism/internal/serf"
 	"github.com/concave-dev/prism/internal/validate"
@@ -19,15 +21,17 @@ import (
 const (
 	Version = "0.1.0-dev" // Version information
 
-	DefaultBind   = "127.0.0.1:4200" // Default bind address
-	DefaultRole   = "agent"          // Default role
-	DefaultRegion = "default"        // Default region
+	DefaultBind    = "127.0.0.1:4200" // Default bind address
+	DefaultAPIPort = 8080             // Default API server port
+	DefaultRole    = "agent"          // Default role
+	DefaultRegion  = "default"        // Default region
 )
 
 // Global configuration
 var config struct {
 	BindAddr  string   // Network address to bind to
 	BindPort  int      // Network port to bind to
+	APIPort   int      // HTTP API server port
 	NodeName  string   // Name of this node
 	Role      string   // Node role: agent, scheduler, or control
 	Region    string   // Region/datacenter identifier
@@ -63,6 +67,8 @@ func init() {
 	// Network flags
 	rootCmd.Flags().StringVar(&config.BindAddr, "bind", DefaultBind,
 		"Address and port to bind to (e.g., 0.0.0.0:4200)")
+	rootCmd.Flags().IntVar(&config.APIPort, "api-port", DefaultAPIPort,
+		"HTTP API server port (e.g., 8080)")
 
 	// Node configuration flags
 	rootCmd.Flags().StringVar(&config.Role, "role", DefaultRole,
@@ -128,6 +134,11 @@ func validateConfig(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid log level: %s", config.LogLevel)
 	}
 
+	// Validate API port
+	if err := validate.ValidateField(config.APIPort, "min=1,max=65535"); err != nil {
+		return fmt.Errorf("invalid API port: %w", err)
+	}
+
 	// Validate join addresses if provided
 	// Multiple join addresses provide fault tolerance - if first node is unreachable,
 	// Serf will automatically try the next one until connection succeeds
@@ -185,6 +196,23 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to start serf manager: %w", err)
 	}
 
+	// Start HTTP API server for control and scheduler nodes
+	var apiServer *api.Server
+	if config.Role == "control" || config.Role == "scheduler" {
+		logging.Info("Starting HTTP API server on port %d", config.APIPort)
+
+		apiConfig := &api.ServerConfig{
+			BindAddr:    config.BindAddr,
+			BindPort:    config.APIPort,
+			SerfManager: manager,
+		}
+
+		apiServer = api.NewServer(apiConfig)
+		if err := apiServer.Start(); err != nil {
+			return fmt.Errorf("failed to start API server: %w", err)
+		}
+	}
+
 	// Join cluster if addresses provided
 	// Serf will try each address in order until one succeeds (fault tolerance)
 	if len(config.JoinAddrs) > 0 {
@@ -230,6 +258,16 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 
 	// Graceful shutdown
 	logging.Info("Initiating graceful shutdown...")
+
+	// Shutdown API server if running
+	if apiServer != nil {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := apiServer.Shutdown(shutdownCtx); err != nil {
+			logging.Error("Error shutting down API server: %v", err)
+		}
+	}
 
 	// Shutdown SerfManager
 	if err := manager.Shutdown(); err != nil {

@@ -12,22 +12,22 @@ import (
 	"time"
 
 	"github.com/concave-dev/prism/internal/logging"
-	"github.com/concave-dev/prism/internal/serf"
 	"github.com/concave-dev/prism/internal/validate"
+	"github.com/go-resty/resty/v2"
 	"github.com/spf13/cobra"
 )
 
 const (
-	Version     = "0.1.0-dev"      // Version information
-	DefaultAddr = "127.0.0.1:4200" // Default address
+	Version        = "0.1.0-dev"      // Version information
+	DefaultAPIAddr = "127.0.0.1:8080" // Default API server address
 )
 
 // Global configuration
 var config struct {
-	ServerAddr string // Address of Prism server to connect to
-	LogLevel   string // Log level for CLI operations
-	Timeout    int    // Connection timeout in seconds
-	Verbose    bool   // Show verbose output
+	APIAddr  string // Address of Prism API server to connect to
+	LogLevel string // Log level for CLI operations
+	Timeout  int    // Connection timeout in seconds
+	Verbose  bool   // Show verbose output
 }
 
 // Root command
@@ -40,15 +40,15 @@ AI agents, MCP tools, and AI workflows in Prism clusters.
 Similar to kubectl for Kubernetes, prismctl lets you deploy agents, run 
 AI-generated code in sandboxes, manage workflows, and inspect cluster state.`,
 	Version:           Version,
-	PersistentPreRunE: validateServerAddress,
+	PersistentPreRunE: validateAPIAddress,
 	Example: `  # List cluster members
   prismctl members
 
   # Show cluster status
   prismctl status
 
-  # Connect to remote cluster
-  prismctl --server=192.168.1.100:4200 members
+  # Connect to remote API server
+  prismctl --api-addr=192.168.1.100:8080 members
   
   # Show verbose output
   prismctl --verbose members`,
@@ -65,8 +65,8 @@ known nodes including their roles, status, regions, and last seen times.`,
 	Example: `  # List all members
   prismctl members
 
-  # List members from specific server
-  prismctl --server=192.168.1.100:4200 members
+  # List members from specific API server
+  prismctl --api-addr=192.168.1.100:8080 members
   
   # Show verbose output during connection
   prismctl --verbose members`,
@@ -84,8 +84,8 @@ This provides a high-level overview of cluster health and composition.`,
 	Example: `  # Show cluster status
   prismctl status
 
-  # Show status from specific server
-  prismctl --server=192.168.1.100:4200 status
+  # Show status from specific API server
+  prismctl --api-addr=192.168.1.100:8080 status
   
   # Show verbose output during connection
   prismctl --verbose status`,
@@ -94,8 +94,8 @@ This provides a high-level overview of cluster health and composition.`,
 
 func init() {
 	// Global flags
-	rootCmd.PersistentFlags().StringVar(&config.ServerAddr, "server", DefaultAddr,
-		"Address of Prism server to connect to")
+	rootCmd.PersistentFlags().StringVar(&config.APIAddr, "api-addr", DefaultAPIAddr,
+		"Address of Prism API server to connect to")
 	rootCmd.PersistentFlags().StringVar(&config.LogLevel, "log-level", "ERROR",
 		"Log level: DEBUG, INFO, WARN, ERROR")
 	rootCmd.PersistentFlags().IntVar(&config.Timeout, "timeout", 10,
@@ -108,20 +108,229 @@ func init() {
 	rootCmd.AddCommand(statusCmd)
 }
 
-// validateServerAddress validates the --server flag before running any command
-func validateServerAddress(cmd *cobra.Command, args []string) error {
-	// Parse and validate server address
-	netAddr, err := validate.ParseBindAddress(config.ServerAddr)
+// validateAPIAddress validates the --api-addr flag before running any command
+func validateAPIAddress(cmd *cobra.Command, args []string) error {
+	// Parse and validate API server address
+	netAddr, err := validate.ParseBindAddress(config.APIAddr)
 	if err != nil {
-		return fmt.Errorf("invalid server address '%s': %w", config.ServerAddr, err)
+		return fmt.Errorf("invalid API server address '%s': %w", config.APIAddr, err)
 	}
 
 	// Client must connect to specific port (not 0)
 	if err := validate.ValidateField(netAddr.Port, "required,min=1,max=65535"); err != nil {
-		return fmt.Errorf("server port must be specific (not 0): %w", err)
+		return fmt.Errorf("API server port must be specific (not 0): %w", err)
 	}
 
 	return nil
+}
+
+// API response types that match the server responses
+type APIResponse struct {
+	Status string      `json:"status"`
+	Data   interface{} `json:"data"`
+	Count  int         `json:"count,omitempty"`
+}
+
+type ClusterMember struct {
+	ID       string            `json:"id"`
+	Name     string            `json:"name"`
+	Address  string            `json:"address"`
+	Roles    []string          `json:"roles"`
+	Status   string            `json:"status"`
+	Region   string            `json:"region"`
+	Tags     map[string]string `json:"tags"`
+	LastSeen time.Time         `json:"lastSeen"`
+}
+
+type ClusterStatus struct {
+	TotalNodes    int            `json:"totalNodes"`
+	NodesByRole   map[string]int `json:"nodesByRole"`
+	NodesByStatus map[string]int `json:"nodesByStatus"`
+	NodesByRegion map[string]int `json:"nodesByRegion"`
+}
+
+// PrismAPIClient wraps Resty client with Prism-specific functionality
+type PrismAPIClient struct {
+	client  *resty.Client
+	baseURL string
+}
+
+// NewPrismAPIClient creates a new API client with Resty
+func NewPrismAPIClient(apiAddr string, timeout int, verbose bool) *PrismAPIClient {
+	client := resty.New()
+
+	baseURL := fmt.Sprintf("http://%s/api/v1", apiAddr)
+
+	// Configure client
+	client.
+		SetTimeout(time.Duration(timeout)*time.Second).
+		SetBaseURL(baseURL).
+		SetHeader("Accept", "application/json").
+		SetHeader("Content-Type", "application/json").
+		SetHeader("User-Agent", fmt.Sprintf("prismctl/%s", Version))
+
+	// Add retry mechanism
+	client.
+		SetRetryCount(3).
+		SetRetryWaitTime(1 * time.Second).
+		SetRetryMaxWaitTime(5 * time.Second)
+
+	// Enable debug logging if verbose
+	if verbose {
+		client.SetDebug(true)
+	}
+
+	// Add request/response middleware for logging
+	client.OnBeforeRequest(func(c *resty.Client, req *resty.Request) error {
+		if verbose {
+			logging.Info("Making API request: %s %s", req.Method, req.URL)
+		}
+		return nil
+	})
+
+	client.OnAfterResponse(func(c *resty.Client, resp *resty.Response) error {
+		if verbose {
+			logging.Info("API response: %d %s (took %v)",
+				resp.StatusCode(), resp.Status(), resp.Time())
+		}
+		return nil
+	})
+
+	return &PrismAPIClient{
+		client:  client,
+		baseURL: baseURL,
+	}
+}
+
+// GetMembers fetches cluster members from the API
+func (api *PrismAPIClient) GetMembers() ([]ClusterMember, error) {
+	var response APIResponse
+
+	resp, err := api.client.R().
+		SetResult(&response).
+		Get("/cluster/members")
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to API server: %w\nMake sure a Prism daemon with API server is running at %s", err, api.baseURL)
+	}
+
+	if resp.StatusCode() != 200 {
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode(), resp.String())
+	}
+
+	// Parse members from the response data
+	var members []ClusterMember
+	if membersData, ok := response.Data.([]interface{}); ok {
+		for _, memberData := range membersData {
+			if memberMap, ok := memberData.(map[string]interface{}); ok {
+				member := ClusterMember{
+					ID:       getString(memberMap, "id"),
+					Name:     getString(memberMap, "name"),
+					Address:  getString(memberMap, "address"),
+					Roles:    getStringSlice(memberMap, "roles"),
+					Status:   getString(memberMap, "status"),
+					Region:   getString(memberMap, "region"),
+					Tags:     getStringMap(memberMap, "tags"),
+					LastSeen: getTime(memberMap, "lastSeen"),
+				}
+				members = append(members, member)
+			}
+		}
+	}
+
+	return members, nil
+}
+
+// GetStatus fetches cluster status from the API
+func (api *PrismAPIClient) GetStatus() (*ClusterStatus, error) {
+	var response APIResponse
+
+	resp, err := api.client.R().
+		SetResult(&response).
+		Get("/cluster/status")
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to API server: %w\nMake sure a Prism daemon with API server is running at %s", err, api.baseURL)
+	}
+
+	if resp.StatusCode() != 200 {
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode(), resp.String())
+	}
+
+	// Parse status from the response data
+	if statusData, ok := response.Data.(map[string]interface{}); ok {
+		return &ClusterStatus{
+			TotalNodes:    getInt(statusData, "totalNodes"),
+			NodesByRole:   getIntMap(statusData, "nodesByRole"),
+			NodesByStatus: getIntMap(statusData, "nodesByStatus"),
+			NodesByRegion: getIntMap(statusData, "nodesByRegion"),
+		}, nil
+	}
+
+	return nil, fmt.Errorf("unexpected response format for status")
+}
+
+// Helper functions to safely extract values from interface{} maps
+func getString(m map[string]interface{}, key string) string {
+	if val, ok := m[key].(string); ok {
+		return val
+	}
+	return ""
+}
+
+func getStringSlice(m map[string]interface{}, key string) []string {
+	if val, ok := m[key].([]interface{}); ok {
+		var result []string
+		for _, v := range val {
+			if str, ok := v.(string); ok {
+				result = append(result, str)
+			}
+		}
+		return result
+	}
+	return []string{}
+}
+
+func getStringMap(m map[string]interface{}, key string) map[string]string {
+	if val, ok := m[key].(map[string]interface{}); ok {
+		result := make(map[string]string)
+		for k, v := range val {
+			if str, ok := v.(string); ok {
+				result[k] = str
+			}
+		}
+		return result
+	}
+	return make(map[string]string)
+}
+
+func getIntMap(m map[string]interface{}, key string) map[string]int {
+	if val, ok := m[key].(map[string]interface{}); ok {
+		result := make(map[string]int)
+		for k, v := range val {
+			if num, ok := v.(float64); ok {
+				result[k] = int(num)
+			}
+		}
+		return result
+	}
+	return make(map[string]int)
+}
+
+func getInt(m map[string]interface{}, key string) int {
+	if val, ok := m[key].(float64); ok {
+		return int(val)
+	}
+	return 0
+}
+
+func getTime(m map[string]interface{}, key string) time.Time {
+	if val, ok := m[key].(string); ok {
+		if t, err := time.Parse(time.RFC3339, val); err == nil {
+			return t
+		}
+	}
+	return time.Time{}
 }
 
 // Sets up logging based on verbose flag and log level
@@ -138,33 +347,27 @@ func setupLogging() {
 	}
 }
 
+// createAPIClient creates a new Prism API client
+func createAPIClient() *PrismAPIClient {
+	return NewPrismAPIClient(config.APIAddr, config.Timeout, config.Verbose)
+}
+
 // Handles the members subcommand
 func handleMembers(cmd *cobra.Command, args []string) error {
 	setupLogging()
 
 	if config.Verbose {
-		logging.Info("Connecting to Prism cluster via %s", config.ServerAddr)
+		logging.Info("Fetching cluster members from API server: %s", config.APIAddr)
 	}
 
-	// Create temporary Serf manager to query cluster
-	manager, err := createTempManager("prismctl-members")
+	// Create API client and get members
+	apiClient := createAPIClient()
+	members, err := apiClient.GetMembers()
 	if err != nil {
 		return err
 	}
-	defer manager.Shutdown()
 
-	// Join cluster to discover members
-	if err := manager.Join([]string{config.ServerAddr}); err != nil {
-		return fmt.Errorf("failed to connect to cluster: %w\nMake sure a Prism daemon is running at %s", err, config.ServerAddr)
-	}
-
-	// Give a moment for membership to sync
-	time.Sleep(1 * time.Second)
-
-	// Get and display members
-	members := manager.GetMembers()
-	displayMembers(members)
-
+	displayMembersFromAPI(members)
 	return nil
 }
 
@@ -173,60 +376,22 @@ func handleStatus(cmd *cobra.Command, args []string) error {
 	setupLogging()
 
 	if config.Verbose {
-		logging.Info("Connecting to Prism cluster via %s", config.ServerAddr)
+		logging.Info("Fetching cluster status from API server: %s", config.APIAddr)
 	}
 
-	// Create temporary Serf manager to query cluster
-	manager, err := createTempManager("prismctl-status")
+	// Create API client and get status
+	apiClient := createAPIClient()
+	status, err := apiClient.GetStatus()
 	if err != nil {
 		return err
 	}
-	defer manager.Shutdown()
 
-	// Join cluster to discover members
-	if err := manager.Join([]string{config.ServerAddr}); err != nil {
-		return fmt.Errorf("failed to connect to cluster: %w\nMake sure a Prism daemon is running at %s", err, config.ServerAddr)
-	}
-
-	// Give a moment for membership to sync
-	time.Sleep(1 * time.Second)
-
-	// Get and display status
-	members := manager.GetMembers()
-	displayStatus(members)
-
+	displayStatusFromAPI(*status)
 	return nil
 }
 
-// Creates a temporary Serf manager for querying
-func createTempManager(suffix string) (*serf.SerfManager, error) {
-	serfConfig := serf.DefaultManagerConfig()
-	serfConfig.BindAddr = "127.0.0.1"
-	serfConfig.BindPort = 0 // Let OS choose available port
-	serfConfig.NodeName = fmt.Sprintf("%s-%d", suffix, time.Now().Unix())
-
-	// Set log level based on verbose flag
-	if config.Verbose {
-		serfConfig.LogLevel = "INFO" // Show Serf logs when verbose
-	} else {
-		serfConfig.LogLevel = "ERROR" // Suppress Serf logs by default
-	}
-
-	manager, err := serf.NewSerfManager(serfConfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create serf manager: %w", err)
-	}
-
-	// Start manager
-	if err := manager.Start(); err != nil {
-		return nil, fmt.Errorf("failed to start serf manager: %w", err)
-	}
-
-	return manager, nil
-}
-
-// Displays cluster members in a table format
-func displayMembers(members map[string]*serf.PrismNode) {
+// displayMembersFromAPI displays cluster members from API response
+func displayMembersFromAPI(members []ClusterMember) {
 	if len(members) == 0 {
 		fmt.Println("No cluster members found")
 		return
@@ -240,23 +405,17 @@ func displayMembers(members map[string]*serf.PrismNode) {
 	fmt.Fprintln(w, "NAME\tADDRESS\tROLE\tSTATUS\tREGION\tLAST SEEN")
 
 	// Sort members by name for consistent output
-	var sortedMembers []*serf.PrismNode
-	for _, member := range members {
-		sortedMembers = append(sortedMembers, member)
-	}
-	sort.Slice(sortedMembers, func(i, j int) bool {
-		return sortedMembers[i].Name < sortedMembers[j].Name
+	sort.Slice(members, func(i, j int) bool {
+		return members[i].Name < members[j].Name
 	})
 
 	// Display each member
-	for _, member := range sortedMembers {
-		address := fmt.Sprintf("%s:%d", member.Addr, member.Port)
+	for _, member := range members {
 		role := strings.Join(member.Roles, ",")
 		if role == "" {
 			role = "unknown"
 		}
 
-		status := member.Status.String()
 		region := member.Region
 		if region == "" {
 			region = "default"
@@ -265,56 +424,29 @@ func displayMembers(members map[string]*serf.PrismNode) {
 		lastSeen := formatDuration(time.Since(member.LastSeen))
 
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
-			member.Name, address, role, status, region, lastSeen)
+			member.Name, member.Address, role, member.Status, region, lastSeen)
 	}
 }
 
-// Displays cluster status summary
-func displayStatus(members map[string]*serf.PrismNode) {
-	if len(members) == 0 {
-		fmt.Println("No cluster members found")
-		return
-	}
-
-	// Count members by role and status
-	roleCount := make(map[string]int)
-	statusCount := make(map[string]int)
-	regionCount := make(map[string]int)
-
-	for _, member := range members {
-		// Count by roles
-		for _, role := range member.Roles {
-			roleCount[role]++
-		}
-
-		// Count by status
-		statusCount[member.Status.String()]++
-
-		// Count by region
-		region := member.Region
-		if region == "" {
-			region = "default"
-		}
-		regionCount[region]++
-	}
-
+// displayStatusFromAPI displays cluster status from API response
+func displayStatusFromAPI(status ClusterStatus) {
 	fmt.Printf("Cluster Status:\n")
-	fmt.Printf("  Total Nodes: %d\n\n", len(members))
+	fmt.Printf("  Total Nodes: %d\n\n", status.TotalNodes)
 
 	fmt.Printf("Nodes by Role:\n")
-	for role, count := range roleCount {
+	for role, count := range status.NodesByRole {
 		fmt.Printf("  %-12s: %d\n", role, count)
 	}
 	fmt.Println()
 
 	fmt.Printf("Nodes by Status:\n")
-	for status, count := range statusCount {
-		fmt.Printf("  %-12s: %d\n", status, count)
+	for nodeStatus, count := range status.NodesByStatus {
+		fmt.Printf("  %-12s: %d\n", nodeStatus, count)
 	}
 	fmt.Println()
 
 	fmt.Printf("Nodes by Region:\n")
-	for region, count := range regionCount {
+	for region, count := range status.NodesByRegion {
 		fmt.Printf("  %-12s: %d\n", region, count)
 	}
 }
