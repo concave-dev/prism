@@ -52,7 +52,7 @@ serverless functions, native memory, workflows, and other AI-first primitives.`,
   prismd --bind=0.0.0.0:4200 --role=agent
 
   # Start a control node and join existing cluster  
-  prismd --bind=0.0.0.0:4201 --role=control --join=127.0.0.1:4200 --node-name=control-node
+  prismd --bind=0.0.0.0:4201 --role=control --join=127.0.0.1:4200 --name=control-node
 
   # Join with multiple addresses for fault tolerance
   prismd --bind=0.0.0.0:4202 --role=agent --join=node1:4200,node2:4200,node3:4200
@@ -75,7 +75,7 @@ func init() {
 		"Node role: agent or control")
 	rootCmd.Flags().StringVar(&config.Region, "region", DefaultRegion,
 		"Region/datacenter identifier")
-	rootCmd.Flags().StringVar(&config.NodeName, "node-name", "",
+	rootCmd.Flags().StringVar(&config.NodeName, "name", "",
 		"Node name (defaults to hostname)")
 
 	// Cluster flags
