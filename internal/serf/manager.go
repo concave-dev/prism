@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -90,6 +89,27 @@ func (sm *SerfManager) Start() error {
 
 	// Create Serf configuration
 	serfConfig := serf.DefaultConfig()
+
+	// Configure our application logging level only if not already configured by CLI
+	// (CLI tools like prismctl may have already set the desired logging level)
+	if !logging.IsConfiguredByCLI() {
+		logging.SetLevel(sm.config.LogLevel)
+	}
+
+	// Configure logging BEFORE calling Init() to ensure it's properly set up
+	if sm.config.LogLevel == "ERROR" {
+		// Suppress Serf internal logs completely
+		serfConfig.LogOutput = io.Discard
+		// Also suppress memberlist logs
+		serfConfig.MemberlistConfig.LogOutput = io.Discard
+	} else {
+		// Use colorful logging for Serf internal logs
+		colorfulWriter := logging.NewColorfulSerfWriter()
+		serfConfig.LogOutput = colorfulWriter
+		serfConfig.MemberlistConfig.LogOutput = colorfulWriter
+	}
+
+	// Initialize AFTER setting up logging configuration
 	serfConfig.Init()
 	serfConfig.NodeName = sm.NodeName
 	serfConfig.MemberlistConfig.BindAddr = sm.config.BindAddr
@@ -101,24 +121,6 @@ func (sm *SerfManager) Start() error {
 	serfConfig.EventCh = sm.eventQueue
 
 	serfConfig.Tags = sm.buildNodeTags()
-
-	// Configure our application logging level only if not already configured by CLI
-	// (CLI tools like prismctl may have already set the desired logging level)
-	if !logging.IsConfiguredByCLI() {
-		logging.SetLevel(sm.config.LogLevel)
-	}
-
-	// Configure logging based on log level
-	if sm.config.LogLevel == "ERROR" {
-		// Suppress Serf internal logs completely
-		serfConfig.LogOutput = io.Discard
-		// Also suppress memberlist logs
-		serfConfig.MemberlistConfig.LogOutput = io.Discard
-	} else {
-		// Use standard output for logs
-		serfConfig.LogOutput = os.Stderr
-		serfConfig.MemberlistConfig.LogOutput = os.Stderr
-	}
 
 	// Create Serf instance
 	var err error

@@ -1,8 +1,12 @@
 package logging
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"os"
+	"regexp"
+	"strings"
 
 	"github.com/charmbracelet/log"
 )
@@ -109,4 +113,76 @@ func RestoreOutput() {
 // Returns true if logging has been explicitly configured by CLI tools
 func IsConfiguredByCLI() bool {
 	return cliConfigured
+}
+
+// ColorfulSerfWriter is a custom writer that captures Serf library logs
+// and routes them through our colorful logging system
+type ColorfulSerfWriter struct {
+	reader *io.PipeReader
+	writer *io.PipeWriter
+}
+
+// Creates a new colorful writer for Serf logs
+func NewColorfulSerfWriter() *ColorfulSerfWriter {
+	r, w := io.Pipe()
+	csw := &ColorfulSerfWriter{
+		reader: r,
+		writer: w,
+	}
+
+	// Start processing logs in the background
+	go csw.processLogs()
+
+	return csw
+}
+
+// Write implements io.Writer interface
+func (csw *ColorfulSerfWriter) Write(p []byte) (n int, err error) {
+	return csw.writer.Write(p)
+}
+
+// Close closes the writer
+func (csw *ColorfulSerfWriter) Close() error {
+	return csw.writer.Close()
+}
+
+// processLogs reads from the pipe and routes logs through colorful logging
+func (csw *ColorfulSerfWriter) processLogs() {
+	scanner := bufio.NewScanner(csw.reader)
+
+	// Regex to parse Serf log format: timestamp [LEVEL] component: message
+	logRegex := regexp.MustCompile(`^\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} \[(\w+)\] (.+)$`)
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+
+		// Try to parse the log level and message
+		matches := logRegex.FindStringSubmatch(line)
+		if len(matches) == 3 {
+			level := matches[1]
+			message := matches[2]
+
+			// Route through appropriate colorful logging function based on level
+			switch level {
+			case "DEBUG":
+				Debug("serf: %s", message)
+			case "INFO":
+				Info("serf: %s", message)
+			case "WARN", "WARNING":
+				Warn("serf: %s", message)
+			case "ERR", "ERROR":
+				Error("serf: %s", message)
+			default:
+				// For unknown levels, use info but preserve original level
+				Info("serf[%s]: %s", level, message)
+			}
+		} else {
+			// If we can't parse it, still route through colorful logging
+			// This handles any malformed logs or different formats
+			Info("serf: %s", line)
+		}
+	}
 }
