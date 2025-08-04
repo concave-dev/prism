@@ -33,7 +33,7 @@ var config struct {
 	BindPort  int      // Network port to bind to
 	APIPort   int      // HTTP API server port
 	NodeName  string   // Name of this node
-	Role      string   // Node role: agent, scheduler, or control
+	Role      string   // Node role: agent or control
 	Region    string   // Region/datacenter identifier
 	JoinAddrs []string // List of cluster addresses to join
 	LogLevel  string   // Log level: DEBUG, INFO, WARN, ERROR
@@ -51,8 +51,8 @@ serverless functions, native memory, workflows, and other AI-first primitives.`,
 	Example: `  # Start an agent node (first node in cluster)
   prismd --bind=0.0.0.0:4200 --role=agent
 
-  # Start a scheduler and join existing cluster  
-  prismd --bind=0.0.0.0:4201 --role=scheduler --join=127.0.0.1:4200
+  # Start a control node and join existing cluster  
+  prismd --bind=0.0.0.0:4201 --role=control --join=127.0.0.1:4200
 
   # Join with multiple addresses for fault tolerance
   prismd --bind=0.0.0.0:4202 --role=agent --join=node1:4200,node2:4200,node3:4200
@@ -72,7 +72,7 @@ func init() {
 
 	// Node configuration flags
 	rootCmd.Flags().StringVar(&config.Role, "role", DefaultRole,
-		"Node role: agent, scheduler, or control")
+		"Node role: agent or control")
 	rootCmd.Flags().StringVar(&config.Region, "region", DefaultRegion,
 		"Region/datacenter identifier")
 	rootCmd.Flags().StringVar(&config.NodeName, "node-name", "",
@@ -115,12 +115,11 @@ func validateConfig(cmd *cobra.Command, args []string) error {
 
 	// Validate role
 	validRoles := map[string]bool{
-		"agent":     true,
-		"scheduler": true,
-		"control":   true,
+		"agent":   true,
+		"control": true,
 	}
 	if !validRoles[config.Role] {
-		return fmt.Errorf("invalid role: %s (must be agent, scheduler, or control)", config.Role)
+		return fmt.Errorf("invalid role: %s (must be agent or control)", config.Role)
 	}
 
 	// Validate log level
@@ -165,10 +164,8 @@ func buildSerfConfig() *serf.ManagerConfig {
 	switch config.Role {
 	case "agent":
 		serfConfig.Roles = []string{"agent"}
-	case "scheduler":
-		serfConfig.Roles = []string{"scheduler"}
 	case "control":
-		serfConfig.Roles = []string{"control", "scheduler"} // Control nodes can also schedule
+		serfConfig.Roles = []string{"control"}
 	}
 
 	// Add custom tags
@@ -196,9 +193,9 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to start serf manager: %w", err)
 	}
 
-	// Start HTTP API server for control and scheduler nodes
+	// Start HTTP API server for control nodes
 	var apiServer *api.Server
-	if config.Role == "control" || config.Role == "scheduler" {
+	if config.Role == "control" {
 		logging.Info("Starting HTTP API server on port %d", config.APIPort)
 
 		apiConfig := &api.ServerConfig{
@@ -240,12 +237,9 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	case "agent":
 		logging.Info("Starting agent services...")
 		// TODO: Start job execution engine
-	case "scheduler":
-		logging.Info("Starting scheduler services...")
-		// TODO: Start scheduling engine
 	case "control":
 		logging.Info("Starting control plane services...")
-		// TODO: Start Raft, API server, etc.
+		// TODO: Start Raft, scheduling engine, API server, etc.
 	}
 
 	// Wait for shutdown signal

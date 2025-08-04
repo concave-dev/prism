@@ -24,7 +24,7 @@ type PrismNode struct {
 	Port     uint16            `json:"port"`     // Port number
 	Status   serf.MemberStatus `json:"status"`   // Status of the node
 	Tags     map[string]string `json:"tags"`     // Tags for the node
-	Roles    []string          `json:"roles"`    // e.g., ["agent", "scheduler"]
+	Roles    []string          `json:"roles"`    // e.g., ["agent", "control"]
 	Region   string            `json:"region"`   // datacenter/region identifier
 	LastSeen time.Time         `json:"lastSeen"` // Last seen time
 }
@@ -290,7 +290,7 @@ func generateNodeID(name, addr string, port int) string {
 // This is needed because Serf tags are map[string]string (string-only),
 // so we must serialize/deserialize arrays to work around this limitation.
 //
-// Example: "agent,scheduler,leader" → ["agent", "scheduler", "leader"]
+// Example: "agent,control,leader" → ["agent", "control", "leader"]
 func parseRoles(rolesStr string) []string {
 	if rolesStr == "" {
 		return []string{}
@@ -310,7 +310,7 @@ func parseRoles(rolesStr string) []string {
 // This is needed because Serf tags are map[string]string (string-only),
 // so we must serialize arrays before storing them in tags.
 //
-// Example: ["agent", "scheduler", "leader"] → "agent,scheduler,leader"
+// Example: ["agent", "control", "leader"] → "agent,control,leader"
 func formatRoles(roles []string) string {
 	if len(roles) == 0 {
 		return ""

@@ -13,7 +13,7 @@ type ManagerConfig struct {
 	BindPort        int               // Bind port
 	NodeName        string            // Name of the node
 	Tags            map[string]string // Tags for the node
-	Roles           []string          // Roles for the node (e.g., ["agent", "scheduler"])
+	Roles           []string          // Roles for the node (e.g., ["agent", "control"])
 	Region          string            // Region for the node (e.g., "us-east-1")
 	EventBufferSize int               // Event buffer size
 	JoinRetries     int               // Join retries
