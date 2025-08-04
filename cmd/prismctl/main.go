@@ -120,7 +120,10 @@ func init() {
 		"Address of Prism API server to connect to")
 	rootCmd.PersistentFlags().StringVar(&config.LogLevel, "log-level", "ERROR",
 		"Log level: DEBUG, INFO, WARN, ERROR")
-	rootCmd.PersistentFlags().IntVar(&config.Timeout, "timeout", 10,
+	// PERFORMANCE FIX: Reduced HTTP timeout from 10s to 8s
+	// This allows Serf queries (5s) + response collection (6s) to complete
+	// before HTTP client times out, preventing false timeout errors
+	rootCmd.PersistentFlags().IntVar(&config.Timeout, "timeout", 8,
 		"Connection timeout in seconds")
 	rootCmd.PersistentFlags().BoolVarP(&config.Verbose, "verbose", "v", false,
 		"Show verbose output")

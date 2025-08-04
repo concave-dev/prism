@@ -269,12 +269,37 @@ func (sm *SerfManager) GetLocalMember() *PrismNode {
 
 // QueryResources sends a get-resources query to all cluster nodes and returns their responses
 func (sm *SerfManager) QueryResources() (map[string]*NodeResources, error) {
-	logging.Debug("Querying resources from all cluster nodes")
+	// Get expected node count for early optimization
+	members := sm.GetMembers()
+	expectedNodes := len(members)
+	logging.Debug("Querying resources from %d cluster nodes", expectedNodes)
 
 	// Send query to all nodes
+	//
+	// PERFORMANCE FIX: Timeout Configuration
+	//
+	// BEFORE (competing timeouts):
+	// Time:    0s    2s    4s    6s    8s    10s   12s
+	// HTTP:    [---------- waiting ----------] TIMEOUT
+	// Serf:         [------ collecting ------] Done, but too late
+	// API:                                     Tries to respond... Too late
+	//
+	// AFTER (staggered timeouts):
+	// Time:    0s    2s    4s    6s    8s    10s
+	// HTTP:    [---- waiting --------] Gets response
+	// Serf:         [-- fast --] Done at 5s
+	// API:                      Process & respond at 7s
+	//
+	// - Serf query timeout: 5s (reduced from 10s)
+	// - Response collection: 6s (allows extra buffer)
+	// - HTTP client timeout: 8s (in prismctl)
+	//
+	// This cascade prevents HTTP timeouts during normal Serf operations.
+	// Serf queries via gossip are fast, but need buffer time for response
+	// collection and JSON serialization before HTTP response.
 	queryParams := &serf.QueryParam{
 		RequestAck: true,
-		Timeout:    10 * time.Second,
+		Timeout:    5 * time.Second, // Reduced to give HTTP response time
 	}
 
 	resp, err := sm.serf.Query("get-resources", nil, queryParams)
@@ -285,18 +310,46 @@ func (sm *SerfManager) QueryResources() (map[string]*NodeResources, error) {
 	// Process responses
 	resources := make(map[string]*NodeResources)
 
-	// Handle responses as they come in
-	for response := range resp.ResponseCh() {
-		nodeResources, err := NodeResourcesFromJSON(response.Payload)
-		if err != nil {
-			logging.Warn("Failed to parse resources from node %s: %v", response.From, err)
-			continue
-		}
+	// Handle responses as they come in with timeout
+	//
+	// OPTIMIZATION: Early Return + Response Timeout
+	// - Collect responses until all expected nodes reply OR timeout
+	// - Early return when we get all responses (faster for small clusters)
+	// - 6s response timeout gives 1s buffer after 5s Serf query timeout
+	responseTimeout := time.NewTimer(6 * time.Second) // Slightly longer than query timeout
+	defer responseTimeout.Stop()
 
-		resources[response.From] = nodeResources
-		logging.Debug("Received resources from node %s: CPU=%d cores, Memory=%dMB",
-			response.From, nodeResources.CPUCores, nodeResources.MemoryTotal/(1024*1024))
+	for {
+		select {
+		case response, ok := <-resp.ResponseCh():
+			if !ok {
+				// Channel closed, all responses received
+				goto done
+			}
+
+			nodeResources, err := NodeResourcesFromJSON(response.Payload)
+			if err != nil {
+				logging.Warn("Failed to parse resources from node %s: %v", response.From, err)
+				continue
+			}
+
+			resources[response.From] = nodeResources
+			logging.Debug("Received resources from node %s: CPU=%d cores, Memory=%dMB",
+				response.From, nodeResources.CPUCores, nodeResources.MemoryTotal/(1024*1024))
+
+			// Early return if we have all expected responses
+			if len(resources) >= expectedNodes {
+				logging.Debug("Received all %d expected responses, returning early", expectedNodes)
+				goto done
+			}
+
+		case <-responseTimeout.C:
+			// Timeout waiting for responses
+			logging.Warn("Timeout waiting for resource responses, got %d responses", len(resources))
+			goto done
+		}
 	}
+done:
 
 	logging.Info("Successfully gathered resources from %d nodes", len(resources))
 	return resources, nil
