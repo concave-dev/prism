@@ -359,15 +359,30 @@ done:
 func (sm *SerfManager) QueryResourcesFromNode(nodeID string) (*NodeResources, error) {
 	logging.Debug("Querying resources from specific node: %s", nodeID)
 
-	// Check if node exists in our member list
-	_, exists := sm.GetMember(nodeID)
+	// Try exact node ID first, then fall back to node name search
+	node, exists := sm.GetMember(nodeID)
+	if !exists {
+		// Try to find by node name if exact ID doesn't work
+		for _, member := range sm.GetMembers() {
+			if member.Name == nodeID {
+				node = member
+				exists = true
+				logging.Debug("Found node by name: %s -> %s", nodeID, member.ID)
+				break
+			}
+		}
+	}
+
 	if !exists {
 		return nil, fmt.Errorf("node %s not found in cluster", nodeID)
 	}
 
+	// Extract node name for Serf filtering (FilterNodes expects node names, not IDs)
+	nodeName := node.Name
+
 	// Send query to specific node
 	queryParams := &serf.QueryParam{
-		FilterNodes: []string{nodeID},
+		FilterNodes: []string{nodeName},
 		RequestAck:  true,
 		Timeout:     5 * time.Second,
 	}
@@ -379,14 +394,15 @@ func (sm *SerfManager) QueryResourcesFromNode(nodeID string) (*NodeResources, er
 
 	// Wait for response
 	for response := range resp.ResponseCh() {
-		if response.From == nodeID {
+		// Since we filtered to only one node name, any response should be from our target
+		if response.From == nodeName {
 			nodeResources, err := NodeResourcesFromJSON(response.Payload)
 			if err != nil {
 				return nil, fmt.Errorf("failed to parse resources from node %s: %w", nodeID, err)
 			}
 
-			logging.Debug("Received resources from node %s: CPU=%d cores, Memory=%dMB",
-				nodeID, nodeResources.CPUCores, nodeResources.MemoryTotal/(1024*1024))
+			logging.Debug("Received resources from node %s (name: %s): CPU=%d cores, Memory=%dMB",
+				nodeID, nodeName, nodeResources.CPUCores, nodeResources.MemoryTotal/(1024*1024))
 			return nodeResources, nil
 		}
 	}

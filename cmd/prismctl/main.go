@@ -626,7 +626,7 @@ func handleResources(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// displayMembersFromAPI displays cluster members from API response
+// Displays cluster members from API response
 func displayMembersFromAPI(members []ClusterMember) {
 	if len(members) == 0 {
 		fmt.Println("No cluster members found")
@@ -664,7 +664,7 @@ func displayMembersFromAPI(members []ClusterMember) {
 	}
 }
 
-// displayStatusFromAPI displays cluster status from API response
+// Displays cluster status from API response
 func displayStatusFromAPI(status ClusterStatus) {
 	fmt.Printf("Cluster Status:\n")
 	fmt.Printf("  Total Nodes: %d\n\n", status.TotalNodes)
@@ -687,7 +687,7 @@ func displayStatusFromAPI(status ClusterStatus) {
 	}
 }
 
-// displayClusterResourcesFromAPI displays cluster resources from API response
+// Displays cluster resources from API response
 func displayClusterResourcesFromAPI(resources []NodeResources) {
 	if len(resources) == 0 {
 		fmt.Println("No cluster resources found")
@@ -699,7 +699,7 @@ func displayClusterResourcesFromAPI(resources []NodeResources) {
 	defer w.Flush()
 
 	// Header
-	fmt.Fprintln(w, "NAME\tCPU CORES\tMEMORY\tMEMORY %\tJOBS\tUPTIME\tGOROUTINES")
+	fmt.Fprintln(w, "NAME\tCPU\tMEMORY\tJOBS\tUPTIME\tGOROUTINES")
 
 	// Sort resources by node name for consistent output
 	sort.Slice(resources, func(i, j int) bool {
@@ -708,22 +708,21 @@ func displayClusterResourcesFromAPI(resources []NodeResources) {
 
 	// Display each node's resources
 	for _, resource := range resources {
-		memoryUsed := fmt.Sprintf("%dMB/%dMB", resource.MemoryUsedMB, resource.MemoryTotalMB)
-		memoryPercent := fmt.Sprintf("%.1f%%", resource.MemoryUsage)
+		memoryWithPercent := fmt.Sprintf("%dMB/%dMB (%.1f%%)",
+			resource.MemoryUsedMB, resource.MemoryTotalMB, resource.MemoryUsage)
 		jobs := fmt.Sprintf("%d/%d", resource.CurrentJobs, resource.MaxJobs)
 
-		fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%s\t%s\t%d\n",
+		fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%s\t%d\n",
 			resource.NodeName,
 			resource.CPUCores,
-			memoryUsed,
-			memoryPercent,
+			memoryWithPercent,
 			jobs,
 			resource.Uptime,
 			resource.GoRoutines)
 	}
 }
 
-// displayNodeResourceFromAPI displays detailed resources for a single node
+// Displays detailed resources for a single node
 func displayNodeResourceFromAPI(resource NodeResources) {
 	fmt.Printf("Node: %s (%s)\n", resource.NodeName, resource.NodeID)
 	fmt.Printf("Timestamp: %s\n", resource.Timestamp.Format(time.RFC3339))
