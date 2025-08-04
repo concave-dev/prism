@@ -62,7 +62,7 @@ func Debug(format string, v ...interface{}) {
 	logger.Debug(fmt.Sprintf(format, v...))
 }
 
-// SetLevel configures the logging level
+// Configures the logging level
 func SetLevel(level string) {
 	switch level {
 	case "DEBUG":
@@ -78,7 +78,7 @@ func SetLevel(level string) {
 	}
 }
 
-// SetOutput configures where logs are written (for suppressing output)
+// Configures where logs are written (for suppressing output)
 // Pass nil or os.DevNull equivalent to suppress output
 func SetOutput(w *os.File) {
 	if w == nil {

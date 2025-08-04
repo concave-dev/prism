@@ -65,7 +65,7 @@ func NewSerfManager(config *ManagerConfig) (*SerfManager, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	manager := &SerfManager{
-		NodeID:   generateNodeID(config.NodeName, config.BindAddr, config.BindPort),
+		NodeID:   constructNodeID(config.NodeName, config.BindAddr, config.BindPort),
 		NodeName: config.NodeName,
 
 		// Channel Buffer Sizing Strategy:
@@ -282,7 +282,7 @@ func (sm *SerfManager) buildNodeTags() map[string]string {
 }
 
 // Creates a unique node identifier
-func generateNodeID(name, addr string, port int) string {
+func constructNodeID(name, addr string, port int) string {
 	return fmt.Sprintf("%s-%s-%d", name, addr, port)
 }
 

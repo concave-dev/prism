@@ -126,7 +126,7 @@ func (sm *SerfManager) updateMember(member serf.Member) {
 // Updates a Prism node's status (alive/failed/left)
 func (sm *SerfManager) updateMemberStatus(member serf.Member, status serf.MemberStatus) {
 	sm.memberLock.Lock()
-	if node, exists := sm.members[generateNodeID(member.Name, member.Addr.String(), int(member.Port))]; exists {
+	if node, exists := sm.members[constructNodeID(member.Name, member.Addr.String(), int(member.Port))]; exists {
 		node.Status = status
 		if status != serf.StatusAlive {
 			// Don't update LastSeen for failed/left Prism nodes
@@ -139,7 +139,7 @@ func (sm *SerfManager) updateMemberStatus(member serf.Member, status serf.Member
 
 // Removes a Prism node from the cluster tracking
 func (sm *SerfManager) removeMember(member serf.Member) {
-	nodeID := generateNodeID(member.Name, member.Addr.String(), int(member.Port))
+	nodeID := constructNodeID(member.Name, member.Addr.String(), int(member.Port))
 
 	sm.memberLock.Lock()
 	delete(sm.members, nodeID)
@@ -148,7 +148,7 @@ func (sm *SerfManager) removeMember(member serf.Member) {
 
 // Converts a serf.Member to a PrismNode
 func (sm *SerfManager) memberFromSerf(member serf.Member) *PrismNode {
-	nodeID := generateNodeID(member.Name, member.Addr.String(), int(member.Port))
+	nodeID := constructNodeID(member.Name, member.Addr.String(), int(member.Port))
 
 	node := &PrismNode{
 		ID:       nodeID,
