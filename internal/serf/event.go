@@ -190,6 +190,38 @@ func (sm *SerfManager) handleUserEvent(event serf.UserEvent) {
 
 // Processes Serf queries between Prism nodes
 func (sm *SerfManager) handleQuery(query *serf.Query) {
-	logging.Debug("Received query: %s", query.Name)
-	// Queries will be handled by higher-level Prism components
+	logging.Debug("Received query: %s from %s", query.Name, query.SourceNode())
+
+	switch query.Name {
+	case "get-resources":
+		sm.handleResourcesQuery(query)
+	default:
+		logging.Debug("Unhandled query type: %s", query.Name)
+	}
+}
+
+// Handles get-resources query by gathering current node resources and responding
+func (sm *SerfManager) handleResourcesQuery(query *serf.Query) {
+	logging.Debug("Processing get-resources query from %s", query.SourceNode())
+
+	// Gather current node resources
+	resources := sm.gatherResources()
+
+	// Serialize to JSON for transmission
+	data, err := resources.ToJSON()
+	if err != nil {
+		logging.Error("Failed to serialize resources: %v", err)
+		// Respond with error
+		if err := query.Respond([]byte(`{"error": "failed to gather resources"}`)); err != nil {
+			logging.Error("Failed to respond to query: %v", err)
+		}
+		return
+	}
+
+	// Send resource data as response
+	if err := query.Respond(data); err != nil {
+		logging.Error("Failed to respond to get-resources query: %v", err)
+	} else {
+		logging.Debug("Successfully responded to get-resources query with %d bytes", len(data))
+	}
 }

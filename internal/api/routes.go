@@ -18,6 +18,7 @@ func (s *Server) setupRoutes(router *gin.Engine) {
 		cluster.GET("/members", s.handleMembers)
 		cluster.GET("/status", s.handleStatus)
 		cluster.GET("/info", s.handleClusterInfo)
+		cluster.GET("/resources", s.handleClusterResources)
 	}
 
 	// Node-specific endpoints (for future use)
@@ -25,5 +26,6 @@ func (s *Server) setupRoutes(router *gin.Engine) {
 	{
 		nodes.GET("", s.handleNodes)
 		nodes.GET("/:id", s.handleNodeByID)
+		nodes.GET("/:id/resources", s.handleNodeResources)
 	}
 }

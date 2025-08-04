@@ -30,9 +30,10 @@ type PrismNode struct {
 
 // Manages Serf cluster membership and events for Prism
 type SerfManager struct {
-	serf     *serf.Serf // Core Serf instance
-	NodeID   string     // Unique identifier for the node
-	NodeName string     // Name of the node
+	serf      *serf.Serf // Core Serf instance
+	NodeID    string     // Unique identifier for the node
+	NodeName  string     // Name of the node
+	startTime time.Time  // When the manager was started
 
 	// Two-Channel Producer-Consumer Pattern:
 	// This implements a decoupling pattern where internal processing never blocks
@@ -85,6 +86,7 @@ func NewSerfManager(config *ManagerConfig) (*SerfManager, error) {
 
 // Starts the SerfManager
 func (sm *SerfManager) Start() error {
+	sm.startTime = time.Now()
 	logging.Info("Starting SerfManager for node %s", sm.NodeID)
 
 	// Create Serf configuration
@@ -263,6 +265,80 @@ func (sm *SerfManager) copyPrismNode(node *PrismNode) *PrismNode {
 func (sm *SerfManager) GetLocalMember() *PrismNode {
 	member, _ := sm.GetMember(sm.NodeID)
 	return member
+}
+
+// QueryResources sends a get-resources query to all cluster nodes and returns their responses
+func (sm *SerfManager) QueryResources() (map[string]*NodeResources, error) {
+	logging.Debug("Querying resources from all cluster nodes")
+
+	// Send query to all nodes
+	queryParams := &serf.QueryParam{
+		RequestAck: true,
+		Timeout:    10 * time.Second,
+	}
+
+	resp, err := sm.serf.Query("get-resources", nil, queryParams)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send get-resources query: %w", err)
+	}
+
+	// Process responses
+	resources := make(map[string]*NodeResources)
+
+	// Handle responses as they come in
+	for response := range resp.ResponseCh() {
+		nodeResources, err := NodeResourcesFromJSON(response.Payload)
+		if err != nil {
+			logging.Warn("Failed to parse resources from node %s: %v", response.From, err)
+			continue
+		}
+
+		resources[response.From] = nodeResources
+		logging.Debug("Received resources from node %s: CPU=%d cores, Memory=%dMB",
+			response.From, nodeResources.CPUCores, nodeResources.MemoryTotal/(1024*1024))
+	}
+
+	logging.Info("Successfully gathered resources from %d nodes", len(resources))
+	return resources, nil
+}
+
+// QueryResourcesFromNode sends a get-resources query to a specific node
+func (sm *SerfManager) QueryResourcesFromNode(nodeID string) (*NodeResources, error) {
+	logging.Debug("Querying resources from specific node: %s", nodeID)
+
+	// Check if node exists in our member list
+	_, exists := sm.GetMember(nodeID)
+	if !exists {
+		return nil, fmt.Errorf("node %s not found in cluster", nodeID)
+	}
+
+	// Send query to specific node
+	queryParams := &serf.QueryParam{
+		FilterNodes: []string{nodeID},
+		RequestAck:  true,
+		Timeout:     5 * time.Second,
+	}
+
+	resp, err := sm.serf.Query("get-resources", nil, queryParams)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send get-resources query to node %s: %w", nodeID, err)
+	}
+
+	// Wait for response
+	for response := range resp.ResponseCh() {
+		if response.From == nodeID {
+			nodeResources, err := NodeResourcesFromJSON(response.Payload)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse resources from node %s: %w", nodeID, err)
+			}
+
+			logging.Debug("Received resources from node %s: CPU=%d cores, Memory=%dMB",
+				nodeID, nodeResources.CPUCores, nodeResources.MemoryTotal/(1024*1024))
+			return nodeResources, nil
+		}
+	}
+
+	return nil, fmt.Errorf("no response received from node %s", nodeID)
 }
 
 // Constructs the tags map for this node

@@ -159,3 +159,25 @@ func (s *Server) handleNodeByID(c *gin.Context) {
 func (s *Server) getHandlerNodeByID() gin.HandlerFunc {
 	return handlers.HandleNodeByID(s.serfManager)
 }
+
+// Delegates to handlers.HandleClusterResources
+func (s *Server) handleClusterResources(c *gin.Context) {
+	handler := s.getHandlerClusterResources()
+	handler(c)
+}
+
+// Returns handlers from the handlers package
+func (s *Server) getHandlerClusterResources() gin.HandlerFunc {
+	return handlers.HandleClusterResources(s.serfManager)
+}
+
+// Delegates to handlers.HandleNodeResources
+func (s *Server) handleNodeResources(c *gin.Context) {
+	handler := s.getHandlerNodeResources()
+	handler(c)
+}
+
+// Returns handlers from the handlers package
+func (s *Server) getHandlerNodeResources() gin.HandlerFunc {
+	return handlers.HandleNodeResources(s.serfManager)
+}
