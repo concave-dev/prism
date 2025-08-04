@@ -100,7 +100,7 @@ func (s *Server) handleHealth(c *gin.Context) {
 	handler(c)
 }
 
-// Gets handlers from the handlers package
+// Returns handlers from the handlers package
 func (s *Server) getHandlerHealth() gin.HandlerFunc {
 	return handlers.HandleHealth(version, startTime)
 }
@@ -111,7 +111,7 @@ func (s *Server) handleMembers(c *gin.Context) {
 	handler(c)
 }
 
-// Gets handlers from the handlers package
+// Returns handlers from the handlers package
 func (s *Server) getHandlerMembers() gin.HandlerFunc {
 	return handlers.HandleMembers(s.serfManager)
 }
@@ -122,7 +122,7 @@ func (s *Server) handleStatus(c *gin.Context) {
 	handler(c)
 }
 
-// Gets handlers from the handlers package
+// Returns handlers from the handlers package
 func (s *Server) getHandlerStatus() gin.HandlerFunc {
 	return handlers.HandleStatus(s.serfManager)
 }
@@ -133,7 +133,7 @@ func (s *Server) handleClusterInfo(c *gin.Context) {
 	handler(c)
 }
 
-// Gets handlers from the handlers package
+// Returns handlers from the handlers package
 func (s *Server) getHandlerClusterInfo() gin.HandlerFunc {
 	return handlers.HandleClusterInfo(s.serfManager, version, startTime)
 }
@@ -144,7 +144,7 @@ func (s *Server) handleNodes(c *gin.Context) {
 	handler(c)
 }
 
-// Gets handlers from the handlers package
+// Returns handlers from the handlers package
 func (s *Server) getHandlerNodes() gin.HandlerFunc {
 	return handlers.HandleNodes(s.serfManager)
 }
@@ -155,7 +155,7 @@ func (s *Server) handleNodeByID(c *gin.Context) {
 	handler(c)
 }
 
-// Gets handlers from the handlers package
+// Returns handlers from the handlers package
 func (s *Server) getHandlerNodeByID() gin.HandlerFunc {
 	return handlers.HandleNodeByID(s.serfManager)
 }

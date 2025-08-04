@@ -106,7 +106,7 @@ func RestoreOutput() {
 	cliConfigured = true
 }
 
-// IsConfiguredByCLI returns true if logging has been explicitly configured by CLI tools
+// Returns true if logging has been explicitly configured by CLI tools
 func IsConfiguredByCLI() bool {
 	return cliConfigured
 }

@@ -26,12 +26,12 @@ type NetworkAddress struct {
 	Port int    `validate:"required,min=0,max=65535"` // Built-in range validator
 }
 
-// String returns the address in "host:port" format
+// Returns the address in "host:port" format
 func (na NetworkAddress) String() string {
 	return fmt.Sprintf("%s:%d", na.Host, na.Port)
 }
 
-// ParseBindAddress parses and validates a "host:port" string.
+// Parses and validates a "host:port" string.
 // Returns the validated NetworkAddress or an error.
 func ParseBindAddress(addr string) (*NetworkAddress, error) {
 	if addr == "" {
@@ -61,13 +61,13 @@ func ParseBindAddress(addr string) (*NetworkAddress, error) {
 	return netAddr, nil
 }
 
-// ValidateField validates a single field using built-in validators
+// Validates a single field using built-in validators
 // Example: ValidateField("192.168.1.1", "required,ip")
 func ValidateField(value interface{}, tag string) error {
 	return validate.Var(value, tag)
 }
 
-// ValidateAddressList validates a list of network addresses for cluster joining.
+// Validates a list of network addresses for cluster joining.
 // Multiple addresses provide fault tolerance - if first address is unreachable,
 // the system tries subsequent addresses until connection succeeds.
 func ValidateAddressList(addresses []string) error {

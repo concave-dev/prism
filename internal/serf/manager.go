@@ -286,7 +286,7 @@ func generateNodeID(name, addr string, port int) string {
 	return fmt.Sprintf("%s-%s-%d", name, addr, port)
 }
 
-// parseRoles converts a comma-separated string back to a []string slice.
+// Converts a comma-separated string back to a []string slice.
 // This is needed because Serf tags are map[string]string (string-only),
 // so we must serialize/deserialize arrays to work around this limitation.
 //
@@ -306,7 +306,7 @@ func parseRoles(rolesStr string) []string {
 	return roles
 }
 
-// formatRoles converts a []string slice to a comma-separated string.
+// Converts a []string slice to a comma-separated string.
 // This is needed because Serf tags are map[string]string (string-only),
 // so we must serialize arrays before storing them in tags.
 //
