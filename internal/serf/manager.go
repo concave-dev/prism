@@ -275,8 +275,8 @@ func (sm *SerfManager) buildNodeTags() map[string]string {
 	}
 
 	// Add system tags (+2 capacity is for these)
-	tags["region"] = sm.config.Region            // +1: region identifier
-	tags["roles"] = formatRoles(sm.config.Roles) // +2: formatted role list
+	tags["region"] = sm.config.Region               // +1: region identifier
+	tags["roles"] = serializeRoles(sm.config.Roles) // +2: formatted role list
 
 	return tags
 }
@@ -291,7 +291,7 @@ func constructNodeID(name, addr string, port int) string {
 // so we must serialize/deserialize arrays to work around this limitation.
 //
 // Example: "agent,control,leader" → ["agent", "control", "leader"]
-func parseRoles(rolesStr string) []string {
+func deserializeRoles(rolesStr string) []string {
 	if rolesStr == "" {
 		return []string{}
 	}
@@ -311,7 +311,7 @@ func parseRoles(rolesStr string) []string {
 // so we must serialize arrays before storing them in tags.
 //
 // Example: ["agent", "control", "leader"] → "agent,control,leader"
-func formatRoles(roles []string) string {
+func serializeRoles(roles []string) string {
 	if len(roles) == 0 {
 		return ""
 	}
