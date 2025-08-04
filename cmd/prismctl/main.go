@@ -447,6 +447,59 @@ func (api *PrismAPIClient) GetNodeResources(nodeID string) (*NodeResources, erro
 	return nil, fmt.Errorf("unexpected response format for node resources")
 }
 
+// Resolves a node identifier (supports partial ID matching)
+func resolveNodeIdentifier(apiClient *PrismAPIClient, identifier string) (string, error) {
+	// Get all cluster members to check for partial ID matches
+	members, err := apiClient.GetMembers()
+	if err != nil {
+		return "", fmt.Errorf("failed to get cluster members for ID resolution: %w", err)
+	}
+
+	// Check for partial ID matches (only for identifiers that look like hex)
+	if isHexString(identifier) {
+		var matches []ClusterMember
+		for _, member := range members {
+			if strings.HasPrefix(member.ID, identifier) {
+				matches = append(matches, member)
+			}
+		}
+
+		if len(matches) == 1 {
+			// Unique partial match found
+			if config.Verbose {
+				logging.Info("Resolved partial ID '%s' to full ID '%s' (node: %s)",
+					identifier, matches[0].ID, matches[0].Name)
+			}
+			return matches[0].ID, nil
+		} else if len(matches) > 1 {
+			// Multiple matches - not unique
+			var matchIDs []string
+			for _, match := range matches {
+				matchIDs = append(matchIDs, fmt.Sprintf("%s (%s)", match.ID, match.Name))
+			}
+			return "", fmt.Errorf("partial ID '%s' is not unique, matches multiple nodes:\n  %s",
+				identifier, strings.Join(matchIDs, "\n  "))
+		}
+	}
+
+	// No partial match found, return original identifier
+	// (will be handled by the API as either full ID or node name)
+	return identifier, nil
+}
+
+// Checks if a string contains only hexadecimal characters
+func isHexString(s string) bool {
+	if len(s) == 0 {
+		return false
+	}
+	for _, char := range s {
+		if !((char >= '0' && char <= '9') || (char >= 'a' && char <= 'f') || (char >= 'A' && char <= 'F')) {
+			return false
+		}
+	}
+	return true
+}
+
 // Helper functions to safely extract values from interface{} maps
 func getString(m map[string]interface{}, key string) string {
 	if val, ok := m[key].(string); ok {
@@ -594,14 +647,22 @@ func handleResources(cmd *cobra.Command, args []string) error {
 
 	// Check if specific node was requested
 	if len(args) > 0 {
-		nodeID := args[0]
+		nodeIdentifier := args[0]
 		if config.Verbose {
-			logging.Info("Fetching resources for node '%s' from API server: %s", nodeID, config.APIAddr)
+			logging.Info("Fetching resources for node '%s' from API server: %s", nodeIdentifier, config.APIAddr)
 		}
 
-		// Create API client and get node resources
+		// Create API client
 		apiClient := createAPIClient()
-		resource, err := apiClient.GetNodeResources(nodeID)
+
+		// Resolve partial ID if needed
+		resolvedNodeID, err := resolveNodeIdentifier(apiClient, nodeIdentifier)
+		if err != nil {
+			return err
+		}
+
+		// Get node resources using resolved ID
+		resource, err := apiClient.GetNodeResources(resolvedNodeID)
 		if err != nil {
 			return err
 		}
@@ -638,7 +699,7 @@ func displayMembersFromAPI(members []ClusterMember) {
 	defer w.Flush()
 
 	// Header
-	fmt.Fprintln(w, "NAME\tADDRESS\tROLE\tSTATUS\tREGION\tLAST SEEN")
+	fmt.Fprintln(w, "ID\tNAME\tADDRESS\tROLE\tSTATUS\tREGION\tLAST SEEN")
 
 	// Sort members by name for consistent output
 	sort.Slice(members, func(i, j int) bool {
@@ -659,8 +720,8 @@ func displayMembersFromAPI(members []ClusterMember) {
 
 		lastSeen := formatDuration(time.Since(member.LastSeen))
 
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
-			member.Name, member.Address, role, member.Status, region, lastSeen)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			member.ID, member.Name, member.Address, role, member.Status, region, lastSeen)
 	}
 }
 
@@ -699,7 +760,7 @@ func displayClusterResourcesFromAPI(resources []NodeResources) {
 	defer w.Flush()
 
 	// Header
-	fmt.Fprintln(w, "NAME\tCPU\tMEMORY\tJOBS\tUPTIME\tGOROUTINES")
+	fmt.Fprintln(w, "ID\tNAME\tCPU\tMEMORY\tJOBS\tUPTIME\tGOROUTINES")
 
 	// Sort resources by node name for consistent output
 	sort.Slice(resources, func(i, j int) bool {
@@ -712,7 +773,8 @@ func displayClusterResourcesFromAPI(resources []NodeResources) {
 			resource.MemoryUsedMB, resource.MemoryTotalMB, resource.MemoryUsage)
 		jobs := fmt.Sprintf("%d/%d", resource.CurrentJobs, resource.MaxJobs)
 
-		fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%s\t%d\n",
+		fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%d\n",
+			resource.NodeID,
 			resource.NodeName,
 			resource.CPUCores,
 			memoryWithPercent,

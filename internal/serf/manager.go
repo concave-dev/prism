@@ -4,6 +4,8 @@ package serf
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
@@ -62,10 +64,15 @@ func NewSerfManager(config *ManagerConfig) (*SerfManager, error) {
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
 
+	nodeID, err := generateNodeID()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate node ID: %w", err)
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 
 	manager := &SerfManager{
-		NodeID:   constructNodeID(config.NodeName, config.BindAddr, config.BindPort),
+		NodeID:   nodeID,
 		NodeName: config.NodeName,
 
 		// Channel Buffer Sizing Strategy:
@@ -412,25 +419,32 @@ func (sm *SerfManager) QueryResourcesFromNode(nodeID string) (*NodeResources, er
 
 // Constructs the tags map for this node
 func (sm *SerfManager) buildNodeTags() map[string]string {
-	// Pre-allocate map capacity: user tags + 2 system tags (region, roles)
+	// Pre-allocate map capacity: user tags + 3 system tags (node_id, region, roles)
 	// This avoids memory reallocations when adding the fixed system tags below
-	tags := make(map[string]string, len(sm.config.Tags)+2)
+	tags := make(map[string]string, len(sm.config.Tags)+3)
 
 	// Copy custom tags
 	for k, v := range sm.config.Tags {
 		tags[k] = v
 	}
 
-	// Add system tags (+2 capacity is for these)
-	tags["region"] = sm.config.Region               // +1: region identifier
-	tags["roles"] = serializeRoles(sm.config.Roles) // +2: formatted role list
+	// Add system tags (+3 capacity is for these)
+	tags["node_id"] = sm.NodeID                     // +1: random hex node identifier
+	tags["region"] = sm.config.Region               // +2: region identifier
+	tags["roles"] = serializeRoles(sm.config.Roles) // +3: formatted role list
 
 	return tags
 }
 
-// Creates a unique node identifier
-func constructNodeID(name, addr string, port int) string {
-	return fmt.Sprintf("%s-%s-%d", name, addr, port)
+// Generates a random hex node identifier (like Docker container IDs)
+func generateNodeID() (string, error) {
+	// Generate 6 bytes of random data (12 hex characters, like Docker short IDs)
+	bytes := make([]byte, 6)
+	_, err := rand.Read(bytes)
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(bytes), nil
 }
 
 // Converts a comma-separated string back to a []string slice.

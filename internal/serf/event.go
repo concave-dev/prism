@@ -125,8 +125,15 @@ func (sm *SerfManager) updateMember(member serf.Member) {
 
 // Updates a Prism node's status (alive/failed/left)
 func (sm *SerfManager) updateMemberStatus(member serf.Member, status serf.MemberStatus) {
+	nodeID := member.Tags["node_id"]
+	if nodeID == "" {
+		// Fallback for nodes without node_id tag (shouldn't happen in normal operation)
+		logging.Debug("Member %s missing node_id tag, skipping status update", member.Name)
+		return
+	}
+
 	sm.memberLock.Lock()
-	if node, exists := sm.members[constructNodeID(member.Name, member.Addr.String(), int(member.Port))]; exists {
+	if node, exists := sm.members[nodeID]; exists {
 		node.Status = status
 		if status != serf.StatusAlive {
 			// Don't update LastSeen for failed/left Prism nodes
@@ -139,7 +146,12 @@ func (sm *SerfManager) updateMemberStatus(member serf.Member, status serf.Member
 
 // Removes a Prism node from the cluster tracking
 func (sm *SerfManager) removeMember(member serf.Member) {
-	nodeID := constructNodeID(member.Name, member.Addr.String(), int(member.Port))
+	nodeID := member.Tags["node_id"]
+	if nodeID == "" {
+		// Fallback for nodes without node_id tag (shouldn't happen in normal operation)
+		logging.Debug("Member %s missing node_id tag, skipping removal", member.Name)
+		return
+	}
 
 	sm.memberLock.Lock()
 	delete(sm.members, nodeID)
@@ -148,7 +160,12 @@ func (sm *SerfManager) removeMember(member serf.Member) {
 
 // Converts a serf.Member to a PrismNode
 func (sm *SerfManager) memberFromSerf(member serf.Member) *PrismNode {
-	nodeID := constructNodeID(member.Name, member.Addr.String(), int(member.Port))
+	nodeID := member.Tags["node_id"]
+	if nodeID == "" {
+		// Fallback for nodes without node_id tag (shouldn't happen in normal operation)
+		logging.Debug("Member %s missing node_id tag, using member name as fallback", member.Name)
+		nodeID = member.Name
+	}
 
 	node := &PrismNode{
 		ID:       nodeID,
