@@ -52,13 +52,13 @@ serverless functions, native memory, workflows, and other AI-first primitives.`,
   prismd --bind=0.0.0.0:4200 --role=agent
 
   # Start a control node and join existing cluster  
-  prismd --bind=0.0.0.0:4201 --role=control --join=127.0.0.1:4200
+  prismd --bind=0.0.0.0:4201 --role=control --join=127.0.0.1:4200 --node-name=control-node
 
   # Join with multiple addresses for fault tolerance
   prismd --bind=0.0.0.0:4202 --role=agent --join=node1:4200,node2:4200,node3:4200
 
   # Start control node in specific region
-  prismd --bind=0.0.0.0:4203 --role=control --region=us-west-1 --join=127.0.0.1:4200`,
+  prismd --bind=0.0.0.0:1337 --role=control --region=us-west-1`,
 	PreRunE: validateConfig,
 	RunE:    runDaemon,
 }
