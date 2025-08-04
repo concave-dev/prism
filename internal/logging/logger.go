@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/log"
 )
 
@@ -21,26 +22,58 @@ var (
 	cliConfigured = false
 )
 
-// Logs an informational message in blue
+// setupCustomStyles configures custom colors for log levels
+func setupCustomStyles() *log.Styles {
+	styles := log.DefaultStyles()
+
+	// DEBUG: light purple
+	styles.Levels[log.DebugLevel] = lipgloss.NewStyle().
+		SetString("DEBUG").
+		Foreground(lipgloss.Color("#7F6DFF"))
+
+	// INFO: light blue
+	styles.Levels[log.InfoLevel] = lipgloss.NewStyle().
+		SetString("INFO").
+		Foreground(lipgloss.Color("#42E7FF"))
+
+	// WARN: light yellow
+	styles.Levels[log.WarnLevel] = lipgloss.NewStyle().
+		SetString("WARN").
+		Foreground(lipgloss.Color("#FFE763"))
+
+	// ERROR: light red/pink
+	styles.Levels[log.ErrorLevel] = lipgloss.NewStyle().
+		SetString("ERROR").
+		Foreground(lipgloss.Color("#FF4473"))
+
+	return styles
+}
+
+// init sets up custom colors on package initialization
+func init() {
+	logger.SetStyles(setupCustomStyles())
+}
+
+// Logs an informational message in light blue
 func Info(format string, v ...interface{}) {
 	logger.Info(fmt.Sprintf(format, v...))
 }
 
-// Logs a warning message in yellow
+// Logs a warning message in light yellow
 func Warn(format string, v ...interface{}) {
 	logger.Warn(fmt.Sprintf(format, v...))
 }
 
-// Logs an error message in red
+// Logs an error message in light red
 func Error(format string, v ...interface{}) {
 	logger.Error(fmt.Sprintf(format, v...))
 }
 
-// Logs a success message in green (using Info level with custom styling)
+// Logs a success message in light green (using Info level with custom styling)
 //
 // Since the logging library doesn't have a native SUCCESS level, we "fake" it by:
 // 1. Using INFO level internally (so SUCCESS respects INFO level filtering)
-// 2. Creating a temporary logger with custom styling to display "SUCCESS" instead of "INFO"
+// 2. Creating a temporary logger with custom styling to display "SUCCESS" in light green
 // 3. This ensures SUCCESS messages are suppressed when INFO is disabled
 func Success(format string, v ...interface{}) {
 	// Check if INFO level logs are enabled (Success uses INFO level internally)
@@ -49,19 +82,22 @@ func Success(format string, v ...interface{}) {
 	}
 
 	// Create a temporary logger with custom styling for success messages
-	// We override the INFO level label to display "SUCCESS" instead
-	styles := log.DefaultStyles()
-	styles.Levels[log.InfoLevel] = styles.Levels[log.InfoLevel].SetString("SUCCESS")
+	// We override the INFO level to display "SUCCESS" in light green
+	styles := setupCustomStyles()
+	styles.Levels[log.InfoLevel] = lipgloss.NewStyle().
+		SetString("SUCCESS").
+		Foreground(lipgloss.Color("#60F281")) // Light green
+
 	tempLogger := log.NewWithOptions(os.Stderr, log.Options{
 		ReportTimestamp: true,
 	})
 	tempLogger.SetStyles(styles)
 
-	// Log using INFO level but with "SUCCESS" label
+	// Log using INFO level but with "SUCCESS" label in light green
 	tempLogger.Info(fmt.Sprintf(format, v...))
 }
 
-// Logs a debug message in purple
+// Logs a debug message in light purple
 func Debug(format string, v ...interface{}) {
 	logger.Debug(fmt.Sprintf(format, v...))
 }
@@ -92,6 +128,7 @@ func SetOutput(w *os.File) {
 		logger = log.NewWithOptions(w, log.Options{
 			ReportTimestamp: true,
 		})
+		logger.SetStyles(setupCustomStyles())
 	}
 }
 
@@ -106,6 +143,7 @@ func RestoreOutput() {
 	logger = log.NewWithOptions(os.Stderr, log.Options{
 		ReportTimestamp: true,
 	})
+	logger.SetStyles(setupCustomStyles())
 	logger.SetLevel(log.InfoLevel)
 	cliConfigured = true
 }
