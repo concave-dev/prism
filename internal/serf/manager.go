@@ -41,8 +41,8 @@ type SerfManager struct {
 	// external consumers, preventing deadlocks and ensuring cluster membership
 	// operations continue even if external event handlers are slow or absent.
 
-	EventCh    chan serf.Event // EXTERNAL: Optional event channel for consumers (can be slow/nil)
-	eventQueue chan serf.Event // INTERNAL: Direct from Serf, always processed (never blocks)
+	ConsumerEventCh  chan serf.Event // EXTERNAL: Optional event channel for consumers (can be slow/nil)
+	ingestEventQueue chan serf.Event // INTERNAL: Direct from Serf, always processed (never blocks)
 
 	memberLock sync.RWMutex          // Member tracking
 	members    map[string]*PrismNode // Map of Prism nodes
@@ -75,10 +75,10 @@ func NewSerfManager(config *ManagerConfig) (*SerfManager, error) {
 		NodeName: config.NodeName,
 
 		// Channel Buffer Sizing Strategy:
-		// - EventCh: External consumers may be slow/absent, standard buffer size
-		// - eventQueue: Internal processing priority, 2x larger to prevent Serf blocking
-		EventCh:    make(chan serf.Event, config.EventBufferSize),   // External buffer
-		eventQueue: make(chan serf.Event, config.EventBufferSize*2), // Internal buffer (2x larger)
+		// - ConsumerEventCh: External consumers may be slow/absent, standard buffer size
+		// - ingestEventQueue: Internal processing priority, 2x larger to prevent Serf blocking
+		ConsumerEventCh:  make(chan serf.Event, config.EventBufferSize),   // External buffer
+		ingestEventQueue: make(chan serf.Event, config.EventBufferSize*2), // Internal buffer (2x larger)
 
 		members:    make(map[string]*PrismNode),
 		ctx:        ctx,
@@ -123,10 +123,10 @@ func (sm *SerfManager) Start() error {
 	serfConfig.MemberlistConfig.BindAddr = sm.config.BindAddr
 	serfConfig.MemberlistConfig.BindPort = sm.config.BindPort
 
-	// Producer-Consumer Connection: Serf writes events to our internal eventQueue
+	// Producer-Consumer Connection: Serf writes events to our internal ingestEventQueue
 	// This ensures internal processing (member tracking) always happens, regardless
-	// of external EventCh consumer availability
-	serfConfig.EventCh = sm.eventQueue
+	// of external ConsumerEventCh consumer availability
+	serfConfig.EventCh = sm.ingestEventQueue
 
 	serfConfig.Tags = sm.buildNodeTags()
 

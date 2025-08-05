@@ -22,7 +22,7 @@ func (sm *SerfManager) processEvents() {
 
 	for {
 		select {
-		case event := <-sm.eventQueue:
+		case event := <-sm.ingestEventQueue:
 			// PHASE 1: Internal Processing (ALWAYS happens)
 			// Critical cluster operations: member tracking, failure detection, etc.
 			// This MUST complete regardless of external consumer status
@@ -30,9 +30,9 @@ func (sm *SerfManager) processEvents() {
 
 			// PHASE 2: External Forwarding (OPTIONAL, non-blocking)
 			// Best-effort delivery to external consumers
-			// If EventCh is full/slow, we drop the event to prevent blocking
+			// If ConsumerEventCh is full/slow, we drop the event to prevent blocking
 			select {
-			case sm.EventCh <- event:
+			case sm.ConsumerEventCh <- event:
 				// Successfully forwarded to external consumer
 			default:
 				// External consumer is slow/absent, drop event to prevent blocking
