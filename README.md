@@ -1,5 +1,8 @@
 # Prism
 
+> [!CAUTION]
+> The cluster is not yet stable. Use at your own risk.
+
 Distributed runtime platform for AI agents.
 
 ## Build
@@ -22,3 +25,12 @@ Use the CLI:
 ./bin/prismctl members
 ./bin/prismctl status
 ```
+
+
+## Known Issues
+
+- **Network Connectivity:** Nodes behind NAT or firewalls may fail to join. Ensure the gossip (bind) port is accessible between all nodes.
+- **Split Brain:** Network partitions can result in multiple control nodes. Monitor cluster health and use proper quorum mechanisms.
+- **Resource Synchronization:** Resource state may be inconsistent during network interruptions. Eventual consistency checks are recommended.
+- **No Consensus:** All data is fetched in real-time from Serf without a consensus mechanism, leading to potentially inconsistent cluster state views.
+- **Cluster Sizing:** Use odd numbers of nodes (3, 5, 7, etc.) for optimal stability and conflict resolution. Avoid 2-node clusters due to instability from name conflicts.

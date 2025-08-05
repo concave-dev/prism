@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -28,6 +29,24 @@ const (
 	DefaultAPIPort = 8020             // Default API server port
 	DefaultRole    = "agent"          // Default role
 )
+
+// isAddressInUseError checks if an error is "address already in use" using proper error types
+func isAddressInUseError(err error) bool {
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		return errors.Is(opErr.Err, syscall.EADDRINUSE)
+	}
+	return false
+}
+
+// isConnectionRefusedError checks if an error is "connection refused" using proper error types
+func isConnectionRefusedError(err error) bool {
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		return errors.Is(opErr.Err, syscall.ECONNREFUSED)
+	}
+	return false
+}
 
 // Global configuration
 var config struct {
@@ -95,6 +114,7 @@ func checkExplicitFlags(cmd *cobra.Command) {
 }
 
 // findAvailablePort finds an available port starting from the given port on the specified address.
+// Tests both TCP and UDP availability since Serf uses UDP for gossip protocol.
 // Increments port numbers until an available one is found.
 // Returns the available port or error if none found within reasonable range.
 func findAvailablePort(address string, startPort int) (int, error) {
@@ -102,22 +122,39 @@ func findAvailablePort(address string, startPort int) (int, error) {
 
 	for port := startPort; port < startPort+maxAttempts && port <= 65535; port++ {
 		addr := fmt.Sprintf("%s:%d", address, port)
-		conn, err := net.Listen("tcp", addr)
-		if err == nil {
-			// Port is available
-			conn.Close()
+
+		// Test TCP availability (future Raft compatibility - Raft uses TCP for leader election/log replication)
+		tcpConn, tcpErr := net.Listen("tcp", addr)
+		if tcpErr != nil {
+			if isAddressInUseError(tcpErr) {
+				// Try next port
+				continue
+			}
+			// Some other error (e.g., permission denied, invalid address)
+			return 0, fmt.Errorf("failed to bind TCP to %s: %w", addr, tcpErr)
+		}
+		tcpConn.Close()
+
+		// Test UDP availability (current Serf requirement - uses UDP for gossip protocol)
+		udpAddr, err := net.ResolveUDPAddr("udp", addr)
+		if err != nil {
+			return 0, fmt.Errorf("failed to resolve UDP address %s: %w", addr, err)
+		}
+		udpConn, udpErr := net.ListenUDP("udp", udpAddr)
+		if udpErr == nil {
+			// Both TCP and UDP ports are available
+			udpConn.Close()
 			return port, nil
 		}
 
-		// Check if error is specifically "address already in use"
-		if strings.Contains(err.Error(), "address already in use") ||
-			strings.Contains(err.Error(), "bind: address already in use") {
+		// Check if UDP error is "address already in use"
+		if isAddressInUseError(udpErr) {
 			// Try next port
 			continue
 		}
 
-		// Some other error (e.g., permission denied, invalid address)
-		return 0, fmt.Errorf("failed to bind to %s: %w", addr, err)
+		// Some other UDP error (e.g., permission denied, invalid address)
+		return 0, fmt.Errorf("failed to bind UDP to %s: %w", addr, udpErr)
 	}
 
 	return 0, fmt.Errorf("no available port found in range %d-%d on %s",
@@ -236,8 +273,7 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		testAddr := fmt.Sprintf("%s:%d", config.BindAddr, config.BindPort)
 		conn, err := net.Listen("tcp", testAddr)
 		if err != nil {
-			if strings.Contains(err.Error(), "address already in use") ||
-				strings.Contains(err.Error(), "bind: address already in use") {
+			if isAddressInUseError(err) {
 				return fmt.Errorf("cannot bind to %s: port %d is already in use",
 					config.BindAddr, config.BindPort)
 			}
@@ -284,8 +320,7 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 			testAddr := fmt.Sprintf("%s:%d", config.BindAddr, config.APIPort)
 			conn, err := net.Listen("tcp", testAddr)
 			if err != nil {
-				if strings.Contains(err.Error(), "address already in use") ||
-					strings.Contains(err.Error(), "bind: address already in use") {
+				if isAddressInUseError(err) {
 					return fmt.Errorf("cannot bind API server to %s: port %d is already in use",
 						config.BindAddr, config.APIPort)
 				}
@@ -327,7 +362,7 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 			logging.Error("Failed to join cluster: %v", err)
 
 			// Provide helpful context for connection issues
-			if strings.Contains(err.Error(), "connection refused") {
+			if isConnectionRefusedError(err) {
 				logging.Error("TIP: Check if the target node(s) are running and accessible")
 				logging.Error("     You can verify with: prismctl members")
 			}
