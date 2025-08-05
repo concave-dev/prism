@@ -213,6 +213,21 @@ type NodeResources struct {
 	MemoryAvailableMB int `json:"memoryAvailableMB"`
 }
 
+// structuredLogger implements resty.Logger interface and routes logs through our structured logging
+type structuredLogger struct{}
+
+func (s structuredLogger) Errorf(format string, v ...interface{}) {
+	logging.Error(format, v...)
+}
+
+func (s structuredLogger) Warnf(format string, v ...interface{}) {
+	logging.Warn(format, v...)
+}
+
+func (s structuredLogger) Debugf(format string, v ...interface{}) {
+	logging.Debug(format, v...)
+}
+
 // PrismAPIClient wraps Resty client with Prism-specific functionality
 type PrismAPIClient struct {
 	client  *resty.Client
@@ -220,10 +235,13 @@ type PrismAPIClient struct {
 }
 
 // NewPrismAPIClient creates a new API client with Resty
-func NewPrismAPIClient(apiAddr string, timeout int, verbose bool) *PrismAPIClient {
+func NewPrismAPIClient(apiAddr string, timeout int) *PrismAPIClient {
 	client := resty.New()
 
 	baseURL := fmt.Sprintf("http://%s/api/v1", apiAddr)
+
+	// Route Resty's internal logging through our structured logging system
+	client.SetLogger(structuredLogger{})
 
 	// Configure client
 	client.
@@ -233,31 +251,32 @@ func NewPrismAPIClient(apiAddr string, timeout int, verbose bool) *PrismAPIClien
 		SetHeader("Content-Type", "application/json").
 		SetHeader("User-Agent", fmt.Sprintf("prismctl/%s", Version))
 
-	// Add retry mechanism
+	// Add retry mechanism with custom retry conditions
 	client.
 		SetRetryCount(3).
 		SetRetryWaitTime(1 * time.Second).
-		SetRetryMaxWaitTime(5 * time.Second)
+		SetRetryMaxWaitTime(5 * time.Second).
+		AddRetryCondition(func(r *resty.Response, err error) bool {
+			// Only retry on connection errors, not HTTP errors
+			return err != nil
+		})
 
-	// Enable debug logging if verbose
-	if verbose {
-		client.SetDebug(true)
-	}
-
-	// Add request/response middleware for logging
+	// Custom request logging using structured logging
 	client.OnBeforeRequest(func(c *resty.Client, req *resty.Request) error {
-		if verbose {
-			logging.Info("Making API request: %s %s", req.Method, req.URL)
-		}
+		logging.Debug("Making API request: %s %s", req.Method, req.URL)
 		return nil
 	})
 
+	// Custom response logging using structured logging
 	client.OnAfterResponse(func(c *resty.Client, resp *resty.Response) error {
-		if verbose {
-			logging.Info("API response: %d %s (took %v)",
-				resp.StatusCode(), resp.Status(), resp.Time())
-		}
+		logging.Debug("API response: %d %s (took %v)",
+			resp.StatusCode(), resp.Status(), resp.Time())
 		return nil
+	})
+
+	// Custom error logging using structured logging
+	client.OnError(func(req *resty.Request, err error) {
+		logging.Debug("API request failed: %s %s - %v", req.Method, req.URL, err)
 	})
 
 	return &PrismAPIClient{
@@ -275,11 +294,14 @@ func (api *PrismAPIClient) GetMembers() ([]ClusterMember, error) {
 		Get("/cluster/members")
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to API server: %w\nMake sure a Prism daemon with API server is running at %s", err, api.baseURL)
+		logging.Error("Failed to connect to API server: %v", err)
+		logging.Error("Make sure a Prism daemon with API server is running at %s", api.baseURL)
+		return nil, fmt.Errorf("connection failed")
 	}
 
 	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode(), resp.String())
+		logging.Error("API request failed with status %d: %s", resp.StatusCode(), resp.String())
+		return nil, fmt.Errorf("API request failed")
 	}
 
 	// Parse members from the response data
@@ -313,11 +335,14 @@ func (api *PrismAPIClient) GetStatus() (*ClusterStatus, error) {
 		Get("/cluster/status")
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to API server: %w\nMake sure a Prism daemon with API server is running at %s", err, api.baseURL)
+		logging.Error("Failed to connect to API server: %v", err)
+		logging.Error("Make sure a Prism daemon with API server is running at %s", api.baseURL)
+		return nil, fmt.Errorf("connection failed")
 	}
 
 	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode(), resp.String())
+		logging.Error("API request failed with status %d: %s", resp.StatusCode(), resp.String())
+		return nil, fmt.Errorf("API request failed")
 	}
 
 	// Parse status from the response data
@@ -341,11 +366,14 @@ func (api *PrismAPIClient) GetClusterResources() ([]NodeResources, error) {
 		Get("/cluster/resources")
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to API server: %w\nMake sure a Prism daemon with API server is running at %s", err, api.baseURL)
+		logging.Error("Failed to connect to API server: %v", err)
+		logging.Error("Make sure a Prism daemon with API server is running at %s", api.baseURL)
+		return nil, fmt.Errorf("connection failed")
 	}
 
 	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode(), resp.String())
+		logging.Error("API request failed with status %d: %s", resp.StatusCode(), resp.String())
+		return nil, fmt.Errorf("API request failed")
 	}
 
 	// Parse resources from the response data
@@ -397,15 +425,19 @@ func (api *PrismAPIClient) GetNodeResources(nodeID string) (*NodeResources, erro
 		Get(fmt.Sprintf("/nodes/%s/resources", nodeID))
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to API server: %w\nMake sure a Prism daemon with API server is running at %s", err, api.baseURL)
+		logging.Error("Failed to connect to API server: %v", err)
+		logging.Error("Make sure a Prism daemon with API server is running at %s", api.baseURL)
+		return nil, fmt.Errorf("connection failed")
 	}
 
 	if resp.StatusCode() == 404 {
-		return nil, fmt.Errorf("node '%s' not found in cluster", nodeID)
+		logging.Error("Node '%s' not found in cluster", nodeID)
+		return nil, fmt.Errorf("node not found")
 	}
 
 	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode(), resp.String())
+		logging.Error("API request failed with status %d: %s", resp.StatusCode(), resp.String())
+		return nil, fmt.Errorf("API request failed")
 	}
 
 	// Parse resource from the response data
@@ -462,10 +494,8 @@ func resolveNodeIdentifier(apiClient *PrismAPIClient, identifier string) (string
 
 		if len(matches) == 1 {
 			// Unique partial match found
-			if config.Verbose {
-				logging.Info("Resolved partial ID '%s' to full ID '%s' (node: %s)",
-					identifier, matches[0].ID, matches[0].Name)
-			}
+			logging.Info("Resolved partial ID '%s' to full ID '%s' (node: %s)",
+				identifier, matches[0].ID, matches[0].Name)
 			return matches[0].ID, nil
 		} else if len(matches) > 1 {
 			// Multiple matches - not unique
@@ -473,8 +503,11 @@ func resolveNodeIdentifier(apiClient *PrismAPIClient, identifier string) (string
 			for _, match := range matches {
 				matchIDs = append(matchIDs, fmt.Sprintf("%s (%s)", match.ID, match.Name))
 			}
-			return "", fmt.Errorf("partial ID '%s' is not unique, matches multiple nodes:\n  %s",
-				identifier, strings.Join(matchIDs, "\n  "))
+			logging.Error("Partial ID '%s' is not unique, matches multiple nodes:", identifier)
+			for _, matchID := range matchIDs {
+				logging.Error("  %s", matchID)
+			}
+			return "", fmt.Errorf("partial ID not unique")
 		}
 	}
 
@@ -590,13 +623,13 @@ func getUint32(m map[string]interface{}, key string) uint32 {
 
 // setupLogging sets up logging based on verbose flag and log level
 func setupLogging() {
-	// Configure our application logging level first
-	logging.SetLevel(config.LogLevel)
-
 	if config.Verbose {
-		// Show verbose output - restore normal logging
+		// Show verbose output - restore normal logging and enable DEBUG level
 		logging.RestoreOutput()
+		logging.SetLevel("DEBUG")
 	} else {
+		// Configure our application logging level first
+		logging.SetLevel(config.LogLevel)
 		// Suppress verbose output by default
 		logging.SuppressOutput()
 	}
@@ -604,16 +637,14 @@ func setupLogging() {
 
 // createAPIClient creates a new Prism API client
 func createAPIClient() *PrismAPIClient {
-	return NewPrismAPIClient(config.APIAddr, config.Timeout, config.Verbose)
+	return NewPrismAPIClient(config.APIAddr, config.Timeout)
 }
 
 // handleMembers handles the members subcommand
 func handleMembers(cmd *cobra.Command, args []string) error {
 	setupLogging()
 
-	if config.Verbose {
-		logging.Info("Fetching cluster members from API server: %s", config.APIAddr)
-	}
+	logging.Info("Fetching cluster members from API server: %s", config.APIAddr)
 
 	// Create API client and get members
 	apiClient := createAPIClient()
@@ -623,6 +654,7 @@ func handleMembers(cmd *cobra.Command, args []string) error {
 	}
 
 	displayMembersFromAPI(members)
+	logging.Success("Successfully retrieved %d cluster members", len(members))
 	return nil
 }
 
@@ -630,9 +662,7 @@ func handleMembers(cmd *cobra.Command, args []string) error {
 func handleStatus(cmd *cobra.Command, args []string) error {
 	setupLogging()
 
-	if config.Verbose {
-		logging.Info("Fetching cluster status from API server: %s", config.APIAddr)
-	}
+	logging.Info("Fetching cluster status from API server: %s", config.APIAddr)
 
 	// Create API client and get status
 	apiClient := createAPIClient()
@@ -642,6 +672,7 @@ func handleStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	displayStatusFromAPI(*status)
+	logging.Success("Successfully retrieved cluster status (%d total nodes)", status.TotalNodes)
 	return nil
 }
 
@@ -652,9 +683,7 @@ func handleResources(cmd *cobra.Command, args []string) error {
 	// Check if specific node was requested
 	if len(args) > 0 {
 		nodeIdentifier := args[0]
-		if config.Verbose {
-			logging.Info("Fetching resources for node '%s' from API server: %s", nodeIdentifier, config.APIAddr)
-		}
+		logging.Info("Fetching resources for node '%s' from API server: %s", nodeIdentifier, config.APIAddr)
 
 		// Create API client
 		apiClient := createAPIClient()
@@ -672,13 +701,12 @@ func handleResources(cmd *cobra.Command, args []string) error {
 		}
 
 		displayNodeResourceFromAPI(*resource)
+		logging.Success("Successfully retrieved resources for node '%s'", resource.NodeName)
 		return nil
 	}
 
 	// Get all cluster resources
-	if config.Verbose {
-		logging.Info("Fetching cluster resources from API server: %s", config.APIAddr)
-	}
+	logging.Info("Fetching cluster resources from API server: %s", config.APIAddr)
 
 	// Create API client and get cluster resources
 	apiClient := createAPIClient()
@@ -688,6 +716,7 @@ func handleResources(cmd *cobra.Command, args []string) error {
 	}
 
 	displayClusterResourcesFromAPI(resources)
+	logging.Success("Successfully retrieved resources for %d cluster nodes", len(resources))
 	return nil
 }
 
