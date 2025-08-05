@@ -63,7 +63,7 @@ type SerfManager struct {
 	members    map[string]*PrismNode // Map of Prism nodes
 	ctx        context.Context       // Context
 	cancel     context.CancelFunc    // Cancel function
-	shutdownCh chan struct{}         // Shutdown channel
+	shutdownCh chan struct{}         // Shutdown channel (future use)
 	wg         sync.WaitGroup        // Wait group
 	config     *ManagerConfig        // Manager Configuration
 }
@@ -279,7 +279,7 @@ func (sm *SerfManager) GetMember(nodeID string) (*PrismNode, bool) {
 	return sm.copyPrismNode(member), true
 }
 
-// copyPrismNode creates a deep copy of a PrismNode to prevent external modification.
+// copyPrismNode creates a deep copy of a PrismNode to prevent external modifications and race conditions.
 // copyPrismNode only needs to manually copy reference types (Tags, Roles); value types are copied by *node.
 func (sm *SerfManager) copyPrismNode(node *PrismNode) *PrismNode {
 	// Shallow copy handles all value types (ID, Name, Addr, Port, Status, LastSeen)
