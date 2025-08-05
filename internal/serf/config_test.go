@@ -1,6 +1,7 @@
 package serf
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -463,5 +464,130 @@ func BenchmarkValidateConfig_Invalid(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = validateConfig(config) // We expect this to return an error
+	}
+}
+
+// TestValidateConfig_ReservedTags tests that reserved tag names are rejected
+func TestValidateConfig_ReservedTags(t *testing.T) {
+	baseConfig := &ManagerConfig{
+		NodeName:        "test-node",
+		BindAddr:        "127.0.0.1",
+		BindPort:        4200,
+		EventBufferSize: 1024,
+		JoinRetries:     3,
+		JoinTimeout:     30 * time.Second,
+		LogLevel:        "INFO",
+		Roles:           []string{"agent"},
+	}
+
+	tests := []struct {
+		name          string
+		tags          map[string]string
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name:        "Valid custom tags",
+			tags:        map[string]string{"env": "prod", "region": "us-west"},
+			expectError: false,
+		},
+		{
+			name:          "Reserved tag: node_id",
+			tags:          map[string]string{"node_id": "custom-id"},
+			expectError:   true,
+			errorContains: "tag name 'node_id' is reserved",
+		},
+		{
+			name:          "Reserved tag: roles",
+			tags:          map[string]string{"roles": "custom-roles"},
+			expectError:   true,
+			errorContains: "tag name 'roles' is reserved",
+		},
+		{
+			name:          "Multiple reserved tags",
+			tags:          map[string]string{"node_id": "id", "roles": "role"},
+			expectError:   true,
+			errorContains: "is reserved",
+		},
+		{
+			name:          "Mixed valid and reserved tags",
+			tags:          map[string]string{"env": "prod", "node_id": "id"},
+			expectError:   true,
+			errorContains: "tag name 'node_id' is reserved",
+		},
+		{
+			name:        "Empty tags",
+			tags:        map[string]string{},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := *baseConfig // Copy base config
+			config.Tags = tt.tags
+
+			err := validateConfig(&config)
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Expected error for reserved tag, but got none")
+					return
+				}
+				if tt.errorContains != "" && !strings.Contains(err.Error(), tt.errorContains) {
+					t.Errorf("Expected error to contain '%s', got: %v", tt.errorContains, err)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Expected no error for valid tags, got: %v", err)
+				}
+			}
+		})
+	}
+}
+
+// TestNewSerfManager_ReservedTags tests that NewSerfManager rejects reserved tags
+func TestNewSerfManager_ReservedTags(t *testing.T) {
+	// Test that NewSerfManager rejects config with reserved tag names
+	config := DefaultManagerConfig()
+	config.NodeName = "test-node"
+	config.Tags["node_id"] = "custom-node-id" // Reserved tag should be rejected
+
+	_, err := NewSerfManager(config)
+	if err == nil {
+		t.Fatal("Expected NewSerfManager to reject config with reserved 'node_id' tag, but it didn't")
+	}
+
+	if !strings.Contains(err.Error(), "node_id") || !strings.Contains(err.Error(), "reserved") {
+		t.Errorf("Expected error message to mention 'node_id' and 'reserved', got: %v", err)
+	}
+
+	// Test with roles tag too
+	config2 := DefaultManagerConfig()
+	config2.NodeName = "test-node-2"
+	config2.Tags["roles"] = "custom-roles" // Reserved tag should be rejected
+
+	_, err2 := NewSerfManager(config2)
+	if err2 == nil {
+		t.Fatal("Expected NewSerfManager to reject config with reserved 'roles' tag, but it didn't")
+	}
+
+	if !strings.Contains(err2.Error(), "roles") || !strings.Contains(err2.Error(), "reserved") {
+		t.Errorf("Expected error message to mention 'roles' and 'reserved', got: %v", err2)
+	}
+
+	// Test that valid tags work fine
+	config3 := DefaultManagerConfig()
+	config3.NodeName = "test-node-3"
+	config3.Tags["env"] = "production"
+	config3.Tags["region"] = "us-east"
+
+	manager, err3 := NewSerfManager(config3)
+	if err3 != nil {
+		t.Fatalf("Expected NewSerfManager to accept valid tags, but got error: %v", err3)
+	}
+
+	if manager == nil {
+		t.Fatal("Expected NewSerfManager to return non-nil manager for valid config")
 	}
 }

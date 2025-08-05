@@ -53,5 +53,28 @@ func validateConfig(config *ManagerConfig) error {
 		return fmt.Errorf("event buffer size must be positive, got: %d", config.EventBufferSize)
 	}
 
+	// Validate tags don't use reserved names
+	if err := validateTags(config.Tags); err != nil {
+		return fmt.Errorf("invalid tags: %w", err)
+	}
+
+	return nil
+}
+
+// validateTags validates that user-provided tags don't use reserved names
+func validateTags(tags map[string]string) error {
+	// Define reserved tag names that are used by the system
+	reservedTags := map[string]bool{
+		"node_id": true,
+		"roles":   true,
+	}
+
+	// Check each user tag against reserved names
+	for tagName := range tags {
+		if reservedTags[tagName] {
+			return fmt.Errorf("tag name '%s' is reserved and cannot be used", tagName)
+		}
+	}
+
 	return nil
 }
