@@ -7,15 +7,17 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/log"
 )
 
 var (
-	// Default logger instance with timestamp enabled
+	// Default logger instance with readable timestamp format
 	logger = log.NewWithOptions(os.Stderr, log.Options{
 		ReportTimestamp: true,
+		TimeFormat:      time.RFC3339,
 	})
 
 	// Track if logging has been explicitly configured by CLI tools
@@ -90,6 +92,7 @@ func Success(format string, v ...interface{}) {
 
 	tempLogger := log.NewWithOptions(os.Stderr, log.Options{
 		ReportTimestamp: true,
+		TimeFormat:      time.RFC3339,
 	})
 	tempLogger.SetStyles(styles)
 
@@ -127,6 +130,7 @@ func SetOutput(w *os.File) {
 	} else {
 		logger = log.NewWithOptions(w, log.Options{
 			ReportTimestamp: true,
+			TimeFormat:      time.RFC3339,
 		})
 		logger.SetStyles(setupCustomStyles())
 	}
@@ -142,6 +146,7 @@ func SuppressOutput() {
 func RestoreOutput() {
 	logger = log.NewWithOptions(os.Stderr, log.Options{
 		ReportTimestamp: true,
+		TimeFormat:      time.RFC3339,
 	})
 	logger.SetStyles(setupCustomStyles())
 	logger.SetLevel(log.InfoLevel)
