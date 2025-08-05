@@ -7,7 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Provides request logging
+// loggingMiddleware provides request logging
 func (s *Server) loggingMiddleware() gin.HandlerFunc {
 	return gin.LoggerWithFormatter(func(param gin.LogFormatterParams) string {
 		// Log using our custom logger
@@ -26,7 +26,7 @@ func (s *Server) loggingMiddleware() gin.HandlerFunc {
 	})
 }
 
-// Provides CORS headers
+// corsMiddleware provides CORS headers
 func (s *Server) corsMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Header("Access-Control-Allow-Origin", "*")

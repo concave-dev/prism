@@ -88,13 +88,13 @@ func init() {
 		"Log level: DEBUG, INFO, WARN, ERROR")
 }
 
-// Checks if flags were explicitly set by the user
+// checkExplicitFlags checks if flags were explicitly set by the user
 func checkExplicitFlags(cmd *cobra.Command) {
 	config.bindExplicitlySet = cmd.Flags().Changed("bind")
 	config.apiPortExplicitlySet = cmd.Flags().Changed("api-port")
 }
 
-// Finds an available port starting from the given port on the specified address.
+// findAvailablePort finds an available port starting from the given port on the specified address.
 // Increments port numbers until an available one is found.
 // Returns the available port or error if none found within reasonable range.
 func findAvailablePort(address string, startPort int) (int, error) {
@@ -124,7 +124,7 @@ func findAvailablePort(address string, startPort int) (int, error) {
 		startPort, startPort+maxAttempts-1, address)
 }
 
-// Validates configuration before running
+// validateConfig validates configuration before running
 func validateConfig(cmd *cobra.Command, args []string) error {
 	// Check which flags were explicitly set by user
 	checkExplicitFlags(cmd)
@@ -197,7 +197,7 @@ func validateConfig(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// Converts daemon config to SerfManager config
+// buildSerfConfig converts daemon config to SerfManager config
 func buildSerfConfig() *serf.ManagerConfig {
 	serfConfig := serf.DefaultManagerConfig()
 
@@ -221,7 +221,7 @@ func buildSerfConfig() *serf.ManagerConfig {
 	return serfConfig
 }
 
-// Runs the daemon with graceful shutdown handling
+// runDaemon runs the daemon with graceful shutdown handling
 func runDaemon(cmd *cobra.Command, args []string) error {
 	logging.Info("Starting Prism daemon v%s", Version)
 	logging.Info("Node: %s, Role: %s", config.NodeName, config.Role)
@@ -388,7 +388,7 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// Main entry point
+// main is the main entry point
 func main() {
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)

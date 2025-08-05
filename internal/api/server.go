@@ -31,7 +31,7 @@ type ServerConfig struct {
 	SerfManager *serf.SerfManager // Reference to cluster manager
 }
 
-// Creates a new Prism API server instance
+// NewServer creates a new Prism API server instance
 func NewServer(config *ServerConfig) *Server {
 	// Set Gin to release mode for production
 	gin.SetMode(gin.ReleaseMode)
@@ -43,7 +43,7 @@ func NewServer(config *ServerConfig) *Server {
 	}
 }
 
-// Starts the Prism API server
+// Start starts the Prism API server
 func (s *Server) Start() error {
 	logging.Info("Starting HTTP API server on %s:%d", s.bindAddr, s.bindPort)
 
@@ -86,7 +86,7 @@ func (s *Server) Start() error {
 	return nil
 }
 
-// Gracefully shuts down the HTTP server
+// Shutdown gracefully shuts down the HTTP server
 func (s *Server) Shutdown(ctx context.Context) error {
 	logging.Info("Shutting down HTTP API server...")
 
@@ -102,90 +102,90 @@ var (
 	version   = "0.1.0-dev" // Version information
 )
 
-// Delegates to handlers.HandleHealth
+// handleHealth delegates to handlers.HandleHealth
 func (s *Server) handleHealth(c *gin.Context) {
 	handler := s.getHandlerHealth()
 	handler(c)
 }
 
-// Health endpoint handler factory
+// getHandlerHealth is a health endpoint handler factory
 func (s *Server) getHandlerHealth() gin.HandlerFunc {
 	return handlers.HandleHealth(version, startTime)
 }
 
-// Delegates to handlers.HandleMembers
+// handleMembers delegates to handlers.HandleMembers
 func (s *Server) handleMembers(c *gin.Context) {
 	handler := s.getHandlerMembers()
 	handler(c)
 }
 
-// Members endpoint handler factory
+// getHandlerMembers is a members endpoint handler factory
 func (s *Server) getHandlerMembers() gin.HandlerFunc {
 	return handlers.HandleMembers(s.serfManager)
 }
 
-// Delegates to handlers.HandleStatus
+// handleStatus delegates to handlers.HandleStatus
 func (s *Server) handleStatus(c *gin.Context) {
 	handler := s.getHandlerStatus()
 	handler(c)
 }
 
-// Status endpoint handler factory
+// getHandlerStatus is a status endpoint handler factory
 func (s *Server) getHandlerStatus() gin.HandlerFunc {
 	return handlers.HandleStatus(s.serfManager)
 }
 
-// Delegates to handlers.HandleClusterInfo
+// handleClusterInfo delegates to handlers.HandleClusterInfo
 func (s *Server) handleClusterInfo(c *gin.Context) {
 	handler := s.getHandlerClusterInfo()
 	handler(c)
 }
 
-// Cluster info endpoint handler factory
+// getHandlerClusterInfo is a cluster info endpoint handler factory
 func (s *Server) getHandlerClusterInfo() gin.HandlerFunc {
 	return handlers.HandleClusterInfo(s.serfManager, version, startTime)
 }
 
-// Delegates to handlers.HandleNodes
+// handleNodes delegates to handlers.HandleNodes
 func (s *Server) handleNodes(c *gin.Context) {
 	handler := s.getHandlerNodes()
 	handler(c)
 }
 
-// Nodes endpoint handler factory
+// getHandlerNodes is a nodes endpoint handler factory
 func (s *Server) getHandlerNodes() gin.HandlerFunc {
 	return handlers.HandleNodes(s.serfManager)
 }
 
-// Delegates to handlers.HandleNodeByID
+// handleNodeByID delegates to handlers.HandleNodeByID
 func (s *Server) handleNodeByID(c *gin.Context) {
 	handler := s.getHandlerNodeByID()
 	handler(c)
 }
 
-// Node by ID endpoint handler factory
+// getHandlerNodeByID is a node by ID endpoint handler factory
 func (s *Server) getHandlerNodeByID() gin.HandlerFunc {
 	return handlers.HandleNodeByID(s.serfManager)
 }
 
-// Delegates to handlers.HandleClusterResources
+// handleClusterResources delegates to handlers.HandleClusterResources
 func (s *Server) handleClusterResources(c *gin.Context) {
 	handler := s.getHandlerClusterResources()
 	handler(c)
 }
 
-// Cluster resources endpoint handler factory
+// getHandlerClusterResources is a cluster resources endpoint handler factory
 func (s *Server) getHandlerClusterResources() gin.HandlerFunc {
 	return handlers.HandleClusterResources(s.serfManager)
 }
 
-// Delegates to handlers.HandleNodeResources
+// handleNodeResources delegates to handlers.HandleNodeResources
 func (s *Server) handleNodeResources(c *gin.Context) {
 	handler := s.getHandlerNodeResources()
 	handler(c)
 }
 
-// Node resources endpoint handler factory
+// getHandlerNodeResources is a node resources endpoint handler factory
 func (s *Server) getHandlerNodeResources() gin.HandlerFunc {
 	return handlers.HandleNodeResources(s.serfManager)
 }

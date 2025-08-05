@@ -9,7 +9,7 @@ import (
 	"github.com/charmbracelet/log"
 )
 
-// Test helper to capture log output at specific level
+// captureLogOutputAtLevel is a test helper to capture log output at specific level
 func captureLogOutputAtLevel(level string, fn func()) string {
 	// Create a buffer to capture output
 	var buf bytes.Buffer
@@ -34,12 +34,12 @@ func captureLogOutputAtLevel(level string, fn func()) string {
 	return strings.TrimSpace(buf.String())
 }
 
-// Test helper to capture log output (DEBUG level for basic testing)
+// captureLogOutput is a test helper to capture log output (DEBUG level for basic testing)
 func captureLogOutput(fn func()) string {
 	return captureLogOutputAtLevel("DEBUG", fn)
 }
 
-// Test logging functions at different levels
+// TestLogLevels tests logging functions at different levels
 func TestLogLevels(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -90,7 +90,7 @@ func TestLogLevels(t *testing.T) {
 	}
 }
 
-// Test logging with format strings
+// TestLogFormatting tests logging with format strings
 func TestLogFormatting(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -133,7 +133,7 @@ func TestLogFormatting(t *testing.T) {
 	}
 }
 
-// Test log level filtering
+// TestLogLevelFiltering tests log level filtering
 func TestLogLevelFiltering(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -200,7 +200,7 @@ func TestLogLevelFiltering(t *testing.T) {
 	}
 }
 
-// Test Success function behavior (uses INFO level internally)
+// TestSuccessFunction tests Success function behavior (uses INFO level internally)
 // Note: Success creates its own logger that writes to stderr, so we test by level behavior
 func TestSuccessFunction(t *testing.T) {
 	t.Run("Success respects log levels", func(t *testing.T) {
@@ -227,7 +227,7 @@ func TestSuccessFunction(t *testing.T) {
 	})
 }
 
-// Test SetLevel function with various inputs
+// TestSetLevel tests SetLevel function with various inputs
 func TestSetLevel(t *testing.T) {
 	// Test valid levels by checking expected behavior
 	tests := []struct {
@@ -285,7 +285,7 @@ func TestSetLevel(t *testing.T) {
 	}
 }
 
-// Test CLI configuration tracking
+// TestCLIConfiguration tests CLI configuration tracking
 func TestCLIConfiguration(t *testing.T) {
 	// Test that SuppressOutput marks as CLI configured
 	t.Run("SuppressOutput marks as CLI configured", func(t *testing.T) {
@@ -320,7 +320,7 @@ func TestCLIConfiguration(t *testing.T) {
 	})
 }
 
-// Test SetOutput function
+// TestSetOutput tests SetOutput function
 func TestSetOutput(t *testing.T) {
 	t.Run("SetOutput with nil suppresses logs", func(t *testing.T) {
 		// Save original logger
@@ -375,7 +375,7 @@ func TestSetOutput(t *testing.T) {
 	})
 }
 
-// Test SuppressOutput function
+// TestSuppressOutput tests SuppressOutput function
 func TestSuppressOutput(t *testing.T) {
 	// Save original logger
 	originalLogger := logger
@@ -402,7 +402,7 @@ func TestSuppressOutput(t *testing.T) {
 	logger = originalLogger
 }
 
-// Benchmark logging performance
+// BenchmarkInfo benchmarks logging performance
 func BenchmarkInfo(b *testing.B) {
 	SetLevel("INFO")
 
@@ -412,6 +412,7 @@ func BenchmarkInfo(b *testing.B) {
 	}
 }
 
+// BenchmarkInfoSuppressed benchmarks logging performance when suppressed
 func BenchmarkInfoSuppressed(b *testing.B) {
 	SetLevel("ERROR") // Suppress INFO messages
 
@@ -421,6 +422,7 @@ func BenchmarkInfoSuppressed(b *testing.B) {
 	}
 }
 
+// BenchmarkDebug benchmarks debug logging performance
 func BenchmarkDebug(b *testing.B) {
 	SetLevel("DEBUG")
 

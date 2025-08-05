@@ -20,7 +20,7 @@ type ManagerConfig struct {
 	LogLevel        string            // Log level
 }
 
-// Returns a default configuration for SerfManager
+// DefaultManagerConfig returns a default configuration for SerfManager
 func DefaultManagerConfig() *ManagerConfig {
 	return &ManagerConfig{
 		BindAddr:        "127.0.0.1",
@@ -34,7 +34,7 @@ func DefaultManagerConfig() *ManagerConfig {
 	}
 }
 
-// Validates manager configuration
+// validateConfig validates manager configuration
 func validateConfig(config *ManagerConfig) error {
 	if config.NodeName == "" {
 		return fmt.Errorf("node name cannot be empty")

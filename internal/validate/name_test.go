@@ -4,6 +4,7 @@ import (
 	"testing"
 )
 
+// TestNodeNameFormat tests NodeNameFormat function
 func TestNodeNameFormat(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -169,7 +170,7 @@ func TestNodeNameFormat(t *testing.T) {
 	}
 }
 
-// Test specific error messages
+// TestNodeNameFormatErrorMessages tests specific error messages
 func TestNodeNameFormatErrorMessages(t *testing.T) {
 	tests := []struct {
 		input            string
@@ -218,7 +219,7 @@ func TestNodeNameFormatErrorMessages(t *testing.T) {
 	}
 }
 
-// Benchmark the validation function
+// BenchmarkNodeNameFormat benchmarks the validation function
 func BenchmarkNodeNameFormat(b *testing.B) {
 	testNames := []string{
 		"valid-name",
@@ -237,11 +238,12 @@ func BenchmarkNodeNameFormat(b *testing.B) {
 	}
 }
 
-// Helper function to check if a string contains a substring
+// containsSubstring is a helper function to check if a string contains a substring
 func containsSubstring(s, substr string) bool {
 	return len(s) >= len(substr) && findSubstring(s, substr)
 }
 
+// findSubstring is a helper to find substring (simple implementation)
 func findSubstring(s, substr string) bool {
 	if len(substr) == 0 {
 		return true

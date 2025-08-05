@@ -4,13 +4,13 @@ import (
 	"testing"
 )
 
-// Test cases for ParseBindAddress function
+// TestParseBindAddress tests ParseBindAddress function
 func TestParseBindAddress(t *testing.T) {
 	tests := []struct {
-		name        string
-		input       string
-		expectError bool
-		expectedIP  string
+		name         string
+		input        string
+		expectError  bool
+		expectedIP   string
 		expectedPort int
 	}{
 		{
@@ -49,44 +49,44 @@ func TestParseBindAddress(t *testing.T) {
 			expectedPort: 1,
 		},
 		{
-			name:         "empty address",
-			input:        "",
-			expectError:  true,
+			name:        "empty address",
+			input:       "",
+			expectError: true,
 		},
 		{
-			name:         "missing port",
-			input:        "192.168.1.1",
-			expectError:  true,
+			name:        "missing port",
+			input:       "192.168.1.1",
+			expectError: true,
 		},
 		{
-			name:         "invalid IP address",
-			input:        "999.999.999.999:8080",
-			expectError:  true,
+			name:        "invalid IP address",
+			input:       "999.999.999.999:8080",
+			expectError: true,
 		},
 		{
-			name:         "invalid port - too high",
-			input:        "192.168.1.1:99999",
-			expectError:  true,
+			name:        "invalid port - too high",
+			input:       "192.168.1.1:99999",
+			expectError: true,
 		},
 		{
-			name:         "invalid port - negative",
-			input:        "192.168.1.1:-1",
-			expectError:  true,
+			name:        "invalid port - negative",
+			input:       "192.168.1.1:-1",
+			expectError: true,
 		},
 		{
-			name:         "invalid port - not a number",
-			input:        "192.168.1.1:abc",
-			expectError:  true,
+			name:        "invalid port - not a number",
+			input:       "192.168.1.1:abc",
+			expectError: true,
 		},
 		{
-			name:         "malformed address - multiple colons",
-			input:        "192.168.1.1:8080:extra",
-			expectError:  true,
+			name:        "malformed address - multiple colons",
+			input:       "192.168.1.1:8080:extra",
+			expectError: true,
 		},
 		{
-			name:         "hostname instead of IP",
-			input:        "localhost:8080",
-			expectError:  true,
+			name:        "hostname instead of IP",
+			input:       "localhost:8080",
+			expectError: true,
 		},
 	}
 
@@ -132,7 +132,7 @@ func TestParseBindAddress(t *testing.T) {
 	}
 }
 
-// Test ValidateField function with various validation tags
+// TestValidateField tests ValidateField function with various validation tags
 func TestValidateField(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -199,7 +199,7 @@ func TestValidateField(t *testing.T) {
 	}
 }
 
-// Test NetworkAddress struct validation directly
+// TestNetworkAddressValidation tests NetworkAddress struct validation directly
 func TestNetworkAddressValidation(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -255,10 +255,10 @@ func TestNetworkAddressValidation(t *testing.T) {
 	}
 }
 
-// Benchmark ParseBindAddress for performance testing
+// BenchmarkParseBindAddress benchmarks ParseBindAddress function for performance testing
 func BenchmarkParseBindAddress(b *testing.B) {
 	testAddr := "192.168.1.100:8080"
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, err := ParseBindAddress(testAddr)
@@ -268,11 +268,11 @@ func BenchmarkParseBindAddress(b *testing.B) {
 	}
 }
 
-// Benchmark ValidateField for performance testing
+// BenchmarkValidateField benchmarks ValidateField function for performance testing
 func BenchmarkValidateField(b *testing.B) {
 	testIP := "10.0.0.1"
 	tag := "required,ip"
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		err := ValidateField(testIP, tag)

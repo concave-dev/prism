@@ -37,7 +37,7 @@ type ClusterInfo struct {
 	Uptime  time.Duration   `json:"uptime"`
 }
 
-// Returns all cluster members
+// HandleMembers returns all cluster members
 func HandleMembers(serfManager *serf.SerfManager) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		members := serfManager.GetMembers()
@@ -70,7 +70,7 @@ func HandleMembers(serfManager *serf.SerfManager) gin.HandlerFunc {
 	}
 }
 
-// Returns cluster status summary
+// HandleStatus returns cluster status summary
 func HandleStatus(serfManager *serf.SerfManager) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		members := serfManager.GetMembers()
@@ -102,7 +102,7 @@ func HandleStatus(serfManager *serf.SerfManager) gin.HandlerFunc {
 	}
 }
 
-// Returns comprehensive cluster information
+// HandleClusterInfo returns comprehensive cluster information
 func HandleClusterInfo(serfManager *serf.SerfManager, version string, startTime time.Time) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		members := serfManager.GetMembers()

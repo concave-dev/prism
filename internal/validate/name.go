@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// Validates that a node name conforms to the required format.
+// NodeNameFormat validates that a node name conforms to the required format.
 // Names must be lowercase and contain only [a-z0-9] and - or _
 func NodeNameFormat(name string) error {
 	if name == "" {

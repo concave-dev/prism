@@ -443,7 +443,7 @@ func (api *PrismAPIClient) GetNodeResources(nodeID string) (*NodeResources, erro
 	return nil, fmt.Errorf("unexpected response format for node resources")
 }
 
-// Resolves a node identifier (supports partial ID matching)
+// resolveNodeIdentifier resolves a node identifier (supports partial ID matching)
 func resolveNodeIdentifier(apiClient *PrismAPIClient, identifier string) (string, error) {
 	// Get all cluster members to check for partial ID matches
 	members, err := apiClient.GetMembers()
@@ -483,7 +483,7 @@ func resolveNodeIdentifier(apiClient *PrismAPIClient, identifier string) (string
 	return identifier, nil
 }
 
-// Checks if a string contains only hexadecimal characters
+// isHexString checks if a string contains only hexadecimal characters
 func isHexString(s string) bool {
 	if len(s) == 0 {
 		return false
@@ -496,7 +496,7 @@ func isHexString(s string) bool {
 	return true
 }
 
-// Helper functions to safely extract values from interface{} maps
+// getString safely extracts a string value from interface{} maps
 func getString(m map[string]interface{}, key string) string {
 	if val, ok := m[key].(string); ok {
 		return val
@@ -504,6 +504,7 @@ func getString(m map[string]interface{}, key string) string {
 	return ""
 }
 
+// getStringSlice safely extracts a string slice from interface{} maps
 func getStringSlice(m map[string]interface{}, key string) []string {
 	if val, ok := m[key].([]interface{}); ok {
 		var result []string
@@ -517,6 +518,7 @@ func getStringSlice(m map[string]interface{}, key string) []string {
 	return []string{}
 }
 
+// getStringMap safely extracts a string map from interface{} maps
 func getStringMap(m map[string]interface{}, key string) map[string]string {
 	if val, ok := m[key].(map[string]interface{}); ok {
 		result := make(map[string]string)
@@ -530,6 +532,7 @@ func getStringMap(m map[string]interface{}, key string) map[string]string {
 	return make(map[string]string)
 }
 
+// getIntMap safely extracts an int map from interface{} maps
 func getIntMap(m map[string]interface{}, key string) map[string]int {
 	if val, ok := m[key].(map[string]interface{}); ok {
 		result := make(map[string]int)
@@ -543,6 +546,7 @@ func getIntMap(m map[string]interface{}, key string) map[string]int {
 	return make(map[string]int)
 }
 
+// getInt safely extracts an int value from interface{} maps
 func getInt(m map[string]interface{}, key string) int {
 	if val, ok := m[key].(float64); ok {
 		return int(val)
@@ -550,6 +554,7 @@ func getInt(m map[string]interface{}, key string) int {
 	return 0
 }
 
+// getTime safely extracts a time value from interface{} maps
 func getTime(m map[string]interface{}, key string) time.Time {
 	if val, ok := m[key].(string); ok {
 		if t, err := time.Parse(time.RFC3339, val); err == nil {
@@ -559,6 +564,7 @@ func getTime(m map[string]interface{}, key string) time.Time {
 	return time.Time{}
 }
 
+// getFloat safely extracts a float64 value from interface{} maps
 func getFloat(m map[string]interface{}, key string) float64 {
 	if val, ok := m[key].(float64); ok {
 		return val
@@ -566,6 +572,7 @@ func getFloat(m map[string]interface{}, key string) float64 {
 	return 0.0
 }
 
+// getUint64 safely extracts a uint64 value from interface{} maps
 func getUint64(m map[string]interface{}, key string) uint64 {
 	if val, ok := m[key].(float64); ok {
 		return uint64(val)
@@ -573,6 +580,7 @@ func getUint64(m map[string]interface{}, key string) uint64 {
 	return 0
 }
 
+// getUint32 safely extracts a uint32 value from interface{} maps
 func getUint32(m map[string]interface{}, key string) uint32 {
 	if val, ok := m[key].(float64); ok {
 		return uint32(val)
@@ -580,7 +588,7 @@ func getUint32(m map[string]interface{}, key string) uint32 {
 	return 0
 }
 
-// Sets up logging based on verbose flag and log level
+// setupLogging sets up logging based on verbose flag and log level
 func setupLogging() {
 	// Configure our application logging level first
 	logging.SetLevel(config.LogLevel)
@@ -599,7 +607,7 @@ func createAPIClient() *PrismAPIClient {
 	return NewPrismAPIClient(config.APIAddr, config.Timeout, config.Verbose)
 }
 
-// Handles the members subcommand
+// handleMembers handles the members subcommand
 func handleMembers(cmd *cobra.Command, args []string) error {
 	setupLogging()
 
@@ -618,7 +626,7 @@ func handleMembers(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// Handles the status subcommand
+// handleStatus handles the status subcommand
 func handleStatus(cmd *cobra.Command, args []string) error {
 	setupLogging()
 
@@ -637,7 +645,7 @@ func handleStatus(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// Handles the resources subcommand
+// handleResources handles the resources subcommand
 func handleResources(cmd *cobra.Command, args []string) error {
 	setupLogging()
 
@@ -683,7 +691,7 @@ func handleResources(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// Displays cluster members from API response
+// displayMembersFromAPI displays cluster members from API response
 func displayMembersFromAPI(members []ClusterMember) {
 	if len(members) == 0 {
 		fmt.Println("No cluster members found")
@@ -716,7 +724,7 @@ func displayMembersFromAPI(members []ClusterMember) {
 	}
 }
 
-// Displays cluster status from API response
+// displayStatusFromAPI displays cluster status from API response
 func displayStatusFromAPI(status ClusterStatus) {
 	fmt.Printf("Cluster Status:\n")
 	fmt.Printf("  Total Nodes: %d\n\n", status.TotalNodes)
@@ -735,7 +743,7 @@ func displayStatusFromAPI(status ClusterStatus) {
 
 }
 
-// Displays cluster resources from API response
+// displayClusterResourcesFromAPI displays cluster resources from API response
 func displayClusterResourcesFromAPI(resources []NodeResources) {
 	if len(resources) == 0 {
 		fmt.Println("No cluster resources found")
@@ -771,7 +779,7 @@ func displayClusterResourcesFromAPI(resources []NodeResources) {
 	}
 }
 
-// Displays detailed resources for a single node
+// displayNodeResourceFromAPI displays detailed resources for a single node
 func displayNodeResourceFromAPI(resource NodeResources) {
 	fmt.Printf("Node: %s (%s)\n", resource.NodeName, resource.NodeID)
 	fmt.Printf("Timestamp: %s\n", resource.Timestamp.Format(time.RFC3339))
@@ -812,7 +820,7 @@ func displayNodeResourceFromAPI(resource NodeResources) {
 	}
 }
 
-// Formats a duration in human-readable format
+// formatDuration formats a duration in human-readable format
 func formatDuration(d time.Duration) string {
 	if d < time.Minute {
 		return fmt.Sprintf("%ds", int(d.Seconds()))
@@ -825,7 +833,7 @@ func formatDuration(d time.Duration) string {
 	}
 }
 
-// Main entry point
+// main is the main entry point
 func main() {
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)

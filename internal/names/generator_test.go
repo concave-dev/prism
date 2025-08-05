@@ -5,6 +5,7 @@ import (
 	"testing"
 )
 
+// TestGenerate tests Generate function
 func TestGenerate(t *testing.T) {
 	name := Generate()
 
@@ -56,6 +57,7 @@ func TestGenerate(t *testing.T) {
 	}
 }
 
+// TestGenerateMany tests GenerateMany function
 func TestGenerateMany(t *testing.T) {
 	// Test with zero count
 	names := GenerateMany(0)
@@ -88,6 +90,7 @@ func TestGenerateMany(t *testing.T) {
 	}
 }
 
+// TestRandomIndex tests randomIndex function
 func TestRandomIndex(t *testing.T) {
 	// Test with zero max
 	index := randomIndex(0)
@@ -111,6 +114,7 @@ func TestRandomIndex(t *testing.T) {
 	}
 }
 
+// TestUniqueness tests uniqueness of generated names
 func TestUniqueness(t *testing.T) {
 	// Generate many names and check for some level of uniqueness
 	// With ~120 adjectives and ~195 nouns, we have ~23,400 possible combinations
@@ -133,18 +137,21 @@ func TestUniqueness(t *testing.T) {
 	}
 }
 
+// BenchmarkGenerate benchmarks Generate function
 func BenchmarkGenerate(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		Generate()
 	}
 }
 
+// BenchmarkGenerateMany10 benchmarks GenerateMany with 10 names
 func BenchmarkGenerateMany10(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		GenerateMany(10)
 	}
 }
 
+// BenchmarkGenerateMany100 benchmarks GenerateMany with 100 names
 func BenchmarkGenerateMany100(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		GenerateMany(100)
@@ -152,12 +159,14 @@ func BenchmarkGenerateMany100(b *testing.B) {
 }
 
 // Example usage demonstrating the API
+// ExampleGenerate demonstrates Generate function usage
 func ExampleGenerate() {
 	name := Generate()
 	// Output will be something like: "clever-dolphin" or "amazing-tiger"
 	_ = name
 }
 
+// ExampleGenerateMany demonstrates GenerateMany function usage
 func ExampleGenerateMany() {
 	names := GenerateMany(3)
 	// Output will be something like: ["happy-whale", "mystifying-cat", "zen-butterfly"]

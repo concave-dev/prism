@@ -15,7 +15,7 @@ type HealthResponse struct {
 	Uptime    string    `json:"uptime"`
 }
 
-// Returns the health status of the API server
+// HandleHealth returns the health status of the API server
 func HandleHealth(version string, startTime time.Time) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		uptime := time.Since(startTime)

@@ -8,7 +8,7 @@ import (
 	"github.com/hashicorp/serf/serf"
 )
 
-// Handles incoming Serf events in a separate goroutine
+// processEvents handles incoming Serf events in a separate goroutine
 //
 // This implements the core of the producer-consumer decoupling pattern:
 // Phase 1: ALWAYS process events internally (update member lists, handle failures)
@@ -46,7 +46,7 @@ func (sm *SerfManager) processEvents() {
 	}
 }
 
-// Processes individual Serf events
+// handleEvent processes individual Serf events
 func (sm *SerfManager) handleEvent(event serf.Event) {
 	switch e := event.(type) {
 	case serf.MemberEvent:
@@ -64,7 +64,7 @@ func (sm *SerfManager) handleEvent(event serf.Event) {
 // MEMBER EVENTS - Handle node join/leave/fail/update/reap
 // ============================================================================
 
-// Processes Prism node join/leave/fail events from Serf
+// handleMemberEvent processes Prism node join/leave/fail events from Serf
 func (sm *SerfManager) handleMemberEvent(event serf.MemberEvent) {
 	for _, member := range event.Members {
 		switch event.EventType() {
@@ -97,7 +97,7 @@ func (sm *SerfManager) handleMemberEvent(event serf.MemberEvent) {
 	}
 }
 
-// Adds a newly discovered Prism node to the cluster tracking
+// addMember adds a newly discovered Prism node to the cluster tracking
 func (sm *SerfManager) addMember(member serf.Member) {
 	node := sm.memberFromSerf(member)
 
@@ -106,7 +106,7 @@ func (sm *SerfManager) addMember(member serf.Member) {
 	sm.memberLock.Unlock()
 }
 
-// Updates an existing Prism node's information in the cluster
+// updateMember updates an existing Prism node's information in the cluster
 func (sm *SerfManager) updateMember(member serf.Member) {
 	node := sm.memberFromSerf(member)
 
@@ -123,7 +123,7 @@ func (sm *SerfManager) updateMember(member serf.Member) {
 	sm.memberLock.Unlock()
 }
 
-// Updates a Prism node's status (alive/failed/left)
+// updateMemberStatus updates a Prism node's status (alive/failed/left)
 func (sm *SerfManager) updateMemberStatus(member serf.Member, status serf.MemberStatus) {
 	nodeID := member.Tags["node_id"]
 	if nodeID == "" {
@@ -144,7 +144,7 @@ func (sm *SerfManager) updateMemberStatus(member serf.Member, status serf.Member
 	sm.memberLock.Unlock()
 }
 
-// Removes a Prism node from the cluster tracking
+// removeMember removes a Prism node from the cluster tracking
 func (sm *SerfManager) removeMember(member serf.Member) {
 	nodeID := member.Tags["node_id"]
 	if nodeID == "" {
@@ -158,7 +158,7 @@ func (sm *SerfManager) removeMember(member serf.Member) {
 	sm.memberLock.Unlock()
 }
 
-// Converts a serf.Member to a PrismNode
+// memberFromSerf converts a serf.Member to a PrismNode
 func (sm *SerfManager) memberFromSerf(member serf.Member) *PrismNode {
 	nodeID := member.Tags["node_id"]
 	if nodeID == "" {
@@ -194,7 +194,7 @@ func (sm *SerfManager) memberFromSerf(member serf.Member) *PrismNode {
 // USER EVENTS - Handle custom application-level events
 // ============================================================================
 
-// Processes custom user events sent between Prism nodes
+// handleUserEvent processes custom user events sent between Prism nodes
 func (sm *SerfManager) handleUserEvent(event serf.UserEvent) {
 	logging.Debug("Received user event: %s", event.Name)
 	// User events will be handled by higher-level Prism components
@@ -204,7 +204,7 @@ func (sm *SerfManager) handleUserEvent(event serf.UserEvent) {
 // QUERY EVENTS - Handle distributed queries across the cluster
 // ============================================================================
 
-// Processes Serf queries between Prism nodes
+// handleQuery processes Serf queries between Prism nodes
 func (sm *SerfManager) handleQuery(query *serf.Query) {
 	logging.Debug("Received query: %s from %s", query.Name, query.SourceNode())
 
@@ -216,7 +216,7 @@ func (sm *SerfManager) handleQuery(query *serf.Query) {
 	}
 }
 
-// Handles get-resources query by gathering current node resources and responding
+// handleResourcesQuery handles get-resources query by gathering current node resources and responding
 func (sm *SerfManager) handleResourcesQuery(query *serf.Query) {
 	logging.Debug("Processing get-resources query from %s", query.SourceNode())
 

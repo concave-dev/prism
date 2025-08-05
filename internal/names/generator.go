@@ -132,14 +132,14 @@ var nouns = []string{
 	"topaz", "amethyst", "garnet", "jade", "opal",
 }
 
-// Generates a random Docker-like name in "adjective-noun" format
+// Generate generates a random Docker-like name in "adjective-noun" format
 func Generate() string {
 	adjective := adjectives[randomIndex(len(adjectives))]
 	noun := nouns[randomIndex(len(nouns))]
 	return fmt.Sprintf("%s-%s", adjective, noun)
 }
 
-// Generates a cryptographically secure random index
+// randomIndex generates a cryptographically secure random index
 func randomIndex(max int) int {
 	if max <= 0 {
 		return 0
@@ -154,7 +154,7 @@ func randomIndex(max int) int {
 	return int(n.Int64())
 }
 
-// Generates multiple unique names, useful for testing or bulk operations
+// GenerateMany generates multiple unique names, useful for testing or bulk operations
 func GenerateMany(count int) []string {
 	if count <= 0 {
 		return []string{}

@@ -8,13 +8,13 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Returns all nodes (alias for members for now)
+// HandleNodes returns all nodes (alias for members for now)
 func HandleNodes(serfManager *serf.SerfManager) gin.HandlerFunc {
 	// For now, nodes and members are the same
 	return HandleMembers(serfManager)
 }
 
-// Returns a specific node by ID
+// HandleNodeByID returns a specific node by ID
 func HandleNodeByID(serfManager *serf.SerfManager) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		nodeID := c.Param("id")

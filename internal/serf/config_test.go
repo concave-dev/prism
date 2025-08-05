@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// Test DefaultManagerConfig function
+// TestDefaultManagerConfig tests DefaultManagerConfig function
 func TestDefaultManagerConfig(t *testing.T) {
 	config := DefaultManagerConfig()
 
@@ -77,7 +77,7 @@ func TestDefaultManagerConfig(t *testing.T) {
 	}
 }
 
-// Test validateConfig function with valid configurations
+// TestValidateConfig_ValidConfigurations tests validateConfig function with valid configurations
 func TestValidateConfig_ValidConfigurations(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -151,7 +151,7 @@ func TestValidateConfig_ValidConfigurations(t *testing.T) {
 	}
 }
 
-// Test validateConfig function with invalid configurations
+// TestValidateConfig_InvalidConfigurations tests validateConfig function with invalid configurations
 func TestValidateConfig_InvalidConfigurations(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -256,7 +256,7 @@ func TestValidateConfig_InvalidConfigurations(t *testing.T) {
 	}
 }
 
-// Test that validateConfig handles nil config gracefully
+// TestValidateConfig_NilConfig tests that validateConfig handles nil config gracefully
 func TestValidateConfig_NilConfig(t *testing.T) {
 	// This should panic or return an error - let's test what actually happens
 	defer func() {
@@ -272,7 +272,7 @@ func TestValidateConfig_NilConfig(t *testing.T) {
 	}
 }
 
-// Test ManagerConfig struct field types and tags
+// TestManagerConfig_StructFields tests ManagerConfig struct field types and tags
 func TestManagerConfig_StructFields(t *testing.T) {
 	config := &ManagerConfig{
 		BindAddr:        "192.168.1.1",
@@ -324,7 +324,7 @@ func TestManagerConfig_StructFields(t *testing.T) {
 	}
 }
 
-// Test edge cases for EventBufferSize
+// TestValidateConfig_EventBufferEdgeCases tests edge cases for EventBufferSize
 func TestValidateConfig_EventBufferEdgeCases(t *testing.T) {
 	baseConfig := &ManagerConfig{
 		NodeName: "test-node",
@@ -364,7 +364,7 @@ func TestValidateConfig_EventBufferEdgeCases(t *testing.T) {
 	}
 }
 
-// Test various IP address formats
+// TestValidateConfig_IPAddressFormats tests various IP address formats
 func TestValidateConfig_IPAddressFormats(t *testing.T) {
 	baseConfig := &ManagerConfig{
 		NodeName:        "test-node",
@@ -410,12 +410,12 @@ func TestValidateConfig_IPAddressFormats(t *testing.T) {
 	}
 }
 
-// Helper function to check if a string contains a substring
+// containsString is a helper function to check if a string contains a substring
 func containsString(s, substr string) bool {
 	return len(substr) == 0 || (len(s) >= len(substr) && findSubstring(s, substr))
 }
 
-// Helper function to find substring (simple implementation)
+// findSubstring is a helper function to find substring (simple implementation)
 func findSubstring(s, substr string) bool {
 	for i := 0; i <= len(s)-len(substr); i++ {
 		if s[i:i+len(substr)] == substr {
@@ -425,7 +425,7 @@ func findSubstring(s, substr string) bool {
 	return false
 }
 
-// Benchmark the DefaultManagerConfig function
+// BenchmarkDefaultManagerConfig benchmarks the DefaultManagerConfig function
 func BenchmarkDefaultManagerConfig(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -433,7 +433,7 @@ func BenchmarkDefaultManagerConfig(b *testing.B) {
 	}
 }
 
-// Benchmark the validateConfig function with valid config
+// BenchmarkValidateConfig_Valid benchmarks the validateConfig function with valid config
 func BenchmarkValidateConfig_Valid(b *testing.B) {
 	config := &ManagerConfig{
 		NodeName:        "test-node",
@@ -451,7 +451,7 @@ func BenchmarkValidateConfig_Valid(b *testing.B) {
 	}
 }
 
-// Benchmark the validateConfig function with invalid config
+// BenchmarkValidateConfig_Invalid benchmarks the validateConfig function with invalid config
 func BenchmarkValidateConfig_Invalid(b *testing.B) {
 	config := &ManagerConfig{
 		NodeName:        "", // Invalid: empty node name

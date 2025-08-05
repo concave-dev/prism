@@ -53,7 +53,7 @@ type SerfManager struct {
 	config     *ManagerConfig        // Manager Configuration
 }
 
-// Creates a new SerfManager instance
+// NewSerfManager creates a new SerfManager instance
 func NewSerfManager(config *ManagerConfig) (*SerfManager, error) {
 	if config == nil {
 		config = DefaultManagerConfig()
@@ -90,7 +90,7 @@ func NewSerfManager(config *ManagerConfig) (*SerfManager, error) {
 	return manager, nil
 }
 
-// Starts the SerfManager
+// Start starts the SerfManager
 func (sm *SerfManager) Start() error {
 	sm.startTime = time.Now()
 	logging.Info("Starting SerfManager for node %s", sm.NodeID)
@@ -150,8 +150,8 @@ func (sm *SerfManager) Start() error {
 	return nil
 }
 
-// Attempts to join an existing cluster using one or more seed addresses.
-// Multiple addresses provide fault tolerance - Serf tries each address until one succeeds.
+// Join attempts to join an existing cluster using one or more seed addresses.
+// Join provides fault tolerance - Serf tries each address until one succeeds.
 // This prevents single points of failure during cluster bootstrap and recovery scenarios.
 // NOTE: Name conflicts should be resolved by the CLI before calling this method.
 func (sm *SerfManager) Join(addresses []string) error {
@@ -183,7 +183,7 @@ func (sm *SerfManager) Join(addresses []string) error {
 		sm.config.JoinRetries, lastErr)
 }
 
-// Gracefully leaves the cluster
+// Leave gracefully leaves the cluster
 func (sm *SerfManager) Leave() error {
 	logging.Info("Leaving cluster gracefully")
 
@@ -196,7 +196,7 @@ func (sm *SerfManager) Leave() error {
 	return nil
 }
 
-// Stops the SerfManager and cleans up resources
+// Shutdown stops the SerfManager and cleans up resources
 func (sm *SerfManager) Shutdown() error {
 	logging.Info("Shutting down SerfManager")
 
@@ -225,7 +225,7 @@ func (sm *SerfManager) Shutdown() error {
 	return nil
 }
 
-// Copy of all known Prism nodes in the cluster
+// GetMembers returns a copy of all known Prism nodes in the cluster
 func (sm *SerfManager) GetMembers() map[string]*PrismNode {
 	sm.memberLock.RLock()
 	defer sm.memberLock.RUnlock()
@@ -238,7 +238,7 @@ func (sm *SerfManager) GetMembers() map[string]*PrismNode {
 	return members
 }
 
-// Specific Prism node by ID
+// GetMember returns a specific Prism node by ID
 func (sm *SerfManager) GetMember(nodeID string) (*PrismNode, bool) {
 	sm.memberLock.RLock()
 	defer sm.memberLock.RUnlock()
@@ -251,8 +251,8 @@ func (sm *SerfManager) GetMember(nodeID string) (*PrismNode, bool) {
 	return sm.copyPrismNode(member), true
 }
 
-// Creates a deep copy of a PrismNode to prevent external modification.
-// Only reference types (Tags, Roles) need manual copying; value types are copied by *node.
+// copyPrismNode creates a deep copy of a PrismNode to prevent external modification.
+// copyPrismNode only needs to manually copy reference types (Tags, Roles); value types are copied by *node.
 func (sm *SerfManager) copyPrismNode(node *PrismNode) *PrismNode {
 	// Shallow copy handles all value types (ID, Name, Addr, Port, Status, LastSeen)
 	nodeCopy := *node
@@ -268,7 +268,7 @@ func (sm *SerfManager) copyPrismNode(node *PrismNode) *PrismNode {
 	return &nodeCopy
 }
 
-// Information about the local Prism node
+// GetLocalMember returns information about the local Prism node
 func (sm *SerfManager) GetLocalMember() *PrismNode {
 	member, _ := sm.GetMember(sm.NodeID)
 	return member
@@ -417,7 +417,7 @@ func (sm *SerfManager) QueryResourcesFromNode(nodeID string) (*NodeResources, er
 	return nil, fmt.Errorf("no response received from node %s", nodeID)
 }
 
-// Constructs the tags map for this node
+// buildNodeTags constructs the tags map for this node
 func (sm *SerfManager) buildNodeTags() map[string]string {
 	// Pre-allocate map capacity: user tags + 2 system tags (node_id, roles)
 	// This avoids memory reallocations when adding the fixed system tags below
@@ -435,7 +435,7 @@ func (sm *SerfManager) buildNodeTags() map[string]string {
 	return tags
 }
 
-// Generates a random hex node identifier (like Docker container IDs)
+// generateNodeID generates a random hex node identifier (like Docker container IDs)
 func generateNodeID() (string, error) {
 	// Generate 6 bytes of random data (12 hex characters, like Docker short IDs)
 	bytes := make([]byte, 6)
@@ -446,7 +446,7 @@ func generateNodeID() (string, error) {
 	return hex.EncodeToString(bytes), nil
 }
 
-// Converts a comma-separated string back to a []string slice.
+// deserializeRoles converts a comma-separated string back to a []string slice.
 // This is needed because Serf tags are map[string]string (string-only),
 // so we must serialize/deserialize arrays to work around this limitation.
 //
@@ -466,7 +466,7 @@ func deserializeRoles(rolesStr string) []string {
 	return roles
 }
 
-// Converts a []string slice to a comma-separated string.
+// serializeRoles converts a []string slice to a comma-separated string.
 // This is needed because Serf tags are map[string]string (string-only),
 // so we must serialize arrays before storing them in tags.
 //

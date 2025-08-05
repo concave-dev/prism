@@ -49,27 +49,27 @@ func setupCustomStyles() *log.Styles {
 	return styles
 }
 
-// Sets up custom colors on package initialization
+// init sets up custom colors on package initialization
 func init() {
 	logger.SetStyles(setupCustomStyles())
 }
 
-// Informational message in light blue
+// Info logs an informational message in light blue
 func Info(format string, v ...interface{}) {
 	logger.Info(fmt.Sprintf(format, v...))
 }
 
-// Warning message in light yellow
+// Warn logs a warning message in light yellow
 func Warn(format string, v ...interface{}) {
 	logger.Warn(fmt.Sprintf(format, v...))
 }
 
-// Error message in light red
+// Error logs an error message in light red
 func Error(format string, v ...interface{}) {
 	logger.Error(fmt.Sprintf(format, v...))
 }
 
-// Success message in light green (using Info level with custom styling)
+// Success logs a success message in light green (using Info level with custom styling)
 //
 // Since the logging library doesn't have a native SUCCESS level, we "fake" it by:
 // 1. Using INFO level internally (so SUCCESS respects INFO level filtering)
@@ -97,12 +97,12 @@ func Success(format string, v ...interface{}) {
 	tempLogger.Info(fmt.Sprintf(format, v...))
 }
 
-// Debug message in light purple
+// Debug logs a debug message in light purple
 func Debug(format string, v ...interface{}) {
 	logger.Debug(fmt.Sprintf(format, v...))
 }
 
-// Configures the logging level
+// SetLevel configures the logging level
 func SetLevel(level string) {
 	switch level {
 	case "DEBUG":
@@ -118,8 +118,8 @@ func SetLevel(level string) {
 	}
 }
 
-// Configures where logs are written (for suppressing output)
-// Pass nil or os.DevNull equivalent to suppress output
+// SetOutput configures where logs are written (for suppressing output).
+// SetOutput accepts nil or os.DevNull equivalent to suppress output.
 func SetOutput(w *os.File) {
 	if w == nil {
 		// Suppress output by setting level to a high value
@@ -132,13 +132,13 @@ func SetOutput(w *os.File) {
 	}
 }
 
-// Disables INFO/WARN/DEBUG logs but keeps ERROR logs visible
+// SuppressOutput disables INFO/WARN/DEBUG logs but keeps ERROR logs visible
 func SuppressOutput() {
 	logger.SetLevel(log.ErrorLevel) // Only show ERROR level and above
 	cliConfigured = true
 }
 
-// Restores normal logging to stderr (INFO level and above)
+// RestoreOutput restores normal logging to stderr (INFO level and above)
 func RestoreOutput() {
 	logger = log.NewWithOptions(os.Stderr, log.Options{
 		ReportTimestamp: true,
@@ -148,7 +148,7 @@ func RestoreOutput() {
 	cliConfigured = true
 }
 
-// Returns true if logging has been explicitly configured by CLI tools
+// IsConfiguredByCLI returns true if logging has been explicitly configured by CLI tools
 func IsConfiguredByCLI() bool {
 	return cliConfigured
 }
@@ -160,7 +160,7 @@ type ColorfulSerfWriter struct {
 	writer *io.PipeWriter
 }
 
-// Creates a new colorful writer for Serf logs
+// NewColorfulSerfWriter creates a new colorful writer for Serf logs
 func NewColorfulSerfWriter() *ColorfulSerfWriter {
 	r, w := io.Pipe()
 	csw := &ColorfulSerfWriter{

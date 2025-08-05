@@ -45,7 +45,7 @@ type NodeResources struct {
 	AvailableSlots int `json:"availableSlots"` // Available job slots
 }
 
-// Gathers current resource information for this node
+// gatherResources gathers current resource information for this node
 func (sm *SerfManager) gatherResources() *NodeResources {
 	now := time.Now()
 
@@ -95,12 +95,12 @@ func (sm *SerfManager) gatherResources() *NodeResources {
 	return resources
 }
 
-// Converts NodeResources to JSON for network transmission
+// ToJSON converts NodeResources to JSON for network transmission
 func (nr *NodeResources) ToJSON() ([]byte, error) {
 	return json.Marshal(nr)
 }
 
-// Converts JSON to NodeResources
+// NodeResourcesFromJSON converts JSON to NodeResources
 func NodeResourcesFromJSON(data []byte) (*NodeResources, error) {
 	var resources NodeResources
 	err := json.Unmarshal(data, &resources)
