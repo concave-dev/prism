@@ -53,7 +53,7 @@ type NodeResourcesResponse struct {
 	MemoryAvailableMB int `json:"memoryAvailableMB"`
 }
 
-// HandleClusterResources returns resources from all cluster nodes
+// Returns resources from all cluster nodes
 func HandleClusterResources(serfManager *serf.SerfManager) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Query resources from all nodes via Serf
@@ -86,7 +86,7 @@ func HandleClusterResources(serfManager *serf.SerfManager) gin.HandlerFunc {
 	}
 }
 
-// HandleNodeResources returns resources from a specific node
+// Returns resources from a specific node
 func HandleNodeResources(serfManager *serf.SerfManager) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		nodeID := c.Param("id")
@@ -127,7 +127,7 @@ func HandleNodeResources(serfManager *serf.SerfManager) gin.HandlerFunc {
 	}
 }
 
-// convertToAPIResponse converts serf.NodeResources to API response format
+// Converts serf.NodeResources to API response format
 func convertToAPIResponse(nodeRes *serf.NodeResources) NodeResourcesResponse {
 	return NodeResourcesResponse{
 		NodeID:    nodeRes.NodeID,

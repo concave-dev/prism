@@ -100,7 +100,7 @@ func (s *Server) handleHealth(c *gin.Context) {
 	handler(c)
 }
 
-// Returns handlers from the handlers package
+// Health endpoint handler factory
 func (s *Server) getHandlerHealth() gin.HandlerFunc {
 	return handlers.HandleHealth(version, startTime)
 }
@@ -111,7 +111,7 @@ func (s *Server) handleMembers(c *gin.Context) {
 	handler(c)
 }
 
-// Returns handlers from the handlers package
+// Members endpoint handler factory
 func (s *Server) getHandlerMembers() gin.HandlerFunc {
 	return handlers.HandleMembers(s.serfManager)
 }
@@ -122,7 +122,7 @@ func (s *Server) handleStatus(c *gin.Context) {
 	handler(c)
 }
 
-// Returns handlers from the handlers package
+// Status endpoint handler factory
 func (s *Server) getHandlerStatus() gin.HandlerFunc {
 	return handlers.HandleStatus(s.serfManager)
 }
@@ -133,7 +133,7 @@ func (s *Server) handleClusterInfo(c *gin.Context) {
 	handler(c)
 }
 
-// Returns handlers from the handlers package
+// Cluster info endpoint handler factory
 func (s *Server) getHandlerClusterInfo() gin.HandlerFunc {
 	return handlers.HandleClusterInfo(s.serfManager, version, startTime)
 }
@@ -144,7 +144,7 @@ func (s *Server) handleNodes(c *gin.Context) {
 	handler(c)
 }
 
-// Returns handlers from the handlers package
+// Nodes endpoint handler factory
 func (s *Server) getHandlerNodes() gin.HandlerFunc {
 	return handlers.HandleNodes(s.serfManager)
 }
@@ -155,7 +155,7 @@ func (s *Server) handleNodeByID(c *gin.Context) {
 	handler(c)
 }
 
-// Returns handlers from the handlers package
+// Node by ID endpoint handler factory
 func (s *Server) getHandlerNodeByID() gin.HandlerFunc {
 	return handlers.HandleNodeByID(s.serfManager)
 }
@@ -166,7 +166,7 @@ func (s *Server) handleClusterResources(c *gin.Context) {
 	handler(c)
 }
 
-// Returns handlers from the handlers package
+// Cluster resources endpoint handler factory
 func (s *Server) getHandlerClusterResources() gin.HandlerFunc {
 	return handlers.HandleClusterResources(s.serfManager)
 }
@@ -177,7 +177,7 @@ func (s *Server) handleNodeResources(c *gin.Context) {
 	handler(c)
 }
 
-// Returns handlers from the handlers package
+// Node resources endpoint handler factory
 func (s *Server) getHandlerNodeResources() gin.HandlerFunc {
 	return handlers.HandleNodeResources(s.serfManager)
 }

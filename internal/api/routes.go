@@ -4,7 +4,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Configures all API routes
+// Sets up all API routes
 func (s *Server) setupRoutes(router *gin.Engine) {
 	// API version prefix
 	v1 := router.Group("/api/v1")

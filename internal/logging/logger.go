@@ -49,27 +49,27 @@ func setupCustomStyles() *log.Styles {
 	return styles
 }
 
-// init sets up custom colors on package initialization
+// Sets up custom colors on package initialization
 func init() {
 	logger.SetStyles(setupCustomStyles())
 }
 
-// Logs an informational message in light blue
+// Informational message in light blue
 func Info(format string, v ...interface{}) {
 	logger.Info(fmt.Sprintf(format, v...))
 }
 
-// Logs a warning message in light yellow
+// Warning message in light yellow
 func Warn(format string, v ...interface{}) {
 	logger.Warn(fmt.Sprintf(format, v...))
 }
 
-// Logs an error message in light red
+// Error message in light red
 func Error(format string, v ...interface{}) {
 	logger.Error(fmt.Sprintf(format, v...))
 }
 
-// Logs a success message in light green (using Info level with custom styling)
+// Success message in light green (using Info level with custom styling)
 //
 // Since the logging library doesn't have a native SUCCESS level, we "fake" it by:
 // 1. Using INFO level internally (so SUCCESS respects INFO level filtering)
@@ -97,7 +97,7 @@ func Success(format string, v ...interface{}) {
 	tempLogger.Info(fmt.Sprintf(format, v...))
 }
 
-// Logs a debug message in light purple
+// Debug message in light purple
 func Debug(format string, v ...interface{}) {
 	logger.Debug(fmt.Sprintf(format, v...))
 }

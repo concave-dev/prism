@@ -95,12 +95,12 @@ func (sm *SerfManager) gatherResources() *NodeResources {
 	return resources
 }
 
-// Serializes NodeResources to JSON for network transmission
+// Converts NodeResources to JSON for network transmission
 func (nr *NodeResources) ToJSON() ([]byte, error) {
 	return json.Marshal(nr)
 }
 
-// Deserializes NodeResources from JSON
+// Converts JSON to NodeResources
 func NodeResourcesFromJSON(data []byte) (*NodeResources, error) {
 	var resources NodeResources
 	err := json.Unmarshal(data, &resources)

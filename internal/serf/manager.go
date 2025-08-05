@@ -224,7 +224,7 @@ func (sm *SerfManager) Shutdown() error {
 	return nil
 }
 
-// Returns a copy of all known Prism nodes in the cluster
+// Copy of all known Prism nodes in the cluster
 func (sm *SerfManager) GetMembers() map[string]*PrismNode {
 	sm.memberLock.RLock()
 	defer sm.memberLock.RUnlock()
@@ -237,7 +237,7 @@ func (sm *SerfManager) GetMembers() map[string]*PrismNode {
 	return members
 }
 
-// Returns a specific Prism node by ID
+// Specific Prism node by ID
 func (sm *SerfManager) GetMember(nodeID string) (*PrismNode, bool) {
 	sm.memberLock.RLock()
 	defer sm.memberLock.RUnlock()
@@ -267,7 +267,7 @@ func (sm *SerfManager) copyPrismNode(node *PrismNode) *PrismNode {
 	return &nodeCopy
 }
 
-// Returns information about the local Prism node
+// Information about the local Prism node
 func (sm *SerfManager) GetLocalMember() *PrismNode {
 	member, _ := sm.GetMember(sm.NodeID)
 	return member
