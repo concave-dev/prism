@@ -6,13 +6,16 @@ package main
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/concave-dev/prism/internal/api"
 	"github.com/concave-dev/prism/internal/logging"
+	"github.com/concave-dev/prism/internal/names"
 	"github.com/concave-dev/prism/internal/serf"
 	"github.com/concave-dev/prism/internal/validate"
 	"github.com/spf13/cobra"
@@ -22,7 +25,7 @@ const (
 	Version = "0.1.0-dev" // Version information
 
 	DefaultBind    = "127.0.0.1:4200" // Default bind address
-	DefaultAPIPort = 8080             // Default API server port
+	DefaultAPIPort = 8020             // Default API server port
 	DefaultRole    = "agent"          // Default role
 )
 
@@ -35,6 +38,10 @@ var config struct {
 	Role      string   // Node role: agent or control
 	JoinAddrs []string // List of cluster addresses to join
 	LogLevel  string   // Log level: DEBUG, INFO, WARN, ERROR
+
+	// Flags to track if values were explicitly set by user
+	bindExplicitlySet    bool
+	apiPortExplicitlySet bool
 }
 
 // Root command
@@ -63,13 +70,13 @@ func init() {
 	rootCmd.Flags().StringVar(&config.BindAddr, "bind", DefaultBind,
 		"Address and port to bind to (e.g., 0.0.0.0:4200)")
 	rootCmd.Flags().IntVar(&config.APIPort, "api-port", DefaultAPIPort,
-		"HTTP API server port (e.g., 8080)")
+		"HTTP API server port (e.g., 8020)")
 
 	// Node configuration flags
 	rootCmd.Flags().StringVar(&config.Role, "role", DefaultRole,
 		"Node role: agent or control")
 	rootCmd.Flags().StringVar(&config.NodeName, "name", "",
-		"Node name (defaults to hostname)")
+		"Node name (defaults to generated name like 'cosmic-dragon')")
 
 	// Cluster flags
 	rootCmd.Flags().StringSliceVar(&config.JoinAddrs, "join", nil,
@@ -81,8 +88,46 @@ func init() {
 		"Log level: DEBUG, INFO, WARN, ERROR")
 }
 
+// Checks if flags were explicitly set by the user
+func checkExplicitFlags(cmd *cobra.Command) {
+	config.bindExplicitlySet = cmd.Flags().Changed("bind")
+	config.apiPortExplicitlySet = cmd.Flags().Changed("api-port")
+}
+
+// Finds an available port starting from the given port on the specified address.
+// Increments port numbers until an available one is found.
+// Returns the available port or error if none found within reasonable range.
+func findAvailablePort(address string, startPort int) (int, error) {
+	const maxAttempts = 100 // Try up to 100 ports to avoid infinite loops
+
+	for port := startPort; port < startPort+maxAttempts && port <= 65535; port++ {
+		addr := fmt.Sprintf("%s:%d", address, port)
+		conn, err := net.Listen("tcp", addr)
+		if err == nil {
+			// Port is available
+			conn.Close()
+			return port, nil
+		}
+
+		// Check if error is specifically "address already in use"
+		if strings.Contains(err.Error(), "address already in use") ||
+			strings.Contains(err.Error(), "bind: address already in use") {
+			// Try next port
+			continue
+		}
+
+		// Some other error (e.g., permission denied, invalid address)
+		return 0, fmt.Errorf("failed to bind to %s: %w", addr, err)
+	}
+
+	return 0, fmt.Errorf("no available port found in range %d-%d on %s",
+		startPort, startPort+maxAttempts-1, address)
+}
+
 // Validates configuration before running
 func validateConfig(cmd *cobra.Command, args []string) error {
+	// Check which flags were explicitly set by user
+	checkExplicitFlags(cmd)
 	// Parse and validate bind address using centralized validation
 	netAddr, err := validate.ParseBindAddress(config.BindAddr)
 	if err != nil {
@@ -97,13 +142,22 @@ func validateConfig(cmd *cobra.Command, args []string) error {
 	config.BindAddr = netAddr.Host
 	config.BindPort = netAddr.Port
 
-	// Set node name (default to hostname if not provided)
+	// Set node name (generate if not provided, validate if provided)
 	if config.NodeName == "" {
-		hostname, err := os.Hostname()
-		if err != nil {
-			return fmt.Errorf("failed to get hostname: %w", err)
+		config.NodeName = names.Generate()
+		logging.Info("Generated node name: %s", config.NodeName)
+	} else {
+		// Auto-convert uppercase to lowercase with warning
+		originalName := config.NodeName
+		config.NodeName = strings.ToLower(config.NodeName)
+		if originalName != config.NodeName {
+			logging.Warn("Node name '%s' converted to lowercase: '%s'", originalName, config.NodeName)
 		}
-		config.NodeName = hostname
+
+		// Validate user-provided name format
+		if err := validate.NodeNameFormat(config.NodeName); err != nil {
+			return fmt.Errorf("invalid node name: %w", err)
+		}
 	}
 
 	// Validate role
@@ -171,7 +225,39 @@ func buildSerfConfig() *serf.ManagerConfig {
 func runDaemon(cmd *cobra.Command, args []string) error {
 	logging.Info("Starting Prism daemon v%s", Version)
 	logging.Info("Node: %s, Role: %s", config.NodeName, config.Role)
-	logging.Info("Binding to %s:%d", config.BindAddr, config.BindPort)
+
+	// Handle Serf port binding
+	originalSerfPort := config.BindPort
+	if config.bindExplicitlySet {
+		// User explicitly set bind address - fail if port is busy
+		logging.Info("Binding to %s:%d", config.BindAddr, config.BindPort)
+
+		// Test binding to ensure port is available
+		testAddr := fmt.Sprintf("%s:%d", config.BindAddr, config.BindPort)
+		conn, err := net.Listen("tcp", testAddr)
+		if err != nil {
+			if strings.Contains(err.Error(), "address already in use") ||
+				strings.Contains(err.Error(), "bind: address already in use") {
+				return fmt.Errorf("cannot bind to %s: port %d is already in use",
+					config.BindAddr, config.BindPort)
+			}
+			return fmt.Errorf("failed to bind to %s: %w", testAddr, err)
+		}
+		conn.Close()
+	} else {
+		// Using defaults - auto-increment if needed
+		availableSerfPort, err := findAvailablePort(config.BindAddr, config.BindPort)
+		if err != nil {
+			return fmt.Errorf("failed to find available Serf port: %w", err)
+		}
+
+		if availableSerfPort != originalSerfPort {
+			logging.Warn("Default port %d was busy, using port %d for Serf", originalSerfPort, availableSerfPort)
+			config.BindPort = availableSerfPort
+		}
+
+		logging.Info("Binding to %s:%d", config.BindAddr, config.BindPort)
+	}
 
 	// Create SerfManager
 	serfConfig := buildSerfConfig()
@@ -188,7 +274,38 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	// Start HTTP API server for control nodes
 	var apiServer *api.Server
 	if config.Role == "control" {
-		logging.Info("Starting HTTP API server on port %d", config.APIPort)
+		// Handle API port binding
+		originalAPIPort := config.APIPort
+		if config.apiPortExplicitlySet {
+			// User explicitly set API port - fail if port is busy
+			logging.Info("Starting HTTP API server on %s:%d", config.BindAddr, config.APIPort)
+
+			// Test binding to ensure port is available
+			testAddr := fmt.Sprintf("%s:%d", config.BindAddr, config.APIPort)
+			conn, err := net.Listen("tcp", testAddr)
+			if err != nil {
+				if strings.Contains(err.Error(), "address already in use") ||
+					strings.Contains(err.Error(), "bind: address already in use") {
+					return fmt.Errorf("cannot bind API server to %s: port %d is already in use",
+						config.BindAddr, config.APIPort)
+				}
+				return fmt.Errorf("failed to bind API server to %s: %w", testAddr, err)
+			}
+			conn.Close()
+		} else {
+			// Using defaults - auto-increment if needed
+			availableAPIPort, err := findAvailablePort(config.BindAddr, config.APIPort)
+			if err != nil {
+				return fmt.Errorf("failed to find available API port: %w", err)
+			}
+
+			if availableAPIPort != originalAPIPort {
+				logging.Warn("Default API port %d was busy, using port %d for HTTP API", originalAPIPort, availableAPIPort)
+				config.APIPort = availableAPIPort
+			}
+
+			logging.Info("Starting HTTP API server on %s:%d", config.BindAddr, config.APIPort)
+		}
 
 		apiConfig := &api.ServerConfig{
 			BindAddr:    config.BindAddr,
@@ -208,6 +325,13 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		logging.Info("Joining cluster via %v", config.JoinAddrs)
 		if err := manager.Join(config.JoinAddrs); err != nil {
 			logging.Error("Failed to join cluster: %v", err)
+
+			// Provide helpful context for connection issues
+			if strings.Contains(err.Error(), "connection refused") {
+				logging.Error("TIP: Check if the target node(s) are running and accessible")
+				logging.Error("     You can verify with: prismctl members")
+			}
+			// Note: Name conflicts are handled in SerfManager.Join() after successful connection
 			// Don't fail startup - node can still operate independently
 			// This allows for "split-brain" recovery and bootstrap scenarios
 		}

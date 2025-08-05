@@ -153,6 +153,7 @@ func (sm *SerfManager) Start() error {
 // Attempts to join an existing cluster using one or more seed addresses.
 // Multiple addresses provide fault tolerance - Serf tries each address until one succeeds.
 // This prevents single points of failure during cluster bootstrap and recovery scenarios.
+// NOTE: Name conflicts should be resolved by the CLI before calling this method.
 func (sm *SerfManager) Join(addresses []string) error {
 	if len(addresses) == 0 {
 		return fmt.Errorf("no join addresses provided")

@@ -6,6 +6,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"time"
 
@@ -67,7 +68,14 @@ func (s *Server) Start() error {
 		IdleTimeout:  60 * time.Second,
 	}
 
-	// Start server in goroutine
+	// Test binding first to catch errors immediately
+	listener, err := net.Listen("tcp", s.httpServer.Addr)
+	if err != nil {
+		return fmt.Errorf("failed to bind to %s: %w", s.httpServer.Addr, err)
+	}
+	listener.Close() // Close the test listener
+
+	// Start server in goroutine now that we know binding works
 	go func() {
 		if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logging.Error("HTTP server failed: %v", err)

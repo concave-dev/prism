@@ -19,7 +19,7 @@ import (
 
 const (
 	Version        = "0.1.0-dev"      // Version information
-	DefaultAPIAddr = "127.0.0.1:8080" // Default API server address
+	DefaultAPIAddr = "127.0.0.1:8020" // Default API server address
 )
 
 // Global configuration
@@ -48,7 +48,7 @@ AI-generated code in sandboxes, manage workflows, and inspect cluster state.`,
   prismctl status
 
   # Connect to remote API server
-  prismctl --api-addr=192.168.1.100:8080 members
+  prismctl --api-addr=192.168.1.100:8020 members
   
   # Show verbose output
   prismctl --verbose members`,
@@ -66,7 +66,7 @@ known nodes including their roles, status, and last seen times.`,
   prismctl members
 
   # List members from specific API server
-  prismctl --api-addr=192.168.1.100:8080 members
+  prismctl --api-addr=192.168.1.100:8020 members
   
   # Show verbose output during connection
   prismctl --verbose members`,
