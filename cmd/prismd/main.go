@@ -24,7 +24,6 @@ const (
 	DefaultBind    = "127.0.0.1:4200" // Default bind address
 	DefaultAPIPort = 8080             // Default API server port
 	DefaultRole    = "agent"          // Default role
-	DefaultRegion  = "default"        // Default region
 )
 
 // Global configuration
@@ -34,7 +33,6 @@ var config struct {
 	APIPort   int      // HTTP API server port
 	NodeName  string   // Name of this node
 	Role      string   // Node role: agent or control
-	Region    string   // Region/datacenter identifier
 	JoinAddrs []string // List of cluster addresses to join
 	LogLevel  string   // Log level: DEBUG, INFO, WARN, ERROR
 }
@@ -55,10 +53,7 @@ serverless functions, native memory, workflows, and other AI-first primitives.`,
   prismd --bind=0.0.0.0:4201 --role=control --join=127.0.0.1:4200 --name=control-node
 
   # Join with multiple addresses for fault tolerance
-  prismd --bind=0.0.0.0:4202 --role=agent --join=node1:4200,node2:4200,node3:4200
-
-  # Start control node in specific region
-  prismd --bind=0.0.0.0:1337 --role=control --region=us-west-1`,
+  prismd --bind=0.0.0.0:4202 --role=agent --join=node1:4200,node2:4200,node3:4200`,
 	PreRunE: validateConfig,
 	RunE:    runDaemon,
 }
@@ -73,8 +68,6 @@ func init() {
 	// Node configuration flags
 	rootCmd.Flags().StringVar(&config.Role, "role", DefaultRole,
 		"Node role: agent or control")
-	rootCmd.Flags().StringVar(&config.Region, "region", DefaultRegion,
-		"Region/datacenter identifier")
 	rootCmd.Flags().StringVar(&config.NodeName, "name", "",
 		"Node name (defaults to hostname)")
 
@@ -157,7 +150,6 @@ func buildSerfConfig() *serf.ManagerConfig {
 	serfConfig.BindAddr = config.BindAddr
 	serfConfig.BindPort = config.BindPort
 	serfConfig.NodeName = config.NodeName
-	serfConfig.Region = config.Region
 	serfConfig.LogLevel = config.LogLevel
 
 	// Set roles based on daemon role
@@ -178,7 +170,7 @@ func buildSerfConfig() *serf.ManagerConfig {
 // Runs the daemon with graceful shutdown handling
 func runDaemon(cmd *cobra.Command, args []string) error {
 	logging.Info("Starting Prism daemon v%s", Version)
-	logging.Info("Node: %s, Role: %s, Region: %s", config.NodeName, config.Role, config.Region)
+	logging.Info("Node: %s, Role: %s", config.NodeName, config.Role)
 	logging.Info("Binding to %s:%d", config.BindAddr, config.BindPort)
 
 	// Create SerfManager

@@ -26,7 +26,6 @@ type PrismNode struct {
 	Status   serf.MemberStatus `json:"status"`   // Status of the node
 	Tags     map[string]string `json:"tags"`     // Tags for the node
 	Roles    []string          `json:"roles"`    // e.g., ["agent", "control"]
-	Region   string            `json:"region"`   // datacenter/region identifier
 	LastSeen time.Time         `json:"lastSeen"` // Last seen time
 }
 
@@ -254,7 +253,7 @@ func (sm *SerfManager) GetMember(nodeID string) (*PrismNode, bool) {
 // Creates a deep copy of a PrismNode to prevent external modification.
 // Only reference types (Tags, Roles) need manual copying; value types are copied by *node.
 func (sm *SerfManager) copyPrismNode(node *PrismNode) *PrismNode {
-	// Shallow copy handles all value types (ID, Name, Addr, Port, Status, Region, LastSeen)
+	// Shallow copy handles all value types (ID, Name, Addr, Port, Status, LastSeen)
 	nodeCopy := *node
 
 	// Deep copy reference types to prevent external corruption
@@ -419,19 +418,18 @@ func (sm *SerfManager) QueryResourcesFromNode(nodeID string) (*NodeResources, er
 
 // Constructs the tags map for this node
 func (sm *SerfManager) buildNodeTags() map[string]string {
-	// Pre-allocate map capacity: user tags + 3 system tags (node_id, region, roles)
+	// Pre-allocate map capacity: user tags + 2 system tags (node_id, roles)
 	// This avoids memory reallocations when adding the fixed system tags below
-	tags := make(map[string]string, len(sm.config.Tags)+3)
+	tags := make(map[string]string, len(sm.config.Tags)+2)
 
 	// Copy custom tags
 	for k, v := range sm.config.Tags {
 		tags[k] = v
 	}
 
-	// Add system tags (+3 capacity is for these)
+	// Add system tags (+2 capacity is for these)
 	tags["node_id"] = sm.NodeID                     // +1: random hex node identifier
-	tags["region"] = sm.config.Region               // +2: region identifier
-	tags["roles"] = serializeRoles(sm.config.Roles) // +3: formatted role list
+	tags["roles"] = serializeRoles(sm.config.Roles) // +2: formatted role list
 
 	return tags
 }

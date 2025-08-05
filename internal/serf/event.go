@@ -174,7 +174,6 @@ func (sm *SerfManager) memberFromSerf(member serf.Member) *PrismNode {
 		Port:     member.Port,
 		Status:   member.Status,
 		Tags:     make(map[string]string, len(member.Tags)),
-		Region:   member.Tags["region"],
 		LastSeen: time.Now(),
 	}
 

@@ -14,7 +14,6 @@ type ManagerConfig struct {
 	NodeName        string            // Name of the node
 	Tags            map[string]string // Tags for the node
 	Roles           []string          // Roles for the node (e.g., ["agent", "control"])
-	Region          string            // Region for the node (e.g., "us-east-1")
 	EventBufferSize int               // Event buffer size
 	JoinRetries     int               // Join retries
 	JoinTimeout     time.Duration     // Join timeout
@@ -32,7 +31,6 @@ func DefaultManagerConfig() *ManagerConfig {
 		LogLevel:        "INFO",
 		Tags:            make(map[string]string),
 		Roles:           []string{"agent"},
-		Region:          "default",
 	}
 }
 

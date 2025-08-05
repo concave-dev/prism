@@ -61,7 +61,7 @@ var membersCmd = &cobra.Command{
 	Long: `List all members (nodes) in the Prism cluster.
 
 This command connects to the cluster and displays information about all
-known nodes including their roles, status, regions, and last seen times.`,
+known nodes including their roles, status, and last seen times.`,
 	Example: `  # List all members
   prismctl members
 
@@ -77,8 +77,8 @@ known nodes including their roles, status, regions, and last seen times.`,
 var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show cluster status information",
-	Long: `Show a summary of cluster status including node counts by role,
-status, and region.
+	Long: `Show a summary of cluster status including node counts by role
+and status.
 
 This provides a high-level overview of cluster health and composition.`,
 	Example: `  # Show cluster status
@@ -163,7 +163,6 @@ type ClusterMember struct {
 	Address  string            `json:"address"`
 	Roles    []string          `json:"roles"`
 	Status   string            `json:"status"`
-	Region   string            `json:"region"`
 	Tags     map[string]string `json:"tags"`
 	LastSeen time.Time         `json:"lastSeen"`
 }
@@ -172,7 +171,6 @@ type ClusterStatus struct {
 	TotalNodes    int            `json:"totalNodes"`
 	NodesByRole   map[string]int `json:"nodesByRole"`
 	NodesByStatus map[string]int `json:"nodesByStatus"`
-	NodesByRegion map[string]int `json:"nodesByRegion"`
 }
 
 type NodeResources struct {
@@ -295,7 +293,6 @@ func (api *PrismAPIClient) GetMembers() ([]ClusterMember, error) {
 					Address:  getString(memberMap, "address"),
 					Roles:    getStringSlice(memberMap, "roles"),
 					Status:   getString(memberMap, "status"),
-					Region:   getString(memberMap, "region"),
 					Tags:     getStringMap(memberMap, "tags"),
 					LastSeen: getTime(memberMap, "lastSeen"),
 				}
@@ -329,7 +326,6 @@ func (api *PrismAPIClient) GetStatus() (*ClusterStatus, error) {
 			TotalNodes:    getInt(statusData, "totalNodes"),
 			NodesByRole:   getIntMap(statusData, "nodesByRole"),
 			NodesByStatus: getIntMap(statusData, "nodesByStatus"),
-			NodesByRegion: getIntMap(statusData, "nodesByRegion"),
 		}, nil
 	}
 
@@ -699,7 +695,7 @@ func displayMembersFromAPI(members []ClusterMember) {
 	defer w.Flush()
 
 	// Header
-	fmt.Fprintln(w, "ID\tNAME\tADDRESS\tROLE\tSTATUS\tREGION\tLAST SEEN")
+	fmt.Fprintln(w, "ID\tNAME\tADDRESS\tROLE\tSTATUS\tLAST SEEN")
 
 	// Sort members by name for consistent output
 	sort.Slice(members, func(i, j int) bool {
@@ -713,15 +709,10 @@ func displayMembersFromAPI(members []ClusterMember) {
 			role = "unknown"
 		}
 
-		region := member.Region
-		if region == "" {
-			region = "default"
-		}
-
 		lastSeen := formatDuration(time.Since(member.LastSeen))
 
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			member.ID, member.Name, member.Address, role, member.Status, region, lastSeen)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+			member.ID, member.Name, member.Address, role, member.Status, lastSeen)
 	}
 }
 
@@ -742,10 +733,6 @@ func displayStatusFromAPI(status ClusterStatus) {
 	}
 	fmt.Println()
 
-	fmt.Printf("Nodes by Region:\n")
-	for region, count := range status.NodesByRegion {
-		fmt.Printf("  %-12s: %d\n", region, count)
-	}
 }
 
 // Displays cluster resources from API response

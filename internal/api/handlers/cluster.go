@@ -18,7 +18,6 @@ type ClusterMember struct {
 	Address  string            `json:"address"`
 	Roles    []string          `json:"roles"`
 	Status   string            `json:"status"`
-	Region   string            `json:"region"`
 	Tags     map[string]string `json:"tags"`
 	LastSeen time.Time         `json:"lastSeen"`
 }
@@ -28,7 +27,6 @@ type ClusterStatus struct {
 	TotalNodes    int            `json:"totalNodes"`
 	NodesByRole   map[string]int `json:"nodesByRole"`
 	NodesByStatus map[string]int `json:"nodesByStatus"`
-	NodesByRegion map[string]int `json:"nodesByRegion"`
 }
 
 // Represents general cluster information
@@ -53,7 +51,6 @@ func HandleMembers(serfManager *serf.SerfManager) gin.HandlerFunc {
 				Address:  fmt.Sprintf("%s:%d", member.Addr.String(), member.Port),
 				Roles:    member.Roles,
 				Status:   member.Status.String(),
-				Region:   member.Region,
 				Tags:     member.Tags,
 				LastSeen: member.LastSeen,
 			}
@@ -78,10 +75,9 @@ func HandleStatus(serfManager *serf.SerfManager) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		members := serfManager.GetMembers()
 
-		// Count members by role, status, and region
+		// Count members by role and status
 		roleCount := make(map[string]int)
 		statusCount := make(map[string]int)
-		regionCount := make(map[string]int)
 
 		for _, member := range members {
 			// Count by roles
@@ -91,20 +87,12 @@ func HandleStatus(serfManager *serf.SerfManager) gin.HandlerFunc {
 
 			// Count by status
 			statusCount[member.Status.String()]++
-
-			// Count by region
-			region := member.Region
-			if region == "" {
-				region = "default"
-			}
-			regionCount[region]++
 		}
 
 		status := ClusterStatus{
 			TotalNodes:    len(members),
 			NodesByRole:   roleCount,
 			NodesByStatus: statusCount,
-			NodesByRegion: regionCount,
 		}
 
 		c.JSON(http.StatusOK, gin.H{
@@ -123,7 +111,6 @@ func HandleClusterInfo(serfManager *serf.SerfManager, version string, startTime 
 		apiMembers := make([]ClusterMember, 0, len(members))
 		roleCount := make(map[string]int)
 		statusCount := make(map[string]int)
-		regionCount := make(map[string]int)
 
 		for _, member := range members {
 			apiMember := ClusterMember{
@@ -132,7 +119,6 @@ func HandleClusterInfo(serfManager *serf.SerfManager, version string, startTime 
 				Address:  fmt.Sprintf("%s:%d", member.Addr.String(), member.Port),
 				Roles:    member.Roles,
 				Status:   member.Status.String(),
-				Region:   member.Region,
 				Tags:     member.Tags,
 				LastSeen: member.LastSeen,
 			}
@@ -143,11 +129,6 @@ func HandleClusterInfo(serfManager *serf.SerfManager, version string, startTime 
 				roleCount[role]++
 			}
 			statusCount[member.Status.String()]++
-			region := member.Region
-			if region == "" {
-				region = "default"
-			}
-			regionCount[region]++
 		}
 
 		// Sort members
@@ -161,7 +142,6 @@ func HandleClusterInfo(serfManager *serf.SerfManager, version string, startTime 
 				TotalNodes:    len(members),
 				NodesByRole:   roleCount,
 				NodesByStatus: statusCount,
-				NodesByRegion: regionCount,
 			},
 			Members: apiMembers,
 			Uptime:  time.Since(startTime),

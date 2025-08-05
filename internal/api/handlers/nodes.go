@@ -37,7 +37,6 @@ func HandleNodeByID(serfManager *serf.SerfManager) gin.HandlerFunc {
 			Address:  fmt.Sprintf("%s:%d", member.Addr.String(), member.Port),
 			Roles:    member.Roles,
 			Status:   member.Status.String(),
-			Region:   member.Region,
 			Tags:     member.Tags,
 			LastSeen: member.LastSeen,
 		}

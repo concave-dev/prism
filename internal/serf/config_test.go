@@ -22,7 +22,6 @@ func TestDefaultManagerConfig(t *testing.T) {
 		"JoinRetries":     3,
 		"JoinTimeout":     30 * time.Second,
 		"LogLevel":        "INFO",
-		"Region":          "default",
 	}
 
 	// Test individual default values
@@ -48,10 +47,6 @@ func TestDefaultManagerConfig(t *testing.T) {
 
 	if config.LogLevel != expectedDefaults["LogLevel"] {
 		t.Errorf("Expected LogLevel=%v, got %v", expectedDefaults["LogLevel"], config.LogLevel)
-	}
-
-	if config.Region != expectedDefaults["Region"] {
-		t.Errorf("Expected Region=%v, got %v", expectedDefaults["Region"], config.Region)
 	}
 
 	// Test that Tags map is initialized (not nil)
@@ -100,7 +95,6 @@ func TestValidateConfig_ValidConfigurations(t *testing.T) {
 				LogLevel:        "INFO",
 				Tags:            make(map[string]string),
 				Roles:           []string{"agent"},
-				Region:          "default",
 			},
 		},
 		{
@@ -115,7 +109,6 @@ func TestValidateConfig_ValidConfigurations(t *testing.T) {
 				LogLevel:        "DEBUG",
 				Tags:            map[string]string{"env": "prod"},
 				Roles:           []string{"control", "agent"},
-				Region:          "us-west-1",
 			},
 		},
 		{
@@ -130,7 +123,6 @@ func TestValidateConfig_ValidConfigurations(t *testing.T) {
 				LogLevel:        "ERROR",
 				Tags:            make(map[string]string),
 				Roles:           []string{"agent"},
-				Region:          "test",
 			},
 		},
 		{
@@ -145,7 +137,6 @@ func TestValidateConfig_ValidConfigurations(t *testing.T) {
 				LogLevel:        "WARN",
 				Tags:            make(map[string]string),
 				Roles:           []string{"control"},
-				Region:          "eu-central-1",
 			},
 		},
 	}
@@ -289,7 +280,6 @@ func TestManagerConfig_StructFields(t *testing.T) {
 		NodeName:        "test",
 		Tags:            map[string]string{"key": "value"},
 		Roles:           []string{"agent", "control"},
-		Region:          "us-east-1",
 		EventBufferSize: 512,
 		JoinRetries:     2,
 		JoinTimeout:     45 * time.Second,
@@ -315,10 +305,6 @@ func TestManagerConfig_StructFields(t *testing.T) {
 
 	if len(config.Roles) != 2 || config.Roles[0] != "agent" || config.Roles[1] != "control" {
 		t.Errorf("Roles field not working correctly")
-	}
-
-	if config.Region != "us-east-1" {
-		t.Errorf("Region field not working correctly")
 	}
 
 	if config.EventBufferSize != 512 {
