@@ -26,7 +26,7 @@ import (
 const (
 	Version = "0.1.0-dev" // Version information
 
-	DefaultBind    = "0.0.0.0:4200" // Default bind address
+	DefaultSerf    = "0.0.0.0:4200" // Default serf address
 	DefaultAPIPort = 8008           // Default API server port
 
 )
@@ -51,8 +51,8 @@ func isConnectionRefusedError(err error) bool {
 
 // Global configuration
 var config struct {
-	BindAddr  string   // Network address to bind to
-	BindPort  int      // Network port to bind to
+	SerfAddr  string   // Network address for Serf cluster membership
+	SerfPort  int      // Network port for Serf cluster membership
 	APIAddr   string   // HTTP API server address (defaults to same IP as serf with port 8008)
 	APIPort   int      // HTTP API server port (derived from APIAddr)
 	RaftAddr  string   // Raft consensus address (defaults to same IP as serf with port 6969)
@@ -64,7 +64,7 @@ var config struct {
 	Bootstrap bool     // Whether to bootstrap a new Raft cluster
 
 	// Flags to track if values were explicitly set by user
-	bindExplicitlySet     bool
+	serfExplicitlySet     bool
 	apiAddrExplicitlySet  bool
 	raftAddrExplicitlySet bool
 }
@@ -78,35 +78,35 @@ var rootCmd = &cobra.Command{
 Think Kubernetes for AI agents - with isolated VMs, sandboxed execution, 
 serverless functions, native memory, workflows, and other AI-first primitives.`,
 	Version: Version,
-	Example: `  # Start first node in cluster
-  prismd --bind=0.0.0.0:4200
+	Example: `  	  # Start first node in cluster
+	  prismd --serf=0.0.0.0:4200
 
-  # Start second node and join existing cluster  
-  prismd --bind=0.0.0.0:4201 --join=127.0.0.1:4200 --name=second-node
+	  # Start second node and join existing cluster  
+	  prismd --serf=0.0.0.0:4201 --join=127.0.0.1:4200 --name=second-node
 
-  # Start with API accessible from external hosts
-  		prismd --bind=0.0.0.0:4200 --api=0.0.0.0:8008
+	  # Start with API accessible from external hosts
+	  prismd --serf=0.0.0.0:4200 --api=0.0.0.0:8008
 
-  # Join with multiple addresses for fault tolerance
-  prismd --bind=0.0.0.0:4202 --join=node1:4200,node2:4200,node3:4200`,
+	  # Join with multiple addresses for fault tolerance
+	  prismd --serf=0.0.0.0:4202 --join=node1:4200,node2:4200,node3:4200`,
 	PreRunE: validateConfig,
 	RunE:    runDaemon,
 }
 
 func init() {
 	// Network flags
-	rootCmd.Flags().StringVar(&config.BindAddr, "bind", DefaultBind,
-		"Address and port to bind to (e.g., 0.0.0.0:4200)")
+	rootCmd.Flags().StringVar(&config.SerfAddr, "serf", DefaultSerf,
+		"Address and port for Serf cluster membership (e.g., 0.0.0.0:4200)")
 	rootCmd.Flags().StringVar(&config.APIAddr, "api", "",
 		"Address and port for HTTP API server (e.g., 0.0.0.0:8008)\n"+
-			"If not specified, uses same IP as serf bind address with port "+fmt.Sprintf("%d", DefaultAPIPort))
+			"If not specified, uses same IP as serf address with port "+fmt.Sprintf("%d", DefaultAPIPort))
 
 	// Node configuration flags
 	rootCmd.Flags().StringVar(&config.NodeName, "name", "",
 		"Node name (defaults to generated name like 'cosmic-dragon')")
 	rootCmd.Flags().StringVar(&config.RaftAddr, "raft", "",
 		"Address and port for Raft consensus (e.g., 0.0.0.0:6969)\n"+
-			"If not specified, uses same IP as serf bind address with port 6969")
+			"If not specified, uses same IP as serf address with port 6969")
 	rootCmd.Flags().StringVar(&config.DataDir, "data-dir", "./data",
 		"Directory for persistent data storage (logs, snapshots)")
 	rootCmd.Flags().BoolVar(&config.Bootstrap, "bootstrap", false,
@@ -124,7 +124,7 @@ func init() {
 
 // checkExplicitFlags checks if flags were explicitly set by the user
 func checkExplicitFlags(cmd *cobra.Command) {
-	config.bindExplicitlySet = cmd.Flags().Changed("bind")
+	config.serfExplicitlySet = cmd.Flags().Changed("serf")
 	config.apiAddrExplicitlySet = cmd.Flags().Changed("api")
 	config.raftAddrExplicitlySet = cmd.Flags().Changed("raft")
 }
@@ -181,10 +181,10 @@ func findAvailablePort(address string, startPort int) (int, error) {
 func validateConfig(cmd *cobra.Command, args []string) error {
 	// Check which flags were explicitly set by user
 	checkExplicitFlags(cmd)
-	// Parse and validate bind address using centralized validation
-	netAddr, err := validate.ParseBindAddress(config.BindAddr)
+	// Parse and validate serf address using centralized validation
+	netAddr, err := validate.ParseBindAddress(config.SerfAddr)
 	if err != nil {
-		return fmt.Errorf("invalid bind address: %w", err)
+		return fmt.Errorf("invalid serf address: %w", err)
 	}
 
 	// Daemon requires non-zero ports (port 0 would let OS choose)
@@ -192,8 +192,8 @@ func validateConfig(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("daemon requires specific port (not 0): %w", err)
 	}
 
-	config.BindAddr = netAddr.Host
-	config.BindPort = netAddr.Port
+	config.SerfAddr = netAddr.Host
+	config.SerfPort = netAddr.Port
 
 	// Set node name (generate if not provided, validate if provided)
 	if config.NodeName == "" {
@@ -241,8 +241,8 @@ func validateConfig(cmd *cobra.Command, args []string) error {
 		config.APIAddr = apiNetAddr.Host
 		config.APIPort = apiNetAddr.Port
 	} else {
-		// Default: use serf bind IP + default API port (will be set in runDaemon)
-		config.APIAddr = config.BindAddr
+		// Default: use serf IP + default API port (will be set in runDaemon)
+		config.APIAddr = config.SerfAddr
 		config.APIPort = DefaultAPIPort
 	}
 
@@ -263,8 +263,8 @@ func validateConfig(cmd *cobra.Command, args []string) error {
 		config.RaftAddr = raftNetAddr.Host
 		config.RaftPort = raftNetAddr.Port
 	} else {
-		// Default: use serf bind IP + default Raft port (will be set in runDaemon)
-		config.RaftAddr = config.BindAddr
+		// Default: use serf IP + default Raft port (will be set in runDaemon)
+		config.RaftAddr = config.SerfAddr
 		config.RaftPort = raft.DefaultRaftPort
 	}
 
@@ -284,8 +284,8 @@ func validateConfig(cmd *cobra.Command, args []string) error {
 func buildSerfConfig() *serf.Config {
 	serfConfig := serf.DefaultConfig()
 
-	serfConfig.BindAddr = config.BindAddr
-	serfConfig.BindPort = config.BindPort
+	serfConfig.BindAddr = config.SerfAddr
+	serfConfig.BindPort = config.SerfPort
 	serfConfig.NodeName = config.NodeName
 	serfConfig.LogLevel = config.LogLevel
 
@@ -316,35 +316,35 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	logging.Info("Node: %s", config.NodeName)
 
 	// Handle Serf port binding
-	originalSerfPort := config.BindPort
-	if config.bindExplicitlySet {
-		// User explicitly set bind address - fail if port is busy
-		logging.Info("Binding to %s:%d", config.BindAddr, config.BindPort)
+	originalSerfPort := config.SerfPort
+	if config.serfExplicitlySet {
+		// User explicitly set serf address - fail if port is busy
+		logging.Info("Binding to %s:%d", config.SerfAddr, config.SerfPort)
 
 		// Test binding to ensure port is available
-		testAddr := fmt.Sprintf("%s:%d", config.BindAddr, config.BindPort)
+		testAddr := fmt.Sprintf("%s:%d", config.SerfAddr, config.SerfPort)
 		conn, err := net.Listen("tcp", testAddr)
 		if err != nil {
 			if isAddressInUseError(err) {
-				return fmt.Errorf("cannot bind to %s: port %d is already in use",
-					config.BindAddr, config.BindPort)
+				return fmt.Errorf("cannot bind Serf to %s: port %d is already in use",
+					config.SerfAddr, config.SerfPort)
 			}
-			return fmt.Errorf("failed to bind to %s: %w", testAddr, err)
+			return fmt.Errorf("failed to bind Serf to %s: %w", testAddr, err)
 		}
 		conn.Close()
 	} else {
 		// Using defaults - auto-increment if needed
-		availableSerfPort, err := findAvailablePort(config.BindAddr, config.BindPort)
+		availableSerfPort, err := findAvailablePort(config.SerfAddr, config.SerfPort)
 		if err != nil {
 			return fmt.Errorf("failed to find available Serf port: %w", err)
 		}
 
 		if availableSerfPort != originalSerfPort {
 			logging.Warn("Default port %d was busy, using port %d for Serf", originalSerfPort, availableSerfPort)
-			config.BindPort = availableSerfPort
+			config.SerfPort = availableSerfPort
 		}
 
-		logging.Info("Binding to %s:%d", config.BindAddr, config.BindPort)
+		logging.Info("Binding to %s:%d", config.SerfAddr, config.SerfPort)
 	}
 
 	// Create SerfManager
@@ -380,7 +380,7 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		conn.Close()
 	} else {
 		// Using defaults - use serf IP + auto-increment if needed
-		config.RaftAddr = config.BindAddr
+		config.RaftAddr = config.SerfAddr
 		availableRaftPort, err := findAvailablePort(config.RaftAddr, config.RaftPort)
 		if err != nil {
 			return fmt.Errorf("failed to find available Raft port: %w", err)
@@ -431,7 +431,7 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		conn.Close()
 	} else {
 		// Using defaults - use serf IP + auto-increment if needed
-		config.APIAddr = config.BindAddr
+		config.APIAddr = config.SerfAddr
 		availableAPIPort, err := findAvailablePort(config.APIAddr, config.APIPort)
 		if err != nil {
 			return fmt.Errorf("failed to find available API port: %w", err)
@@ -487,7 +487,7 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 
 	// Display service status
 	logging.Info("Node services started:")
-	logging.Info("  - Serf cluster membership: %s:%d", config.BindAddr, config.BindPort)
+	logging.Info("  - Serf cluster membership: %s:%d", config.SerfAddr, config.SerfPort)
 	logging.Info("  - Raft consensus: %s:%d (Leader: %v)", config.RaftAddr, config.RaftPort, raftManager.IsLeader())
 	logging.Info("  - HTTP API: %s:%d", config.APIAddr, config.APIPort)
 

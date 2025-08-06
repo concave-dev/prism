@@ -17,13 +17,13 @@ go build -o bin/prismctl cmd/prismctl/main.go
 Start the daemon:
 ```bash
 # For local development
-./bin/prismd --bind=0.0.0.0:4200 --name=first-node
+./bin/prismd --serf=0.0.0.0:4200 --name=first-node
 
 # For production with remote API access
-./bin/prismd --bind=0.0.0.0:4200 --api=0.0.0.0:8008 --name=first-node
+./bin/prismd --serf=0.0.0.0:4200 --api=0.0.0.0:8008 --name=first-node
 
 # Join second node 
-./bin/prismd --join=0.0.0.0:4200 --bind=0.0.0.0:4201 --name=second-node
+./bin/prismd --join=0.0.0.0:4200 --serf=0.0.0.0:4201 --name=second-node
 ```
 
 Use the CLI:
