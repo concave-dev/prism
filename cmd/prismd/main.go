@@ -16,6 +16,7 @@ import (
 
 	"github.com/concave-dev/prism/internal/api"
 	configDefaults "github.com/concave-dev/prism/internal/config"
+	"github.com/concave-dev/prism/internal/grpc"
 	"github.com/concave-dev/prism/internal/logging"
 	"github.com/concave-dev/prism/internal/names"
 	"github.com/concave-dev/prism/internal/raft"
@@ -29,6 +30,7 @@ const (
 
 	DefaultSerf = configDefaults.DefaultBindAddr + ":4200" // Default serf address
 	DefaultRaft = configDefaults.DefaultBindAddr + ":6969" // Default raft address
+	DefaultGRPC = configDefaults.DefaultBindAddr + ":7117" // Default gRPC address
 	DefaultAPI  = configDefaults.DefaultBindAddr + ":8008" // Default API address
 
 )
@@ -59,6 +61,8 @@ var config struct {
 	APIPort   int      // HTTP API server port (derived from APIAddr)
 	RaftAddr  string   // Raft consensus address (defaults to same IP as serf with port 6969)
 	RaftPort  int      // Raft consensus port (derived from RaftAddr)
+	GRPCAddr  string   // gRPC server address (defaults to same IP as serf with port 7117)
+	GRPCPort  int      // gRPC server port (derived from GRPCAddr)
 	NodeName  string   // Name of this node
 	JoinAddrs []string // List of cluster addresses to join
 	LogLevel  string   // Log level: DEBUG, INFO, WARN, ERROR
@@ -67,8 +71,9 @@ var config struct {
 
 	// Flags to track if values were explicitly set by user
 	serfExplicitlySet     bool
-	apiAddrExplicitlySet  bool
 	raftAddrExplicitlySet bool
+	grpcAddrExplicitlySet bool
+	apiAddrExplicitlySet  bool
 }
 
 // Root command
@@ -103,23 +108,28 @@ func init() {
 		"Comma-separated list of cluster addresses to join (e.g., node1:4200,node2:4200)\n"+
 			"Multiple addresses provide fault tolerance - if first node is down, tries next one")
 
-	// API flags
-	rootCmd.Flags().StringVar(&config.APIAddr, "api", "",
-		"Address and port for HTTP API server (e.g., "+DefaultAPI+")\n"+
-			"If not specified, uses same IP as serf address with port "+fmt.Sprintf("%d", api.DefaultAPIPort))
-
 	// Raft flags
-	rootCmd.Flags().StringVar(&config.RaftAddr, "raft", "",
+	rootCmd.Flags().StringVar(&config.RaftAddr, "raft", DefaultRaft,
 		"Address and port for Raft consensus (e.g., "+DefaultRaft+")\n"+
-			"If not specified, uses same IP as serf address with port 6969")
-	rootCmd.Flags().StringVar(&config.NodeName, "name", "",
-		"Node name (defaults to generated name like 'cosmic-dragon')")
+			"If not specified, defaults to "+DefaultRaft)
 	rootCmd.Flags().StringVar(&config.DataDir, "data-dir", "./data",
 		"Directory for persistent data storage (logs, snapshots)")
 	rootCmd.Flags().BoolVar(&config.Bootstrap, "bootstrap", false,
 		"Bootstrap a new Raft cluster (only use on the first node)")
 
+	// gRPC flags
+	rootCmd.Flags().StringVar(&config.GRPCAddr, "grpc", DefaultGRPC,
+		"Address and port for gRPC server (e.g., "+DefaultGRPC+")\n"+
+			"If not specified, defaults to "+DefaultGRPC)
+
+	// API flags
+	rootCmd.Flags().StringVar(&config.APIAddr, "api", DefaultAPI,
+		"Address and port for HTTP API server (e.g., "+DefaultAPI+")\n"+
+			"If not specified, defaults to "+DefaultAPI)
+
 	// Operational flags
+	rootCmd.Flags().StringVar(&config.NodeName, "name", "",
+		"Node name (defaults to generated name like 'cosmic-dragon')")
 	rootCmd.Flags().StringVar(&config.LogLevel, "log-level", configDefaults.DefaultLogLevel,
 		"Log level: DEBUG, INFO, WARN, ERROR")
 }
@@ -129,6 +139,7 @@ func checkExplicitFlags(cmd *cobra.Command) {
 	config.serfExplicitlySet = cmd.Flags().Changed("serf")
 	config.apiAddrExplicitlySet = cmd.Flags().Changed("api")
 	config.raftAddrExplicitlySet = cmd.Flags().Changed("raft")
+	config.grpcAddrExplicitlySet = cmd.Flags().Changed("grpc")
 }
 
 // findAvailablePort finds an available port starting from the given port on the specified address.
@@ -270,6 +281,28 @@ func validateConfig(cmd *cobra.Command, args []string) error {
 		config.RaftPort = raft.DefaultRaftPort
 	}
 
+	// Handle gRPC address configuration
+	if config.grpcAddrExplicitlySet {
+		// User explicitly set gRPC address - parse and validate it
+		grpcNetAddr, err := validate.ParseBindAddress(config.GRPCAddr)
+		if err != nil {
+			return fmt.Errorf("invalid gRPC address: %w", err)
+		}
+
+		// gRPC requires non-zero ports (port 0 would let OS choose)
+		if err := validate.ValidateField(grpcNetAddr.Port, "required,min=1,max=65535"); err != nil {
+			return fmt.Errorf("gRPC address requires specific port (not 0): %w", err)
+		}
+
+		// Store parsed gRPC address components
+		config.GRPCAddr = grpcNetAddr.Host
+		config.GRPCPort = grpcNetAddr.Port
+	} else {
+		// Default: use serf IP + default gRPC port
+		config.GRPCAddr = config.SerfAddr
+		config.GRPCPort = grpc.DefaultGRPCPort
+	}
+
 	// Validate join addresses if provided
 	// Multiple join addresses provide fault tolerance - if first node is unreachable,
 	// Serf will automatically try the next one until connection succeeds
@@ -294,6 +327,7 @@ func buildSerfConfig() *serf.Config {
 	// Add custom tags
 	serfConfig.Tags["prism_version"] = Version
 	serfConfig.Tags["raft_port"] = fmt.Sprintf("%d", config.RaftPort) // TODO: Enable Raft peer discovery
+	serfConfig.Tags["grpc_port"] = fmt.Sprintf("%d", config.GRPCPort) // Enable gRPC peer discovery
 
 	return serfConfig
 }
@@ -311,6 +345,19 @@ func buildRaftConfig() *raft.Config {
 	raftConfig.Bootstrap = config.Bootstrap
 
 	return raftConfig
+}
+
+// buildGRPCConfig converts daemon config to gRPC config
+func buildGRPCConfig() *grpc.Config {
+	grpcConfig := grpc.DefaultConfig()
+
+	grpcConfig.BindAddr = config.GRPCAddr
+	grpcConfig.BindPort = config.GRPCPort
+	grpcConfig.NodeID = config.NodeName
+	grpcConfig.NodeName = config.NodeName
+	grpcConfig.LogLevel = config.LogLevel
+
+	return grpcConfig
 }
 
 // runDaemon runs the daemon with graceful shutdown handling
@@ -350,19 +397,7 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		logging.Info("Binding to %s:%d", config.SerfAddr, config.SerfPort)
 	}
 
-	// Create SerfManager
-	serfConfig := buildSerfConfig()
-	manager, err := serf.NewSerfManager(serfConfig)
-	if err != nil {
-		return fmt.Errorf("failed to create serf manager: %w", err)
-	}
-
-	// Start SerfManager
-	if err := manager.Start(); err != nil {
-		return fmt.Errorf("failed to start serf manager: %w", err)
-	}
-
-	// Handle Raft address binding and start Raft manager
+	// Handle Raft address binding first (before creating Serf tags)
 	var raftManager *raft.RaftManager
 	originalRaftPort := config.RaftPort
 
@@ -397,29 +432,41 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		logging.Info("Starting Raft consensus on %s:%d", config.RaftAddr, config.RaftPort)
 	}
 
-	// Create and start Raft manager
-	raftConfig := buildRaftConfig()
-	raftManager, err = raft.NewRaftManager(raftConfig)
-	if err != nil {
-		return fmt.Errorf("failed to create raft manager: %w", err)
+	// Handle gRPC address binding (before creating Serf tags)
+	originalGRPCPort := config.GRPCPort
+
+	if config.grpcAddrExplicitlySet {
+		// User explicitly set gRPC address - fail if port is busy
+		logging.Info("Starting gRPC server on %s:%d", config.GRPCAddr, config.GRPCPort)
+
+		// Test binding to ensure port is available
+		testAddr := fmt.Sprintf("%s:%d", config.GRPCAddr, config.GRPCPort)
+		conn, err := net.Listen("tcp", testAddr)
+		if err != nil {
+			if isAddressInUseError(err) {
+				return fmt.Errorf("cannot bind gRPC server to %s: port %d is already in use",
+					config.GRPCAddr, config.GRPCPort)
+			}
+			return fmt.Errorf("failed to bind gRPC server to %s: %w", testAddr, err)
+		}
+		conn.Close()
+	} else {
+		// Using defaults - use serf IP + auto-increment if needed
+		config.GRPCAddr = config.SerfAddr
+		availableGRPCPort, err := findAvailablePort(config.GRPCAddr, config.GRPCPort)
+		if err != nil {
+			return fmt.Errorf("failed to find available gRPC port: %w", err)
+		}
+
+		if availableGRPCPort != originalGRPCPort {
+			logging.Warn("Default gRPC port %d was busy, using port %d for gRPC", originalGRPCPort, availableGRPCPort)
+			config.GRPCPort = availableGRPCPort
+		}
+
+		logging.Info("Starting gRPC server on %s:%d", config.GRPCAddr, config.GRPCPort)
 	}
 
-	if err := raftManager.Start(); err != nil {
-		return fmt.Errorf("failed to start raft manager: %w", err)
-	}
-
-	// Integrate Raft with Serf for automatic peer discovery
-	// When Serf discovers new members, Raft will automatically add them as peers
-	logging.Info("Integrating Raft with Serf for automatic peer discovery")
-	raftManager.IntegrateWithSerf(manager.ConsumerEventCh)
-
-	// Start HTTP API server on all nodes
-	var apiServer *api.Server
-
-	// Handle API address binding
-	// Two scenarios:
-	// 1. User specified --api: use that exact address/port, fail if busy
-	// 2. Using defaults: use serf IP + default port, auto-increment if busy
+	// Handle API address binding (before creating Serf tags)
 	originalAPIPort := config.APIPort
 
 	if config.apiAddrExplicitlySet {
@@ -452,6 +499,49 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 
 		logging.Info("Starting HTTP API server on %s:%d", config.APIAddr, config.APIPort)
 	}
+
+	// Now create SerfManager with correct port tags
+	serfConfig := buildSerfConfig()
+	manager, err := serf.NewSerfManager(serfConfig)
+	if err != nil {
+		return fmt.Errorf("failed to create serf manager: %w", err)
+	}
+
+	// Start SerfManager
+	if err := manager.Start(); err != nil {
+		return fmt.Errorf("failed to start serf manager: %w", err)
+	}
+
+	// Create and start Raft manager
+	raftConfig := buildRaftConfig()
+	raftManager, err = raft.NewRaftManager(raftConfig)
+	if err != nil {
+		return fmt.Errorf("failed to create raft manager: %w", err)
+	}
+
+	if err := raftManager.Start(); err != nil {
+		return fmt.Errorf("failed to start raft manager: %w", err)
+	}
+
+	// Integrate Raft with Serf for automatic peer discovery
+	// When Serf discovers new members, Raft will automatically add them as peers
+	logging.Info("Integrating Raft with Serf for automatic peer discovery")
+	raftManager.IntegrateWithSerf(manager.ConsumerEventCh)
+
+	// Create and start gRPC server
+	var grpcServer *grpc.Server
+	grpcConfig := buildGRPCConfig()
+	grpcServer, err = grpc.NewServer(grpcConfig)
+	if err != nil {
+		return fmt.Errorf("failed to create gRPC server: %w", err)
+	}
+
+	if err := grpcServer.Start(); err != nil {
+		return fmt.Errorf("failed to start gRPC server: %w", err)
+	}
+
+	// Start HTTP API server on all nodes
+	var apiServer *api.Server
 
 	apiConfig := api.DefaultConfig()
 	apiConfig.BindAddr = config.APIAddr
@@ -496,6 +586,7 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	logging.Info("Node services started:")
 	logging.Info("  - Serf cluster membership: %s:%d", config.SerfAddr, config.SerfPort)
 	logging.Info("  - Raft consensus: %s:%d (Leader: %v)", config.RaftAddr, config.RaftPort, raftManager.IsLeader())
+	logging.Info("  - gRPC server: %s:%d", config.GRPCAddr, config.GRPCPort)
 	logging.Info("  - HTTP API: %s:%d", config.APIAddr, config.APIPort)
 
 	// Wait for shutdown signal
@@ -516,6 +607,13 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 
 		if err := apiServer.Shutdown(shutdownCtx); err != nil {
 			logging.Error("Error shutting down API server: %v", err)
+		}
+	}
+
+	// Shutdown gRPC server
+	if grpcServer != nil {
+		if err := grpcServer.Stop(); err != nil {
+			logging.Error("Error shutting down gRPC server: %v", err)
 		}
 	}
 
