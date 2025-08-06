@@ -23,7 +23,7 @@ type ManagerConfig struct {
 // DefaultManagerConfig returns a default configuration for SerfManager
 func DefaultManagerConfig() *ManagerConfig {
 	return &ManagerConfig{
-		BindAddr:        "127.0.0.1",
+		BindAddr:        "0.0.0.0",
 		BindPort:        4200,
 		EventBufferSize: 1024,
 		JoinRetries:     3,
