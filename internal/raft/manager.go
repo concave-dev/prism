@@ -73,7 +73,7 @@ func NewManager(config *Config) (*Manager, error) {
 
 	manager.raft = r
 
-	logging.Info("Raft manager created successfully on %s", config.RaftAddr())
+	logging.Info("Raft manager created successfully on %s:%d", config.BindAddr, config.BindPort)
 	return manager, nil
 }
 
@@ -81,7 +81,7 @@ func NewManager(config *Config) (*Manager, error) {
 // TODO: Add health check endpoint for Raft status
 // TODO: Implement graceful startup with retry logic
 func (m *Manager) Start() error {
-	logging.Info("Starting Raft manager on %s", m.config.RaftAddr())
+	logging.Info("Starting Raft manager on %s:%d", m.config.BindAddr, m.config.BindPort)
 
 	// Bootstrap cluster if this is the first node
 	if m.config.Bootstrap {
@@ -92,7 +92,7 @@ func (m *Manager) Start() error {
 			Servers: []raft.Server{
 				{
 					ID:      raft.ServerID(m.config.NodeID),
-					Address: raft.ServerAddress(m.config.RaftAddr()),
+					Address: raft.ServerAddress(fmt.Sprintf("%s:%d", m.config.BindAddr, m.config.BindPort)),
 				},
 			},
 		}

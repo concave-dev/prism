@@ -25,7 +25,7 @@ const (
 // TODO: Implement snapshotting for log compaction
 type Config struct {
 	// Network configuration
-	BindAddr string // Address to bind Raft server to (e.g., "0.0.0.0:6969")
+	BindAddr string // IP address to bind Raft server to (e.g., "0.0.0.0")
 	BindPort int    // Port for Raft communication
 
 	// Node identification
@@ -51,7 +51,7 @@ type Config struct {
 // TODO: Add support for different storage backends (BoltDB, BadgerDB, etc.)
 func DefaultConfig() *Config {
 	return &Config{
-		BindAddr:           fmt.Sprintf("0.0.0.0:%d", DefaultRaftPort),
+		BindAddr:           "0.0.0.0",
 		BindPort:           DefaultRaftPort,
 		DataDir:            DefaultDataDir,
 		HeartbeatTimeout:   1000 * time.Millisecond,
@@ -106,9 +106,4 @@ func (c *Config) Validate() error {
 	}
 
 	return nil
-}
-
-// RaftAddr returns the full Raft address for this node
-func (c *Config) RaftAddr() string {
-	return fmt.Sprintf("%s:%d", c.BindAddr, c.BindPort)
 }
