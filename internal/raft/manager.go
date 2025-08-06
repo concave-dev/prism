@@ -43,37 +43,7 @@ func NewRaftManager(config *Config) (*RaftManager, error) {
 		shutdown: make(chan struct{}),
 	}
 
-	// Create data directory if it doesn't exist
-	if err := os.MkdirAll(config.DataDir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create data directory: %w", err)
-	}
-
-	// Initialize FSM (Finite State Machine)
-	// TODO: Implement actual business logic FSM for AI agent state management
-	manager.fsm = &simpleFSM{}
-
-	// Setup transport layer for Raft communication
-	if err := manager.setupTransport(); err != nil {
-		return nil, fmt.Errorf("failed to setup transport: %w", err)
-	}
-
-	// Setup storage layers
-	if err := manager.setupStorage(); err != nil {
-		return nil, fmt.Errorf("failed to setup storage: %w", err)
-	}
-
-	// Create Raft configuration
-	raftConfig := manager.buildRaftConfig()
-
-	// Create Raft instance
-	r, err := raft.NewRaft(raftConfig, manager.fsm, manager.logStore, manager.stableStore, manager.snapshots, manager.transport)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create raft: %w", err)
-	}
-
-	manager.raft = r
-
-	logging.Info("Raft manager created successfully on %s:%d", config.BindAddr, config.BindPort)
+	logging.Info("Raft manager created successfully with config for %s:%d", config.BindAddr, config.BindPort)
 	return manager, nil
 }
 
@@ -82,6 +52,36 @@ func NewRaftManager(config *Config) (*RaftManager, error) {
 // TODO: Implement graceful startup with retry logic
 func (m *RaftManager) Start() error {
 	logging.Info("Starting Raft manager on %s:%d", m.config.BindAddr, m.config.BindPort)
+
+	// Create data directory if it doesn't exist
+	if err := os.MkdirAll(m.config.DataDir, 0755); err != nil {
+		return fmt.Errorf("failed to create data directory: %w", err)
+	}
+
+	// Initialize FSM (Finite State Machine)
+	// TODO: Implement actual business logic FSM for AI agent state management
+	m.fsm = &simpleFSM{}
+
+	// Setup transport layer for Raft communication
+	if err := m.setupTransport(); err != nil {
+		return fmt.Errorf("failed to setup transport: %w", err)
+	}
+
+	// Setup storage layers
+	if err := m.setupStorage(); err != nil {
+		return fmt.Errorf("failed to setup storage: %w", err)
+	}
+
+	// Create Raft configuration
+	raftConfig := m.buildRaftConfig()
+
+	// Create Raft instance
+	r, err := raft.NewRaft(raftConfig, m.fsm, m.logStore, m.stableStore, m.snapshots, m.transport)
+	if err != nil {
+		return fmt.Errorf("failed to create raft: %w", err)
+	}
+
+	m.raft = r
 
 	// Bootstrap cluster if this is the first node
 	if m.config.Bootstrap {
