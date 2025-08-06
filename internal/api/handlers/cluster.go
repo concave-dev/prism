@@ -13,10 +13,10 @@ import (
 
 // Represents a cluster member in API responses
 type ClusterMember struct {
-	ID       string            `json:"id"`
-	Name     string            `json:"name"`
-	Address  string            `json:"address"`
-	Roles    []string          `json:"roles"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Address string `json:"address"`
+
 	Status   string            `json:"status"`
 	Tags     map[string]string `json:"tags"`
 	LastSeen time.Time         `json:"lastSeen"`
@@ -25,7 +25,6 @@ type ClusterMember struct {
 // Represents cluster status in API responses
 type ClusterStatus struct {
 	TotalNodes    int            `json:"totalNodes"`
-	NodesByRole   map[string]int `json:"nodesByRole"`
 	NodesByStatus map[string]int `json:"nodesByStatus"`
 }
 
@@ -49,7 +48,6 @@ func HandleMembers(serfManager *serf.SerfManager) gin.HandlerFunc {
 				ID:       member.ID,
 				Name:     member.Name,
 				Address:  fmt.Sprintf("%s:%d", member.Addr.String(), member.Port),
-				Roles:    member.Roles,
 				Status:   member.Status.String(),
 				Tags:     member.Tags,
 				LastSeen: member.LastSeen,
@@ -75,23 +73,16 @@ func HandleStatus(serfManager *serf.SerfManager) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		members := serfManager.GetMembers()
 
-		// Count members by role and status
-		roleCount := make(map[string]int)
+		// Count members by status
 		statusCount := make(map[string]int)
 
 		for _, member := range members {
-			// Count by roles
-			for _, role := range member.Roles {
-				roleCount[role]++
-			}
-
 			// Count by status
 			statusCount[member.Status.String()]++
 		}
 
 		status := ClusterStatus{
 			TotalNodes:    len(members),
-			NodesByRole:   roleCount,
 			NodesByStatus: statusCount,
 		}
 
@@ -109,7 +100,6 @@ func HandleClusterInfo(serfManager *serf.SerfManager, version string, startTime 
 
 		// Convert members
 		apiMembers := make([]ClusterMember, 0, len(members))
-		roleCount := make(map[string]int)
 		statusCount := make(map[string]int)
 
 		for _, member := range members {
@@ -117,7 +107,6 @@ func HandleClusterInfo(serfManager *serf.SerfManager, version string, startTime 
 				ID:       member.ID,
 				Name:     member.Name,
 				Address:  fmt.Sprintf("%s:%d", member.Addr.String(), member.Port),
-				Roles:    member.Roles,
 				Status:   member.Status.String(),
 				Tags:     member.Tags,
 				LastSeen: member.LastSeen,
@@ -125,9 +114,6 @@ func HandleClusterInfo(serfManager *serf.SerfManager, version string, startTime 
 			apiMembers = append(apiMembers, apiMember)
 
 			// Count stats
-			for _, role := range member.Roles {
-				roleCount[role]++
-			}
 			statusCount[member.Status.String()]++
 		}
 
@@ -140,7 +126,6 @@ func HandleClusterInfo(serfManager *serf.SerfManager, version string, startTime 
 			Version: version,
 			Status: ClusterStatus{
 				TotalNodes:    len(members),
-				NodesByRole:   roleCount,
 				NodesByStatus: statusCount,
 			},
 			Members: apiMembers,

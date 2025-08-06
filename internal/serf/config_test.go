@@ -60,18 +60,6 @@ func TestDefaultManagerConfig(t *testing.T) {
 		t.Errorf("Expected Tags to be empty, got %v", config.Tags)
 	}
 
-	// Test that Roles slice has default value
-	expectedRoles := []string{"agent"}
-	if len(config.Roles) != len(expectedRoles) {
-		t.Errorf("Expected Roles length=%d, got %d", len(expectedRoles), len(config.Roles))
-	}
-
-	for i, role := range expectedRoles {
-		if i >= len(config.Roles) || config.Roles[i] != role {
-			t.Errorf("Expected Roles[%d]=%s, got %v", i, role, config.Roles)
-		}
-	}
-
 	// Test that NodeName is empty by default (to be set by user)
 	if config.NodeName != "" {
 		t.Errorf("Expected NodeName to be empty by default, got %v", config.NodeName)
@@ -95,7 +83,6 @@ func TestValidateConfig_ValidConfigurations(t *testing.T) {
 				JoinTimeout:     30 * time.Second,
 				LogLevel:        "INFO",
 				Tags:            make(map[string]string),
-				Roles:           []string{"agent"},
 			},
 		},
 		{
@@ -109,7 +96,6 @@ func TestValidateConfig_ValidConfigurations(t *testing.T) {
 				JoinTimeout:     60 * time.Second,
 				LogLevel:        "DEBUG",
 				Tags:            map[string]string{"env": "prod"},
-				Roles:           []string{"control", "agent"},
 			},
 		},
 		{
@@ -123,7 +109,6 @@ func TestValidateConfig_ValidConfigurations(t *testing.T) {
 				JoinTimeout:     1 * time.Second,
 				LogLevel:        "ERROR",
 				Tags:            make(map[string]string),
-				Roles:           []string{"agent"},
 			},
 		},
 		{
@@ -137,7 +122,6 @@ func TestValidateConfig_ValidConfigurations(t *testing.T) {
 				JoinTimeout:     300 * time.Second,
 				LogLevel:        "WARN",
 				Tags:            make(map[string]string),
-				Roles:           []string{"control"},
 			},
 		},
 	}
@@ -276,11 +260,11 @@ func TestValidateConfig_NilConfig(t *testing.T) {
 // TestManagerConfig_StructFields tests ManagerConfig struct field types and tags
 func TestManagerConfig_StructFields(t *testing.T) {
 	config := &ManagerConfig{
-		BindAddr:        "192.168.1.1",
-		BindPort:        8080,
-		NodeName:        "test",
-		Tags:            map[string]string{"key": "value"},
-		Roles:           []string{"agent", "control"},
+		BindAddr: "192.168.1.1",
+		BindPort: 8080,
+		NodeName: "test",
+		Tags:     map[string]string{"key": "value"},
+
 		EventBufferSize: 512,
 		JoinRetries:     2,
 		JoinTimeout:     45 * time.Second,
@@ -302,10 +286,6 @@ func TestManagerConfig_StructFields(t *testing.T) {
 
 	if config.Tags["key"] != "value" {
 		t.Errorf("Tags field not working correctly")
-	}
-
-	if len(config.Roles) != 2 || config.Roles[0] != "agent" || config.Roles[1] != "control" {
-		t.Errorf("Roles field not working correctly")
 	}
 
 	if config.EventBufferSize != 512 {
@@ -477,7 +457,6 @@ func TestValidateConfig_ReservedTags(t *testing.T) {
 		JoinRetries:     3,
 		JoinTimeout:     30 * time.Second,
 		LogLevel:        "INFO",
-		Roles:           []string{"agent"},
 	}
 
 	tests := []struct {
@@ -497,15 +476,10 @@ func TestValidateConfig_ReservedTags(t *testing.T) {
 			expectError:   true,
 			errorContains: "tag name 'node_id' is reserved",
 		},
+
 		{
-			name:          "Reserved tag: roles",
-			tags:          map[string]string{"roles": "custom-roles"},
-			expectError:   true,
-			errorContains: "tag name 'roles' is reserved",
-		},
-		{
-			name:          "Multiple reserved tags",
-			tags:          map[string]string{"node_id": "id", "roles": "role"},
+			name:          "Multiple reserved tags with node_id",
+			tags:          map[string]string{"node_id": "id", "custom": "value"},
 			expectError:   true,
 			errorContains: "is reserved",
 		},
@@ -562,19 +536,7 @@ func TestNewSerfManager_ReservedTags(t *testing.T) {
 		t.Errorf("Expected error message to mention 'node_id' and 'reserved', got: %v", err)
 	}
 
-	// Test with roles tag too
-	config2 := DefaultManagerConfig()
-	config2.NodeName = "test-node-2"
-	config2.Tags["roles"] = "custom-roles" // Reserved tag should be rejected
-
-	_, err2 := NewSerfManager(config2)
-	if err2 == nil {
-		t.Fatal("Expected NewSerfManager to reject config with reserved 'roles' tag, but it didn't")
-	}
-
-	if !strings.Contains(err2.Error(), "roles") || !strings.Contains(err2.Error(), "reserved") {
-		t.Errorf("Expected error message to mention 'roles' and 'reserved', got: %v", err2)
-	}
+	// Since we removed roles as a reserved tag, this test is no longer needed
 
 	// Test that valid tags work fine
 	config3 := DefaultManagerConfig()

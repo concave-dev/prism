@@ -27,7 +27,7 @@ const (
 
 	DefaultBind    = "127.0.0.1:4200" // Default bind address
 	DefaultAPIPort = 8020             // Default API server port
-	DefaultRole    = "agent"          // Default role
+
 )
 
 // isAddressInUseError checks if an error is "address already in use" using proper error types
@@ -54,7 +54,6 @@ var config struct {
 	BindPort  int      // Network port to bind to
 	APIPort   int      // HTTP API server port
 	NodeName  string   // Name of this node
-	Role      string   // Node role: agent or control
 	JoinAddrs []string // List of cluster addresses to join
 	LogLevel  string   // Log level: DEBUG, INFO, WARN, ERROR
 
@@ -72,14 +71,14 @@ var rootCmd = &cobra.Command{
 Think Kubernetes for AI agents - with isolated VMs, sandboxed execution, 
 serverless functions, native memory, workflows, and other AI-first primitives.`,
 	Version: Version,
-	Example: `  # Start an agent node (first node in cluster)
-  prismd --bind=0.0.0.0:4200 --role=agent
+	Example: `  # Start first node in cluster
+  prismd --bind=0.0.0.0:4200
 
-  # Start a control node and join existing cluster  
-  prismd --bind=0.0.0.0:4201 --role=control --join=127.0.0.1:4200 --name=control-node
+  # Start second node and join existing cluster  
+  prismd --bind=0.0.0.0:4201 --join=127.0.0.1:4200 --name=second-node
 
   # Join with multiple addresses for fault tolerance
-  prismd --bind=0.0.0.0:4202 --role=agent --join=node1:4200,node2:4200,node3:4200`,
+  prismd --bind=0.0.0.0:4202 --join=node1:4200,node2:4200,node3:4200`,
 	PreRunE: validateConfig,
 	RunE:    runDaemon,
 }
@@ -92,8 +91,6 @@ func init() {
 		"HTTP API server port (e.g., 8020)")
 
 	// Node configuration flags
-	rootCmd.Flags().StringVar(&config.Role, "role", DefaultRole,
-		"Node role: agent or control")
 	rootCmd.Flags().StringVar(&config.NodeName, "name", "",
 		"Node name (defaults to generated name like 'cosmic-dragon')")
 
@@ -197,15 +194,6 @@ func validateConfig(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Validate role
-	validRoles := map[string]bool{
-		"agent":   true,
-		"control": true,
-	}
-	if !validRoles[config.Role] {
-		return fmt.Errorf("invalid role: %s (must be agent or control)", config.Role)
-	}
-
 	// Validate log level
 	validLogLevels := map[string]bool{
 		"DEBUG": true,
@@ -243,16 +231,7 @@ func buildSerfConfig() *serf.ManagerConfig {
 	serfConfig.NodeName = config.NodeName
 	serfConfig.LogLevel = config.LogLevel
 
-	// Set roles based on daemon role
-	switch config.Role {
-	case "agent":
-		serfConfig.Roles = []string{"agent"}
-	case "control":
-		serfConfig.Roles = []string{"control"}
-	}
-
 	// Add custom tags
-	serfConfig.Tags["daemon_role"] = config.Role
 	serfConfig.Tags["prism_version"] = Version
 
 	return serfConfig
@@ -261,7 +240,7 @@ func buildSerfConfig() *serf.ManagerConfig {
 // runDaemon runs the daemon with graceful shutdown handling
 func runDaemon(cmd *cobra.Command, args []string) error {
 	logging.Info("Starting Prism daemon v%s", Version)
-	logging.Info("Node: %s, Role: %s", config.NodeName, config.Role)
+	logging.Info("Node: %s", config.NodeName)
 
 	// Handle Serf port binding
 	originalSerfPort := config.BindPort
@@ -382,15 +361,9 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	logging.Success("Prism daemon started successfully")
 	logging.Info("Daemon running... Press Ctrl+C to shutdown")
 
-	// Start daemon services based on role
-	switch config.Role {
-	case "agent":
-		logging.Info("Starting agent services...")
-		// TODO: Start job execution engine
-	case "control":
-		logging.Info("Starting control plane services...")
-		// TODO: Start Raft, scheduling engine, etc.
-	}
+	// TODO: Start additional services when implemented
+	logging.Info("Starting node services...")
+	// TODO: Start job execution engine, Raft consensus, etc.
 
 	// Wait for shutdown signal
 	select {

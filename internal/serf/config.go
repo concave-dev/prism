@@ -9,15 +9,15 @@ import (
 
 // Holds configuration for the SerfManager
 type ManagerConfig struct {
-	BindAddr        string            // Bind address
-	BindPort        int               // Bind port
-	NodeName        string            // Name of the node
-	Tags            map[string]string // Tags for the node
-	Roles           []string          // Roles for the node (e.g., ["agent", "control"])
-	EventBufferSize int               // Event buffer size
-	JoinRetries     int               // Join retries
-	JoinTimeout     time.Duration     // Join timeout
-	LogLevel        string            // Log level
+	BindAddr string            // Bind address
+	BindPort int               // Bind port
+	NodeName string            // Name of the node
+	Tags     map[string]string // Tags for the node
+
+	EventBufferSize int           // Event buffer size
+	JoinRetries     int           // Join retries
+	JoinTimeout     time.Duration // Join timeout
+	LogLevel        string        // Log level
 }
 
 // DefaultManagerConfig returns a default configuration for SerfManager
@@ -30,7 +30,6 @@ func DefaultManagerConfig() *ManagerConfig {
 		JoinTimeout:     30 * time.Second,
 		LogLevel:        "INFO",
 		Tags:            make(map[string]string),
-		Roles:           []string{"agent"},
 	}
 }
 
@@ -66,7 +65,6 @@ func validateTags(tags map[string]string) error {
 	// Define reserved tag names that are used by the system
 	reservedTags := map[string]bool{
 		"node_id": true,
-		"roles":   true,
 	}
 
 	// Check each user tag against reserved names

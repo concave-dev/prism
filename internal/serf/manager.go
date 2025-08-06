@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"strings"
 	"sync"
 	"time"
 
@@ -34,14 +33,14 @@ import (
 
 // Represents a node in the Prism cluster with its metadata
 type PrismNode struct {
-	ID       string            `json:"id"`       // Unique identifier for the node
-	Name     string            `json:"name"`     // Name of the node
-	Addr     net.IP            `json:"addr"`     // IP address of the node
-	Port     uint16            `json:"port"`     // Port number
-	Status   serf.MemberStatus `json:"status"`   // Status of the node
-	Tags     map[string]string `json:"tags"`     // Tags for the node
-	Roles    []string          `json:"roles"`    // e.g., ["agent", "control"]
-	LastSeen time.Time         `json:"lastSeen"` // Last seen time
+	ID     string            `json:"id"`     // Unique identifier for the node
+	Name   string            `json:"name"`   // Name of the node
+	Addr   net.IP            `json:"addr"`   // IP address of the node
+	Port   uint16            `json:"port"`   // Port number
+	Status serf.MemberStatus `json:"status"` // Status of the node
+	Tags   map[string]string `json:"tags"`   // Tags for the node
+
+	LastSeen time.Time `json:"lastSeen"` // Last seen time
 }
 
 // Manages Serf cluster membership and events for Prism
@@ -280,7 +279,7 @@ func (sm *SerfManager) GetMember(nodeID string) (*PrismNode, bool) {
 }
 
 // copyPrismNode creates a deep copy of a PrismNode to prevent external modifications and race conditions.
-// copyPrismNode only needs to manually copy reference types (Tags, Roles); value types are copied by *node.
+// copyPrismNode only needs to manually copy reference types (Tags); value types are copied by *node.
 func (sm *SerfManager) copyPrismNode(node *PrismNode) *PrismNode {
 	// Shallow copy handles all value types (ID, Name, Addr, Port, Status, LastSeen)
 	nodeCopy := *node
@@ -290,8 +289,6 @@ func (sm *SerfManager) copyPrismNode(node *PrismNode) *PrismNode {
 	for k, v := range node.Tags {
 		nodeCopy.Tags[k] = v
 	}
-	nodeCopy.Roles = make([]string, len(node.Roles))
-	copy(nodeCopy.Roles, node.Roles)
 
 	return &nodeCopy
 }
@@ -447,18 +444,17 @@ func (sm *SerfManager) QueryResourcesFromNode(nodeID string) (*NodeResources, er
 
 // buildNodeTags constructs the tags map for this node
 func (sm *SerfManager) buildNodeTags() map[string]string {
-	// Pre-allocate map capacity: user tags + 2 system tags (node_id, roles)
+	// Pre-allocate map capacity: user tags + 1 system tag (node_id)
 	// This avoids memory reallocations when adding the fixed system tags below
-	tags := make(map[string]string, len(sm.config.Tags)+2)
+	tags := make(map[string]string, len(sm.config.Tags)+1)
 
 	// Copy custom tags
 	for k, v := range sm.config.Tags {
 		tags[k] = v
 	}
 
-	// Add system tags (+2 capacity is for these)
-	tags["node_id"] = sm.NodeID                     // +1: random hex node identifier
-	tags["roles"] = serializeRoles(sm.config.Roles) // +2: formatted role list
+	// Add system tags (+1 capacity is for this)
+	tags["node_id"] = sm.NodeID // +1: random hex node identifier
 
 	return tags
 }
@@ -472,51 +468,4 @@ func generateNodeID() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(bytes), nil
-}
-
-// deserializeRoles converts a comma-separated string back to a []string slice.
-// This is needed because Serf tags are map[string]string (string-only),
-// so we must serialize/deserialize arrays to work around this limitation.
-//
-// Example: "agent,control,leader" → ["agent", "control", "leader"]
-func deserializeRoles(rolesStr string) []string {
-	if rolesStr == "" {
-		return []string{}
-	}
-
-	roles := make([]string, 0)
-	for _, role := range strings.Split(rolesStr, ",") {
-		role = strings.TrimSpace(role)
-		if role != "" {
-			roles = append(roles, role)
-		}
-	}
-	return roles
-}
-
-// serializeRoles converts a []string slice to a comma-separated string.
-// This is needed because Serf tags are map[string]string (string-only),
-// so we must serialize arrays before storing them in tags.
-//
-// Example: ["agent", "control", "leader"] → "agent,control,leader"
-func serializeRoles(roles []string) string {
-	if len(roles) == 0 {
-		return ""
-	}
-
-	// Validate role names don't contain commas (would break our serialization)
-	for _, role := range roles {
-		if strings.Contains(role, ",") {
-			panic(fmt.Sprintf("role name cannot contain comma: '%s'. Use hyphens or underscores instead.", role))
-		}
-		if strings.TrimSpace(role) == "" {
-			panic("role name cannot be empty or whitespace-only")
-		}
-	}
-
-	result := roles[0]
-	for i := 1; i < len(roles); i++ {
-		result += "," + roles[i]
-	}
-	return result
 }

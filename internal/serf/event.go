@@ -182,11 +182,6 @@ func (sm *SerfManager) memberFromSerf(member serf.Member) *PrismNode {
 		node.Tags[k] = v
 	}
 
-	// Parse roles from tags
-	if rolesStr, exists := member.Tags["roles"]; exists {
-		node.Roles = deserializeRoles(rolesStr)
-	}
-
 	return node
 }
 
