@@ -24,15 +24,8 @@ type Server struct {
 	bindPort    int
 }
 
-// Holds configuration for the Prism API server
-type ServerConfig struct {
-	BindAddr    string            // HTTP server bind address
-	BindPort    int               // HTTP server bind port
-	SerfManager *serf.SerfManager // Reference to cluster manager
-}
-
 // NewServer creates a new Prism API server instance
-func NewServer(config *ServerConfig) *Server {
+func NewServer(config *Config) *Server {
 	// Set Gin to release mode for production
 	gin.SetMode(gin.ReleaseMode)
 

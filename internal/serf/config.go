@@ -4,7 +4,22 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/concave-dev/prism/internal/config"
 	"github.com/concave-dev/prism/internal/validate"
+)
+
+const (
+	// DefaultSerfPort is the default port for Serf communication
+	DefaultSerfPort = 4200
+
+	// DefaultEventBufferSize is the default event buffer size
+	DefaultEventBufferSize = 1024
+
+	// DefaultJoinRetries is the default join retries
+	DefaultJoinRetries = 3
+
+	// DefaultJoinTimeout is the default join timeout
+	DefaultJoinTimeout = 30 * time.Second
 )
 
 // Config holds configuration for the SerfManager
@@ -23,12 +38,12 @@ type Config struct {
 // DefaultConfig returns a default configuration for SerfManager
 func DefaultConfig() *Config {
 	return &Config{
-		BindAddr:        "0.0.0.0",
-		BindPort:        4200,
-		EventBufferSize: 1024,
-		JoinRetries:     3,
-		JoinTimeout:     30 * time.Second,
-		LogLevel:        "INFO",
+		BindAddr:        config.DefaultBindAddr,
+		BindPort:        DefaultSerfPort,
+		EventBufferSize: DefaultEventBufferSize,
+		JoinRetries:     DefaultJoinRetries,
+		JoinTimeout:     DefaultJoinTimeout,
+		LogLevel:        config.DefaultLogLevel,
 		Tags:            make(map[string]string),
 	}
 }

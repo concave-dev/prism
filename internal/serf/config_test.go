@@ -17,7 +17,7 @@ func TestDefaultConfig(t *testing.T) {
 
 	// Test default values
 	expectedDefaults := map[string]interface{}{
-		"BindAddr":        "127.0.0.1",
+		"BindAddr":        "0.0.0.0",
 		"BindPort":        4200,
 		"EventBufferSize": 1024,
 		"JoinRetries":     3,

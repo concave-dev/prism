@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/concave-dev/prism/internal/api"
+	configDefaults "github.com/concave-dev/prism/internal/config"
 	"github.com/concave-dev/prism/internal/logging"
 	"github.com/concave-dev/prism/internal/names"
 	"github.com/concave-dev/prism/internal/raft"
@@ -26,8 +27,9 @@ import (
 const (
 	Version = "0.1.0-dev" // Version information
 
-	DefaultSerf    = "0.0.0.0:4200" // Default serf address
-	DefaultAPIPort = 8008           // Default API server port
+	DefaultSerf = configDefaults.DefaultBindAddr + ":4200" // Default serf address
+	DefaultRaft = configDefaults.DefaultBindAddr + ":6969" // Default raft address
+	DefaultAPI  = configDefaults.DefaultBindAddr + ":8008" // Default API address
 
 )
 
@@ -79,13 +81,13 @@ Think Kubernetes for AI agents - with isolated VMs, sandboxed execution,
 serverless functions, native memory, workflows, and other AI-first primitives.`,
 	Version: Version,
 	Example: `  	  # Start first node in cluster
-	  prismd --serf=0.0.0.0:4200
+	  prismd --serf=` + DefaultSerf + `
 
 	  # Start second node and join existing cluster  
 	  prismd --serf=0.0.0.0:4201 --join=127.0.0.1:4200 --name=second-node
 
 	  # Start with API accessible from external hosts
-	  prismd --serf=0.0.0.0:4200 --api=0.0.0.0:8008
+	  prismd --serf=` + DefaultSerf + ` --api=` + DefaultAPI + `
 
 	  # Join with multiple addresses for fault tolerance
 	  prismd --serf=0.0.0.0:4202 --join=node1:4200,node2:4200,node3:4200`,
@@ -94,31 +96,31 @@ serverless functions, native memory, workflows, and other AI-first primitives.`,
 }
 
 func init() {
-	// Network flags
+	// Serf flags
 	rootCmd.Flags().StringVar(&config.SerfAddr, "serf", DefaultSerf,
 		"Address and port for Serf cluster membership (e.g., 0.0.0.0:4200)")
-	rootCmd.Flags().StringVar(&config.APIAddr, "api", "",
-		"Address and port for HTTP API server (e.g., 0.0.0.0:8008)\n"+
-			"If not specified, uses same IP as serf address with port "+fmt.Sprintf("%d", DefaultAPIPort))
+	rootCmd.Flags().StringSliceVar(&config.JoinAddrs, "join", nil,
+		"Comma-separated list of cluster addresses to join (e.g., node1:4200,node2:4200)\n"+
+			"Multiple addresses provide fault tolerance - if first node is down, tries next one")
 
-	// Node configuration flags
+	// API flags
+	rootCmd.Flags().StringVar(&config.APIAddr, "api", "",
+		"Address and port for HTTP API server (e.g., "+DefaultAPI+")\n"+
+			"If not specified, uses same IP as serf address with port "+fmt.Sprintf("%d", api.DefaultAPIPort))
+
+	// Raft flags
+	rootCmd.Flags().StringVar(&config.RaftAddr, "raft", "",
+		"Address and port for Raft consensus (e.g., "+DefaultRaft+")\n"+
+			"If not specified, uses same IP as serf address with port 6969")
 	rootCmd.Flags().StringVar(&config.NodeName, "name", "",
 		"Node name (defaults to generated name like 'cosmic-dragon')")
-	rootCmd.Flags().StringVar(&config.RaftAddr, "raft", "",
-		"Address and port for Raft consensus (e.g., 0.0.0.0:6969)\n"+
-			"If not specified, uses same IP as serf address with port 6969")
 	rootCmd.Flags().StringVar(&config.DataDir, "data-dir", "./data",
 		"Directory for persistent data storage (logs, snapshots)")
 	rootCmd.Flags().BoolVar(&config.Bootstrap, "bootstrap", false,
 		"Bootstrap a new Raft cluster (only use on the first node)")
 
-	// Cluster flags
-	rootCmd.Flags().StringSliceVar(&config.JoinAddrs, "join", nil,
-		"Comma-separated list of cluster addresses to join (e.g., node1:4200,node2:4200)\n"+
-			"Multiple addresses provide fault tolerance - if first node is down, tries next one")
-
 	// Operational flags
-	rootCmd.Flags().StringVar(&config.LogLevel, "log-level", "INFO",
+	rootCmd.Flags().StringVar(&config.LogLevel, "log-level", configDefaults.DefaultLogLevel,
 		"Log level: DEBUG, INFO, WARN, ERROR")
 }
 
@@ -241,9 +243,9 @@ func validateConfig(cmd *cobra.Command, args []string) error {
 		config.APIAddr = apiNetAddr.Host
 		config.APIPort = apiNetAddr.Port
 	} else {
-		// Default: use serf IP + default API port (will be set in runDaemon)
+		// Default: use serf IP + default API port
 		config.APIAddr = config.SerfAddr
-		config.APIPort = DefaultAPIPort
+		config.APIPort = api.DefaultAPIPort
 	}
 
 	// Handle Raft address configuration
@@ -263,7 +265,7 @@ func validateConfig(cmd *cobra.Command, args []string) error {
 		config.RaftAddr = raftNetAddr.Host
 		config.RaftPort = raftNetAddr.Port
 	} else {
-		// Default: use serf IP + default Raft port (will be set in runDaemon)
+		// Default: use serf IP + default Raft port
 		config.RaftAddr = config.SerfAddr
 		config.RaftPort = raft.DefaultRaftPort
 	}
@@ -445,11 +447,10 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		logging.Info("Starting HTTP API server on %s:%d", config.APIAddr, config.APIPort)
 	}
 
-	apiConfig := &api.ServerConfig{
-		BindAddr:    config.APIAddr,
-		BindPort:    config.APIPort,
-		SerfManager: manager,
-	}
+	apiConfig := api.DefaultConfig()
+	apiConfig.BindAddr = config.APIAddr
+	apiConfig.BindPort = config.APIPort
+	apiConfig.SerfManager = manager
 
 	apiServer = api.NewServer(apiConfig)
 	if err := apiServer.Start(); err != nil {

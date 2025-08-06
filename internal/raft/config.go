@@ -6,6 +6,8 @@ package raft
 import (
 	"fmt"
 	"time"
+
+	"github.com/concave-dev/prism/internal/config"
 )
 
 const (
@@ -17,6 +19,18 @@ const (
 
 	// RaftTimeout is the default timeout for Raft operations
 	RaftTimeout = 10 * time.Second
+
+	// DefaultHeartbeatTimeout is the default heartbeat timeout
+	DefaultHeartbeatTimeout = 1000 * time.Millisecond
+
+	// DefaultElectionTimeout is the default election timeout
+	DefaultElectionTimeout = 1000 * time.Millisecond
+
+	// DefaultCommitTimeout is the default commit timeout
+	DefaultCommitTimeout = 50 * time.Millisecond
+
+	// DefaultLeaderLeaseTimeout is the default leader lease timeout
+	DefaultLeaderLeaseTimeout = 500 * time.Millisecond
 )
 
 // Config holds configuration for the Raft manager
@@ -24,26 +38,17 @@ const (
 // TODO: Add support for dynamic cluster reconfiguration
 // TODO: Implement snapshotting for log compaction
 type Config struct {
-	// Network configuration
-	BindAddr string // IP address to bind Raft server to (e.g., "0.0.0.0")
-	BindPort int    // Port for Raft communication
-
-	// Node identification
-	NodeID   string // Unique identifier for this Raft node
-	NodeName string // Human-readable name for this node
-
-	// Storage configuration
-	DataDir string // Directory for Raft data storage (logs, snapshots)
-
-	// Raft protocol configuration
+	BindAddr           string        // IP address to bind Raft server to (e.g., "0.0.0.0")
+	BindPort           int           // Port for Raft communication
+	NodeID             string        // Unique identifier for this Raft node
+	NodeName           string        // Human-readable name for this node
+	DataDir            string        // Directory for Raft data storage (logs, snapshots)
 	HeartbeatTimeout   time.Duration // How long to wait for heartbeat before triggering election
 	ElectionTimeout    time.Duration // How long to wait for election before starting new one
 	CommitTimeout      time.Duration // How long to wait for commit acknowledgment
 	LeaderLeaseTimeout time.Duration // How long leader lease is valid
 	LogLevel           string        // Log level for Raft: DEBUG, INFO, WARN, ERROR
-
-	// Bootstrap configuration
-	Bootstrap bool // Whether this node should bootstrap a new cluster
+	Bootstrap          bool          // Whether this node should bootstrap a new cluster
 }
 
 // DefaultConfig returns a default Raft configuration
@@ -51,14 +56,14 @@ type Config struct {
 // TODO: Add support for different storage backends (BoltDB, BadgerDB, etc.)
 func DefaultConfig() *Config {
 	return &Config{
-		BindAddr:           "0.0.0.0",
+		BindAddr:           config.DefaultBindAddr,
 		BindPort:           DefaultRaftPort,
 		DataDir:            DefaultDataDir,
-		HeartbeatTimeout:   1000 * time.Millisecond,
-		ElectionTimeout:    1000 * time.Millisecond,
-		CommitTimeout:      50 * time.Millisecond,
-		LeaderLeaseTimeout: 500 * time.Millisecond,
-		LogLevel:           "INFO",
+		HeartbeatTimeout:   DefaultHeartbeatTimeout,
+		ElectionTimeout:    DefaultElectionTimeout,
+		CommitTimeout:      DefaultCommitTimeout,
+		LeaderLeaseTimeout: DefaultLeaderLeaseTimeout,
+		LogLevel:           config.DefaultLogLevel,
 		Bootstrap:          false,
 	}
 }
