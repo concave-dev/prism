@@ -19,15 +19,15 @@ import (
 // TODO: Add metrics collection for Raft operations
 // TODO: Implement cluster membership changes via Serf events
 type RaftManager struct {
-	config      *Config
-	raft        *raft.Raft
-	fsm         raft.FSM
-	transport   *raft.NetworkTransport
-	logStore    raft.LogStore
-	stableStore raft.StableStore
-	snapshots   raft.SnapshotStore
-	mu          sync.RWMutex
-	shutdown    chan struct{}
+	config      *Config                // Configuration for the Raft manager
+	raft        *raft.Raft             // Main Raft consensus instance
+	fsm         raft.FSM               // Finite State Machine for applying commands
+	transport   *raft.NetworkTransport // Network transport for Raft communication
+	logStore    raft.LogStore          // BoltDB-backed persistent log storage
+	stableStore raft.StableStore       // BoltDB-backed stable storage for metadata
+	snapshots   raft.SnapshotStore     // File-based snapshot storage
+	mu          sync.RWMutex           // Mutex for thread-safe operations
+	shutdown    chan struct{}          // Channel to signal shutdown
 }
 
 // NewRaftManager creates a new Raft manager with the given configuration
