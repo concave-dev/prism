@@ -42,6 +42,7 @@ AI agents, MCP tools, and AI workflows in Prism clusters.
 Similar to kubectl for Kubernetes, prismctl lets you deploy agents, run 
 AI-generated code in sandboxes, manage workflows, and inspect cluster state.`,
 	Version:           Version,
+	SilenceUsage:      true, // Don't show usage on errors
 	PersistentPreRunE: validateGlobalFlags,
 	Example: `  # List cluster members
   prismctl members

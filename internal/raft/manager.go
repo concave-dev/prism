@@ -186,9 +186,10 @@ func (m *RaftManager) setupTransport() error {
 	bindAddr := m.config.BindAddr
 	if bindAddr == "0.0.0.0" {
 		// Get the local IP address that can be used by other nodes
+		// Outsource OS to pick the right IP that connects to the internet
 		conn, err := net.Dial("udp", "8.8.8.8:80")
 		if err != nil {
-			// Fallback to localhost if we can't determine external IP
+			// Fallback
 			bindAddr = "127.0.0.1"
 		} else {
 			localAddr := conn.LocalAddr().(*net.UDPAddr)
