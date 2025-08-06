@@ -1,0 +1,325 @@
+package raft
+
+import (
+	"fmt"
+	"io"
+	"net"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
+
+	"github.com/concave-dev/prism/internal/logging"
+	"github.com/hashicorp/raft"
+	raftboltdb "github.com/hashicorp/raft-boltdb"
+)
+
+// Manager manages the Raft consensus protocol for the Prism cluster
+// TODO: Integrate with Serf for automatic peer discovery
+// TODO: Add metrics collection for Raft operations
+// TODO: Implement cluster membership changes via Serf events
+type Manager struct {
+	config      *Config
+	raft        *raft.Raft
+	fsm         raft.FSM
+	transport   *raft.NetworkTransport
+	logStore    raft.LogStore
+	stableStore raft.StableStore
+	snapshots   raft.SnapshotStore
+	mu          sync.RWMutex
+	shutdown    chan struct{}
+}
+
+// NewManager creates a new Raft manager with the given configuration
+// TODO: Add support for TLS encryption in transport
+// TODO: Implement custom snapshot scheduling
+func NewManager(config *Config) (*Manager, error) {
+	if err := config.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
+	}
+
+	manager := &Manager{
+		config:   config,
+		shutdown: make(chan struct{}),
+	}
+
+	// Create data directory if it doesn't exist
+	if err := os.MkdirAll(config.DataDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create data directory: %w", err)
+	}
+
+	// Initialize FSM (Finite State Machine)
+	// TODO: Implement actual business logic FSM for AI agent state management
+	manager.fsm = &simpleFSM{}
+
+	// Setup transport layer for Raft communication
+	if err := manager.setupTransport(); err != nil {
+		return nil, fmt.Errorf("failed to setup transport: %w", err)
+	}
+
+	// Setup storage layers
+	if err := manager.setupStorage(); err != nil {
+		return nil, fmt.Errorf("failed to setup storage: %w", err)
+	}
+
+	// Create Raft configuration
+	raftConfig := manager.buildRaftConfig()
+
+	// Create Raft instance
+	r, err := raft.NewRaft(raftConfig, manager.fsm, manager.logStore, manager.stableStore, manager.snapshots, manager.transport)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create raft: %w", err)
+	}
+
+	manager.raft = r
+
+	logging.Info("Raft manager created successfully on %s", config.RaftAddr())
+	return manager, nil
+}
+
+// Start starts the Raft manager
+// TODO: Add health check endpoint for Raft status
+// TODO: Implement graceful startup with retry logic
+func (m *Manager) Start() error {
+	logging.Info("Starting Raft manager on %s", m.config.RaftAddr())
+
+	// Bootstrap cluster if this is the first node
+	if m.config.Bootstrap {
+		logging.Info("Bootstrapping new Raft cluster")
+
+		// Create initial cluster configuration with this node only
+		configuration := raft.Configuration{
+			Servers: []raft.Server{
+				{
+					ID:      raft.ServerID(m.config.NodeID),
+					Address: raft.ServerAddress(m.config.RaftAddr()),
+				},
+			},
+		}
+
+		// Bootstrap the cluster
+		future := m.raft.BootstrapCluster(configuration)
+		if err := future.Error(); err != nil {
+			return fmt.Errorf("failed to bootstrap cluster: %w", err)
+		}
+
+		logging.Info("Successfully bootstrapped Raft cluster")
+	}
+
+	// TODO: Add periodic status monitoring
+	// TODO: Implement automatic peer discovery via Serf integration
+
+	logging.Info("Raft manager started successfully")
+	return nil
+}
+
+// Stop gracefully stops the Raft manager
+// TODO: Add configurable shutdown timeout
+// TODO: Implement clean snapshot on shutdown
+func (m *Manager) Stop() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	logging.Info("Stopping Raft manager")
+
+	// Signal shutdown
+	close(m.shutdown)
+
+	// Shutdown Raft
+	if m.raft != nil {
+		future := m.raft.Shutdown()
+		if err := future.Error(); err != nil {
+			logging.Error("Error shutting down Raft: %v", err)
+			return err
+		}
+	}
+
+	// Close transport
+	if m.transport != nil {
+		if err := m.transport.Close(); err != nil {
+			logging.Error("Error closing transport: %v", err)
+		}
+	}
+
+	// Close storage
+	if m.logStore != nil {
+		if closer, ok := m.logStore.(io.Closer); ok {
+			if err := closer.Close(); err != nil {
+				logging.Error("Error closing log store: %v", err)
+			}
+		}
+	}
+
+	logging.Info("Raft manager stopped")
+	return nil
+}
+
+// IsLeader returns true if this node is the Raft leader
+func (m *Manager) IsLeader() bool {
+	if m.raft == nil {
+		return false
+	}
+	return m.raft.State() == raft.Leader
+}
+
+// Leader returns the current leader address
+func (m *Manager) Leader() string {
+	if m.raft == nil {
+		return ""
+	}
+	_, leaderID := m.raft.LeaderWithID()
+	return string(leaderID)
+}
+
+// State returns the current Raft state
+func (m *Manager) State() string {
+	if m.raft == nil {
+		return "Unknown"
+	}
+	return m.raft.State().String()
+}
+
+// setupTransport configures the network transport for Raft
+func (m *Manager) setupTransport() error {
+	// For Raft transport, we need an advertisable address, not 0.0.0.0
+	// If bind address is 0.0.0.0, we need to get the actual local IP
+	bindAddr := m.config.BindAddr
+	if bindAddr == "0.0.0.0" {
+		// Get the local IP address that can be used by other nodes
+		conn, err := net.Dial("udp", "8.8.8.8:80")
+		if err != nil {
+			// Fallback to localhost if we can't determine external IP
+			bindAddr = "127.0.0.1"
+		} else {
+			localAddr := conn.LocalAddr().(*net.UDPAddr)
+			bindAddr = localAddr.IP.String()
+			conn.Close()
+		}
+	}
+
+	// Create the advertisable address for Raft
+	raftAddr := fmt.Sprintf("%s:%d", bindAddr, m.config.BindPort)
+
+	addr, err := net.ResolveTCPAddr("tcp", raftAddr)
+	if err != nil {
+		return fmt.Errorf("failed to resolve TCP address: %w", err)
+	}
+
+	// Bind to the configured address but advertise the advertisable address
+	bindAddress := fmt.Sprintf("%s:%d", m.config.BindAddr, m.config.BindPort)
+	transport, err := raft.NewTCPTransport(bindAddress, addr, 3, 10*time.Second, os.Stderr)
+	if err != nil {
+		return fmt.Errorf("failed to create TCP transport: %w", err)
+	}
+
+	m.transport = transport
+	return nil
+}
+
+// setupStorage configures the storage layers for Raft
+func (m *Manager) setupStorage() error {
+	// Setup BoltDB for log and stable storage
+	logStore, err := raftboltdb.NewBoltStore(filepath.Join(m.config.DataDir, "raft-log.db"))
+	if err != nil {
+		return fmt.Errorf("failed to create log store: %w", err)
+	}
+	m.logStore = logStore
+	m.stableStore = logStore // BoltDB can serve as both log and stable store
+
+	// Setup file snapshot store
+	snapshots, err := raft.NewFileSnapshotStore(m.config.DataDir, 3, os.Stderr)
+	if err != nil {
+		return fmt.Errorf("failed to create snapshot store: %w", err)
+	}
+	m.snapshots = snapshots
+
+	return nil
+}
+
+// buildRaftConfig creates the Raft configuration
+func (m *Manager) buildRaftConfig() *raft.Config {
+	config := raft.DefaultConfig()
+	config.LocalID = raft.ServerID(m.config.NodeID)
+	config.HeartbeatTimeout = m.config.HeartbeatTimeout
+	config.ElectionTimeout = m.config.ElectionTimeout
+	config.CommitTimeout = m.config.CommitTimeout
+	config.LeaderLeaseTimeout = m.config.LeaderLeaseTimeout
+
+	// TODO: Configure logger to match Prism's logging format
+	// TODO: Add Raft metrics integration
+
+	return config
+}
+
+// simpleFSM is a basic finite state machine for hello world functionality
+// TODO: Replace with actual business logic FSM for AI agent state management
+// TODO: Add support for agent lifecycle events (create, start, stop, destroy)
+// TODO: Implement state persistence and recovery
+type simpleFSM struct {
+	mu    sync.RWMutex
+	state map[string]interface{}
+}
+
+// Apply applies a Raft log entry to the FSM
+func (f *simpleFSM) Apply(log *raft.Log) interface{} {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if f.state == nil {
+		f.state = make(map[string]interface{})
+	}
+
+	// Simple hello world operation
+	switch log.Type {
+	case raft.LogCommand:
+		// TODO: Implement actual command parsing and execution
+		logging.Info("Raft FSM: Applied log entry %d with data: %s", log.Index, string(log.Data))
+		f.state["last_applied"] = log.Index
+		f.state["last_data"] = string(log.Data)
+		return nil
+	default:
+		logging.Warn("Raft FSM: Unknown log type: %v", log.Type)
+		return nil
+	}
+}
+
+// Snapshot creates a snapshot of the FSM state
+func (f *simpleFSM) Snapshot() (raft.FSMSnapshot, error) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	// TODO: Implement proper state serialization
+	return &simpleFSMSnapshot{state: f.state}, nil
+}
+
+// Restore restores the FSM state from a snapshot
+func (f *simpleFSM) Restore(snapshot io.ReadCloser) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	// TODO: Implement proper state deserialization
+	f.state = make(map[string]interface{})
+	logging.Info("Raft FSM: State restored from snapshot")
+
+	return snapshot.Close()
+}
+
+// simpleFSMSnapshot represents a snapshot of the simple FSM
+type simpleFSMSnapshot struct {
+	state map[string]interface{}
+}
+
+// Persist saves the snapshot data
+func (s *simpleFSMSnapshot) Persist(sink raft.SnapshotSink) error {
+	// TODO: Implement proper snapshot serialization
+	defer sink.Close()
+
+	// Write simple snapshot data
+	_, err := sink.Write([]byte("hello-world-snapshot"))
+	return err
+}
+
+// Release is called when the snapshot is no longer needed
+func (s *simpleFSMSnapshot) Release() {
+	// TODO: Clean up any resources if needed
+}

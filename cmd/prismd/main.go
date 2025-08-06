@@ -17,6 +17,7 @@ import (
 	"github.com/concave-dev/prism/internal/api"
 	"github.com/concave-dev/prism/internal/logging"
 	"github.com/concave-dev/prism/internal/names"
+	"github.com/concave-dev/prism/internal/raft"
 	"github.com/concave-dev/prism/internal/serf"
 	"github.com/concave-dev/prism/internal/validate"
 	"github.com/spf13/cobra"
@@ -54,13 +55,18 @@ var config struct {
 	BindPort  int      // Network port to bind to
 	APIAddr   string   // HTTP API server address (defaults to same IP as serf with port 8008)
 	APIPort   int      // HTTP API server port (derived from APIAddr)
+	RaftAddr  string   // Raft consensus address (defaults to same IP as serf with port 6969)
+	RaftPort  int      // Raft consensus port (derived from RaftAddr)
 	NodeName  string   // Name of this node
 	JoinAddrs []string // List of cluster addresses to join
 	LogLevel  string   // Log level: DEBUG, INFO, WARN, ERROR
+	DataDir   string   // Data directory for persistent storage
+	Bootstrap bool     // Whether to bootstrap a new Raft cluster
 
 	// Flags to track if values were explicitly set by user
-	bindExplicitlySet    bool
-	apiAddrExplicitlySet bool
+	bindExplicitlySet     bool
+	apiAddrExplicitlySet  bool
+	raftAddrExplicitlySet bool
 }
 
 // Root command
@@ -98,6 +104,13 @@ func init() {
 	// Node configuration flags
 	rootCmd.Flags().StringVar(&config.NodeName, "name", "",
 		"Node name (defaults to generated name like 'cosmic-dragon')")
+	rootCmd.Flags().StringVar(&config.RaftAddr, "raft", "",
+		"Address and port for Raft consensus (e.g., 0.0.0.0:6969)\n"+
+			"If not specified, uses same IP as serf bind address with port 6969")
+	rootCmd.Flags().StringVar(&config.DataDir, "data-dir", "./data",
+		"Directory for persistent data storage (logs, snapshots)")
+	rootCmd.Flags().BoolVar(&config.Bootstrap, "bootstrap", false,
+		"Bootstrap a new Raft cluster (only use on the first node)")
 
 	// Cluster flags
 	rootCmd.Flags().StringSliceVar(&config.JoinAddrs, "join", nil,
@@ -113,6 +126,7 @@ func init() {
 func checkExplicitFlags(cmd *cobra.Command) {
 	config.bindExplicitlySet = cmd.Flags().Changed("bind")
 	config.apiAddrExplicitlySet = cmd.Flags().Changed("api")
+	config.raftAddrExplicitlySet = cmd.Flags().Changed("raft")
 }
 
 // findAvailablePort finds an available port starting from the given port on the specified address.
@@ -232,6 +246,28 @@ func validateConfig(cmd *cobra.Command, args []string) error {
 		config.APIPort = DefaultAPIPort
 	}
 
+	// Handle Raft address configuration
+	if config.raftAddrExplicitlySet {
+		// User explicitly set Raft address - parse and validate it
+		raftNetAddr, err := validate.ParseBindAddress(config.RaftAddr)
+		if err != nil {
+			return fmt.Errorf("invalid Raft address: %w", err)
+		}
+
+		// Raft requires non-zero ports (port 0 would let OS choose)
+		if err := validate.ValidateField(raftNetAddr.Port, "required,min=1,max=65535"); err != nil {
+			return fmt.Errorf("raft address requires specific port (not 0): %w", err)
+		}
+
+		// Store parsed Raft address components
+		config.RaftAddr = raftNetAddr.Host
+		config.RaftPort = raftNetAddr.Port
+	} else {
+		// Default: use serf bind IP + default Raft port (will be set in runDaemon)
+		config.RaftAddr = config.BindAddr
+		config.RaftPort = raft.DefaultRaftPort
+	}
+
 	// Validate join addresses if provided
 	// Multiple join addresses provide fault tolerance - if first node is unreachable,
 	// Serf will automatically try the next one until connection succeeds
@@ -257,6 +293,21 @@ func buildSerfConfig() *serf.ManagerConfig {
 	serfConfig.Tags["prism_version"] = Version
 
 	return serfConfig
+}
+
+// buildRaftConfig converts daemon config to Raft config
+func buildRaftConfig() *raft.Config {
+	raftConfig := raft.DefaultConfig()
+
+	raftConfig.BindAddr = config.RaftAddr
+	raftConfig.BindPort = config.RaftPort
+	raftConfig.NodeID = config.NodeName
+	raftConfig.NodeName = config.NodeName
+	raftConfig.LogLevel = config.LogLevel
+	raftConfig.DataDir = config.DataDir
+	raftConfig.Bootstrap = config.Bootstrap
+
+	return raftConfig
 }
 
 // runDaemon runs the daemon with graceful shutdown handling
@@ -306,6 +357,52 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	// Start SerfManager
 	if err := manager.Start(); err != nil {
 		return fmt.Errorf("failed to start serf manager: %w", err)
+	}
+
+	// Handle Raft address binding and start Raft manager
+	var raftManager *raft.Manager
+	originalRaftPort := config.RaftPort
+
+	if config.raftAddrExplicitlySet {
+		// User explicitly set Raft address - fail if port is busy
+		logging.Info("Starting Raft consensus on %s:%d", config.RaftAddr, config.RaftPort)
+
+		// Test binding to ensure port is available
+		testAddr := fmt.Sprintf("%s:%d", config.RaftAddr, config.RaftPort)
+		conn, err := net.Listen("tcp", testAddr)
+		if err != nil {
+			if isAddressInUseError(err) {
+				return fmt.Errorf("cannot bind Raft to %s: port %d is already in use",
+					config.RaftAddr, config.RaftPort)
+			}
+			return fmt.Errorf("failed to bind Raft to %s: %w", testAddr, err)
+		}
+		conn.Close()
+	} else {
+		// Using defaults - use serf IP + auto-increment if needed
+		config.RaftAddr = config.BindAddr
+		availableRaftPort, err := findAvailablePort(config.RaftAddr, config.RaftPort)
+		if err != nil {
+			return fmt.Errorf("failed to find available Raft port: %w", err)
+		}
+
+		if availableRaftPort != originalRaftPort {
+			logging.Warn("Default Raft port %d was busy, using port %d for Raft", originalRaftPort, availableRaftPort)
+			config.RaftPort = availableRaftPort
+		}
+
+		logging.Info("Starting Raft consensus on %s:%d", config.RaftAddr, config.RaftPort)
+	}
+
+	// Create and start Raft manager
+	raftConfig := buildRaftConfig()
+	raftManager, err = raft.NewManager(raftConfig)
+	if err != nil {
+		return fmt.Errorf("failed to create raft manager: %w", err)
+	}
+
+	if err := raftManager.Start(); err != nil {
+		return fmt.Errorf("failed to start raft manager: %w", err)
 	}
 
 	// Start HTTP API server on all nodes
@@ -388,9 +485,11 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	logging.Success("Prism daemon started successfully")
 	logging.Info("Daemon running... Press Ctrl+C to shutdown")
 
-	// TODO: Start additional services when implemented
-	logging.Info("Starting node services...")
-	// TODO: Start job execution engine, Raft consensus, etc.
+	// Display service status
+	logging.Info("Node services started:")
+	logging.Info("  - Serf cluster membership: %s:%d", config.BindAddr, config.BindPort)
+	logging.Info("  - Raft consensus: %s:%d (Leader: %v)", config.RaftAddr, config.RaftPort, raftManager.IsLeader())
+	logging.Info("  - HTTP API: %s:%d", config.APIAddr, config.APIPort)
 
 	// Wait for shutdown signal
 	select {
@@ -410,6 +509,13 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 
 		if err := apiServer.Shutdown(shutdownCtx); err != nil {
 			logging.Error("Error shutting down API server: %v", err)
+		}
+	}
+
+	// Shutdown Raft manager
+	if raftManager != nil {
+		if err := raftManager.Stop(); err != nil {
+			logging.Error("Error shutting down raft manager: %v", err)
 		}
 	}
 
