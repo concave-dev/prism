@@ -61,7 +61,7 @@ var membersCmd = &cobra.Command{
 	Long: `List all members (nodes) in the Prism cluster.
 
 This command connects to the cluster and displays information about all
-known nodes including their roles, status, and last seen times.`,
+known nodes including their status and last seen times.`,
 	Example: `  # List all members
   prismctl members
 
@@ -77,7 +77,7 @@ known nodes including their roles, status, and last seen times.`,
 var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show cluster status information",
-	Long: `Show a summary of cluster status including node counts by role
+	Long: `Show a summary of cluster status including node counts by status
 and status.
 
 This provides a high-level overview of cluster health and composition.`,
@@ -161,7 +161,6 @@ type ClusterMember struct {
 	ID       string            `json:"id"`
 	Name     string            `json:"name"`
 	Address  string            `json:"address"`
-	Roles    []string          `json:"roles"`
 	Status   string            `json:"status"`
 	Tags     map[string]string `json:"tags"`
 	LastSeen time.Time         `json:"lastSeen"`
@@ -169,7 +168,6 @@ type ClusterMember struct {
 
 type ClusterStatus struct {
 	TotalNodes    int            `json:"totalNodes"`
-	NodesByRole   map[string]int `json:"nodesByRole"`
 	NodesByStatus map[string]int `json:"nodesByStatus"`
 }
 
@@ -313,7 +311,6 @@ func (api *PrismAPIClient) GetMembers() ([]ClusterMember, error) {
 					ID:       getString(memberMap, "id"),
 					Name:     getString(memberMap, "name"),
 					Address:  getString(memberMap, "address"),
-					Roles:    getStringSlice(memberMap, "roles"),
 					Status:   getString(memberMap, "status"),
 					Tags:     getStringMap(memberMap, "tags"),
 					LastSeen: getTime(memberMap, "lastSeen"),
@@ -349,7 +346,6 @@ func (api *PrismAPIClient) GetStatus() (*ClusterStatus, error) {
 	if statusData, ok := response.Data.(map[string]interface{}); ok {
 		return &ClusterStatus{
 			TotalNodes:    getInt(statusData, "totalNodes"),
-			NodesByRole:   getIntMap(statusData, "nodesByRole"),
 			NodesByStatus: getIntMap(statusData, "nodesByStatus"),
 		}, nil
 	}
@@ -732,7 +728,7 @@ func displayMembersFromAPI(members []ClusterMember) {
 	defer w.Flush()
 
 	// Header
-	fmt.Fprintln(w, "ID\tNAME\tADDRESS\tROLE\tSTATUS\tLAST SEEN")
+	fmt.Fprintln(w, "ID\tNAME\tADDRESS\tSTATUS\tLAST SEEN")
 
 	// Sort members by name for consistent output
 	sort.Slice(members, func(i, j int) bool {
@@ -741,15 +737,10 @@ func displayMembersFromAPI(members []ClusterMember) {
 
 	// Display each member
 	for _, member := range members {
-		role := strings.Join(member.Roles, ",")
-		if role == "" {
-			role = "unknown"
-		}
-
 		lastSeen := formatDuration(time.Since(member.LastSeen))
 
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
-			member.ID, member.Name, member.Address, role, member.Status, lastSeen)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+			member.ID, member.Name, member.Address, member.Status, lastSeen)
 	}
 }
 
@@ -757,12 +748,6 @@ func displayMembersFromAPI(members []ClusterMember) {
 func displayStatusFromAPI(status ClusterStatus) {
 	fmt.Printf("Cluster Status:\n")
 	fmt.Printf("  Total Nodes: %d\n\n", status.TotalNodes)
-
-	fmt.Printf("Nodes by Role:\n")
-	for role, count := range status.NodesByRole {
-		fmt.Printf("  %-12s: %d\n", role, count)
-	}
-	fmt.Println()
 
 	fmt.Printf("Nodes by Status:\n")
 	for nodeStatus, count := range status.NodesByStatus {
