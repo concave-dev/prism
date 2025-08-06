@@ -7,8 +7,8 @@ import (
 	"github.com/concave-dev/prism/internal/validate"
 )
 
-// Holds configuration for the SerfManager
-type ManagerConfig struct {
+// Config holds configuration for the SerfManager
+type Config struct {
 	BindAddr string            // Bind address
 	BindPort int               // Bind port
 	NodeName string            // Name of the node
@@ -20,9 +20,9 @@ type ManagerConfig struct {
 	LogLevel        string        // Log level
 }
 
-// DefaultManagerConfig returns a default configuration for SerfManager
-func DefaultManagerConfig() *ManagerConfig {
-	return &ManagerConfig{
+// DefaultConfig returns a default configuration for SerfManager
+func DefaultConfig() *Config {
+	return &Config{
 		BindAddr:        "0.0.0.0",
 		BindPort:        4200,
 		EventBufferSize: 1024,
@@ -34,7 +34,7 @@ func DefaultManagerConfig() *ManagerConfig {
 }
 
 // validateConfig validates manager configuration
-func validateConfig(config *ManagerConfig) error {
+func validateConfig(config *Config) error {
 	if config.NodeName == "" {
 		return fmt.Errorf("node name cannot be empty")
 	}

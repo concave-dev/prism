@@ -14,11 +14,11 @@ import (
 	raftboltdb "github.com/hashicorp/raft-boltdb"
 )
 
-// Manager manages the Raft consensus protocol for the Prism cluster
+// RaftManager manages the Raft consensus protocol for the Prism cluster
 // TODO: Integrate with Serf for automatic peer discovery
 // TODO: Add metrics collection for Raft operations
 // TODO: Implement cluster membership changes via Serf events
-type Manager struct {
+type RaftManager struct {
 	config      *Config
 	raft        *raft.Raft
 	fsm         raft.FSM
@@ -30,15 +30,15 @@ type Manager struct {
 	shutdown    chan struct{}
 }
 
-// NewManager creates a new Raft manager with the given configuration
+// NewRaftManager creates a new Raft manager with the given configuration
 // TODO: Add support for TLS encryption in transport
 // TODO: Implement custom snapshot scheduling
-func NewManager(config *Config) (*Manager, error) {
+func NewRaftManager(config *Config) (*RaftManager, error) {
 	if err := config.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid config: %w", err)
 	}
 
-	manager := &Manager{
+	manager := &RaftManager{
 		config:   config,
 		shutdown: make(chan struct{}),
 	}
@@ -80,7 +80,7 @@ func NewManager(config *Config) (*Manager, error) {
 // Start starts the Raft manager
 // TODO: Add health check endpoint for Raft status
 // TODO: Implement graceful startup with retry logic
-func (m *Manager) Start() error {
+func (m *RaftManager) Start() error {
 	logging.Info("Starting Raft manager on %s:%d", m.config.BindAddr, m.config.BindPort)
 
 	// Bootstrap cluster if this is the first node
@@ -116,7 +116,7 @@ func (m *Manager) Start() error {
 // Stop gracefully stops the Raft manager
 // TODO: Add configurable shutdown timeout
 // TODO: Implement clean snapshot on shutdown
-func (m *Manager) Stop() error {
+func (m *RaftManager) Stop() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -155,7 +155,7 @@ func (m *Manager) Stop() error {
 }
 
 // IsLeader returns true if this node is the Raft leader
-func (m *Manager) IsLeader() bool {
+func (m *RaftManager) IsLeader() bool {
 	if m.raft == nil {
 		return false
 	}
@@ -163,7 +163,7 @@ func (m *Manager) IsLeader() bool {
 }
 
 // Leader returns the current leader address
-func (m *Manager) Leader() string {
+func (m *RaftManager) Leader() string {
 	if m.raft == nil {
 		return ""
 	}
@@ -172,7 +172,7 @@ func (m *Manager) Leader() string {
 }
 
 // State returns the current Raft state
-func (m *Manager) State() string {
+func (m *RaftManager) State() string {
 	if m.raft == nil {
 		return "Unknown"
 	}
@@ -180,7 +180,7 @@ func (m *Manager) State() string {
 }
 
 // setupTransport configures the network transport for Raft
-func (m *Manager) setupTransport() error {
+func (m *RaftManager) setupTransport() error {
 	// For Raft transport, we need an advertisable address, not 0.0.0.0
 	// If bind address is 0.0.0.0, we need to get the actual local IP
 	bindAddr := m.config.BindAddr
@@ -217,7 +217,7 @@ func (m *Manager) setupTransport() error {
 }
 
 // setupStorage configures the storage layers for Raft
-func (m *Manager) setupStorage() error {
+func (m *RaftManager) setupStorage() error {
 	// Setup BoltDB for log and stable storage
 	logStore, err := raftboltdb.NewBoltStore(filepath.Join(m.config.DataDir, "raft-log.db"))
 	if err != nil {
@@ -237,7 +237,7 @@ func (m *Manager) setupStorage() error {
 }
 
 // buildRaftConfig creates the Raft configuration
-func (m *Manager) buildRaftConfig() *raft.Config {
+func (m *RaftManager) buildRaftConfig() *raft.Config {
 	config := raft.DefaultConfig()
 	config.LocalID = raft.ServerID(m.config.NodeID)
 	config.HeartbeatTimeout = m.config.HeartbeatTimeout

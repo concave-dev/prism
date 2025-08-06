@@ -281,8 +281,8 @@ func validateConfig(cmd *cobra.Command, args []string) error {
 }
 
 // buildSerfConfig converts daemon config to SerfManager config
-func buildSerfConfig() *serf.ManagerConfig {
-	serfConfig := serf.DefaultManagerConfig()
+func buildSerfConfig() *serf.Config {
+	serfConfig := serf.DefaultConfig()
 
 	serfConfig.BindAddr = config.BindAddr
 	serfConfig.BindPort = config.BindPort
@@ -360,7 +360,7 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	}
 
 	// Handle Raft address binding and start Raft manager
-	var raftManager *raft.Manager
+	var raftManager *raft.RaftManager
 	originalRaftPort := config.RaftPort
 
 	if config.raftAddrExplicitlySet {
@@ -396,7 +396,7 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 
 	// Create and start Raft manager
 	raftConfig := buildRaftConfig()
-	raftManager, err = raft.NewManager(raftConfig)
+	raftManager, err = raft.NewRaftManager(raftConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create raft manager: %w", err)
 	}

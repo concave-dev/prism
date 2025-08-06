@@ -6,13 +6,13 @@ import (
 	"time"
 )
 
-// TestDefaultManagerConfig tests DefaultManagerConfig function
-func TestDefaultManagerConfig(t *testing.T) {
-	config := DefaultManagerConfig()
+// TestDefaultConfig tests DefaultConfig function
+func TestDefaultConfig(t *testing.T) {
+	config := DefaultConfig()
 
 	// Test that config is not nil
 	if config == nil {
-		t.Fatal("DefaultManagerConfig() returned nil")
+		t.Fatal("DefaultConfig() returned nil")
 	}
 
 	// Test default values
@@ -70,11 +70,11 @@ func TestDefaultManagerConfig(t *testing.T) {
 func TestValidateConfig_ValidConfigurations(t *testing.T) {
 	tests := []struct {
 		name   string
-		config *ManagerConfig
+		config *Config
 	}{
 		{
 			name: "Default config with node name",
-			config: &ManagerConfig{
+			config: &Config{
 				NodeName:        "test-node",
 				BindAddr:        "127.0.0.1",
 				BindPort:        4200,
@@ -87,7 +87,7 @@ func TestValidateConfig_ValidConfigurations(t *testing.T) {
 		},
 		{
 			name: "Valid config with different values",
-			config: &ManagerConfig{
+			config: &Config{
 				NodeName:        "production-node",
 				BindAddr:        "0.0.0.0",
 				BindPort:        8080,
@@ -100,7 +100,7 @@ func TestValidateConfig_ValidConfigurations(t *testing.T) {
 		},
 		{
 			name: "Valid with minimal event buffer",
-			config: &ManagerConfig{
+			config: &Config{
 				NodeName:        "minimal-node",
 				BindAddr:        "192.168.1.100",
 				BindPort:        1,
@@ -113,7 +113,7 @@ func TestValidateConfig_ValidConfigurations(t *testing.T) {
 		},
 		{
 			name: "Valid with maximum port",
-			config: &ManagerConfig{
+			config: &Config{
 				NodeName:        "max-port-node",
 				BindAddr:        "10.0.0.1",
 				BindPort:        65535,
@@ -140,12 +140,12 @@ func TestValidateConfig_ValidConfigurations(t *testing.T) {
 func TestValidateConfig_InvalidConfigurations(t *testing.T) {
 	tests := []struct {
 		name          string
-		config        *ManagerConfig
+		config        *Config
 		expectedError string
 	}{
 		{
 			name: "Empty node name",
-			config: &ManagerConfig{
+			config: &Config{
 				NodeName:        "",
 				BindAddr:        "127.0.0.1",
 				BindPort:        4200,
@@ -155,7 +155,7 @@ func TestValidateConfig_InvalidConfigurations(t *testing.T) {
 		},
 		{
 			name: "Invalid bind address - not an IP",
-			config: &ManagerConfig{
+			config: &Config{
 				NodeName:        "test-node",
 				BindAddr:        "not-an-ip",
 				BindPort:        4200,
@@ -165,7 +165,7 @@ func TestValidateConfig_InvalidConfigurations(t *testing.T) {
 		},
 		{
 			name: "Invalid bind address - hostname",
-			config: &ManagerConfig{
+			config: &Config{
 				NodeName:        "test-node",
 				BindAddr:        "localhost",
 				BindPort:        4200,
@@ -175,7 +175,7 @@ func TestValidateConfig_InvalidConfigurations(t *testing.T) {
 		},
 		{
 			name: "Invalid bind address - empty",
-			config: &ManagerConfig{
+			config: &Config{
 				NodeName:        "test-node",
 				BindAddr:        "",
 				BindPort:        4200,
@@ -185,7 +185,7 @@ func TestValidateConfig_InvalidConfigurations(t *testing.T) {
 		},
 		{
 			name: "Invalid port - too high",
-			config: &ManagerConfig{
+			config: &Config{
 				NodeName:        "test-node",
 				BindAddr:        "127.0.0.1",
 				BindPort:        99999,
@@ -195,7 +195,7 @@ func TestValidateConfig_InvalidConfigurations(t *testing.T) {
 		},
 		{
 			name: "Invalid port - negative",
-			config: &ManagerConfig{
+			config: &Config{
 				NodeName:        "test-node",
 				BindAddr:        "127.0.0.1",
 				BindPort:        -1,
@@ -205,7 +205,7 @@ func TestValidateConfig_InvalidConfigurations(t *testing.T) {
 		},
 		{
 			name: "Invalid event buffer size - zero",
-			config: &ManagerConfig{
+			config: &Config{
 				NodeName:        "test-node",
 				BindAddr:        "127.0.0.1",
 				BindPort:        4200,
@@ -215,7 +215,7 @@ func TestValidateConfig_InvalidConfigurations(t *testing.T) {
 		},
 		{
 			name: "Invalid event buffer size - negative",
-			config: &ManagerConfig{
+			config: &Config{
 				NodeName:        "test-node",
 				BindAddr:        "127.0.0.1",
 				BindPort:        4200,
@@ -257,9 +257,9 @@ func TestValidateConfig_NilConfig(t *testing.T) {
 	}
 }
 
-// TestManagerConfig_StructFields tests ManagerConfig struct field types and tags
-func TestManagerConfig_StructFields(t *testing.T) {
-	config := &ManagerConfig{
+// TestConfig_StructFields tests Config struct field types and tags
+func TestConfig_StructFields(t *testing.T) {
+	config := &Config{
 		BindAddr: "192.168.1.1",
 		BindPort: 8080,
 		NodeName: "test",
@@ -307,7 +307,7 @@ func TestManagerConfig_StructFields(t *testing.T) {
 
 // TestValidateConfig_EventBufferEdgeCases tests edge cases for EventBufferSize
 func TestValidateConfig_EventBufferEdgeCases(t *testing.T) {
-	baseConfig := &ManagerConfig{
+	baseConfig := &Config{
 		NodeName: "test-node",
 		BindAddr: "127.0.0.1",
 		BindPort: 4200,
@@ -347,7 +347,7 @@ func TestValidateConfig_EventBufferEdgeCases(t *testing.T) {
 
 // TestValidateConfig_IPAddressFormats tests various IP address formats
 func TestValidateConfig_IPAddressFormats(t *testing.T) {
-	baseConfig := &ManagerConfig{
+	baseConfig := &Config{
 		NodeName:        "test-node",
 		BindPort:        4200,
 		EventBufferSize: 1024,
@@ -406,17 +406,17 @@ func findSubstring(s, substr string) bool {
 	return false
 }
 
-// BenchmarkDefaultManagerConfig benchmarks the DefaultManagerConfig function
-func BenchmarkDefaultManagerConfig(b *testing.B) {
+// BenchmarkDefaultConfig benchmarks the DefaultConfig function
+func BenchmarkDefaultConfig(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = DefaultManagerConfig()
+		_ = DefaultConfig()
 	}
 }
 
 // BenchmarkValidateConfig_Valid benchmarks the validateConfig function with valid config
 func BenchmarkValidateConfig_Valid(b *testing.B) {
-	config := &ManagerConfig{
+	config := &Config{
 		NodeName:        "test-node",
 		BindAddr:        "127.0.0.1",
 		BindPort:        4200,
@@ -434,7 +434,7 @@ func BenchmarkValidateConfig_Valid(b *testing.B) {
 
 // BenchmarkValidateConfig_Invalid benchmarks the validateConfig function with invalid config
 func BenchmarkValidateConfig_Invalid(b *testing.B) {
-	config := &ManagerConfig{
+	config := &Config{
 		NodeName:        "", // Invalid: empty node name
 		BindAddr:        "127.0.0.1",
 		BindPort:        4200,
@@ -449,7 +449,7 @@ func BenchmarkValidateConfig_Invalid(b *testing.B) {
 
 // TestValidateConfig_ReservedTags tests that reserved tag names are rejected
 func TestValidateConfig_ReservedTags(t *testing.T) {
-	baseConfig := &ManagerConfig{
+	baseConfig := &Config{
 		NodeName:        "test-node",
 		BindAddr:        "127.0.0.1",
 		BindPort:        4200,
@@ -523,7 +523,7 @@ func TestValidateConfig_ReservedTags(t *testing.T) {
 // TestNewSerfManager_ReservedTags tests that NewSerfManager rejects reserved tags
 func TestNewSerfManager_ReservedTags(t *testing.T) {
 	// Test that NewSerfManager rejects config with reserved tag names
-	config := DefaultManagerConfig()
+	config := DefaultConfig()
 	config.NodeName = "test-node"
 	config.Tags["node_id"] = "custom-node-id" // Reserved tag should be rejected
 
@@ -539,7 +539,7 @@ func TestNewSerfManager_ReservedTags(t *testing.T) {
 	// Since we removed roles as a reserved tag, this test is no longer needed
 
 	// Test that valid tags work fine
-	config3 := DefaultManagerConfig()
+	config3 := DefaultConfig()
 	config3.NodeName = "test-node-3"
 	config3.Tags["env"] = "production"
 	config3.Tags["region"] = "us-east"

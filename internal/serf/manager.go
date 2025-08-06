@@ -64,13 +64,13 @@ type SerfManager struct {
 	cancel     context.CancelFunc    // Cancel function
 	shutdownCh chan struct{}         // Shutdown channel (future use)
 	wg         sync.WaitGroup        // Wait group
-	config     *ManagerConfig        // Manager Configuration
+	config     *Config               // Manager Configuration
 }
 
 // NewSerfManager creates a new SerfManager instance
-func NewSerfManager(config *ManagerConfig) (*SerfManager, error) {
+func NewSerfManager(config *Config) (*SerfManager, error) {
 	if config == nil {
-		config = DefaultManagerConfig()
+		config = DefaultConfig()
 	}
 
 	if err := validateConfig(config); err != nil {
