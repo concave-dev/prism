@@ -307,51 +307,50 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to start serf manager: %w", err)
 	}
 
-	// Start HTTP API server for control nodes
+	// Start HTTP API server on all nodes
 	var apiServer *api.Server
-	if config.Role == "control" {
-		// Handle API port binding
-		originalAPIPort := config.APIPort
-		if config.apiPortExplicitlySet {
-			// User explicitly set API port - fail if port is busy
-			logging.Info("Starting HTTP API server on %s:%d", config.BindAddr, config.APIPort)
 
-			// Test binding to ensure port is available
-			testAddr := fmt.Sprintf("%s:%d", config.BindAddr, config.APIPort)
-			conn, err := net.Listen("tcp", testAddr)
-			if err != nil {
-				if isAddressInUseError(err) {
-					return fmt.Errorf("cannot bind API server to %s: port %d is already in use",
-						config.BindAddr, config.APIPort)
-				}
-				return fmt.Errorf("failed to bind API server to %s: %w", testAddr, err)
-			}
-			conn.Close()
-		} else {
-			// Using defaults - auto-increment if needed
-			availableAPIPort, err := findAvailablePort(config.BindAddr, config.APIPort)
-			if err != nil {
-				return fmt.Errorf("failed to find available API port: %w", err)
-			}
+	// Handle API port binding
+	originalAPIPort := config.APIPort
+	if config.apiPortExplicitlySet {
+		// User explicitly set API port - fail if port is busy
+		logging.Info("Starting HTTP API server on %s:%d", config.BindAddr, config.APIPort)
 
-			if availableAPIPort != originalAPIPort {
-				logging.Warn("Default API port %d was busy, using port %d for HTTP API", originalAPIPort, availableAPIPort)
-				config.APIPort = availableAPIPort
+		// Test binding to ensure port is available
+		testAddr := fmt.Sprintf("%s:%d", config.BindAddr, config.APIPort)
+		conn, err := net.Listen("tcp", testAddr)
+		if err != nil {
+			if isAddressInUseError(err) {
+				return fmt.Errorf("cannot bind API server to %s: port %d is already in use",
+					config.BindAddr, config.APIPort)
 			}
-
-			logging.Info("Starting HTTP API server on %s:%d", config.BindAddr, config.APIPort)
+			return fmt.Errorf("failed to bind API server to %s: %w", testAddr, err)
+		}
+		conn.Close()
+	} else {
+		// Using defaults - auto-increment if needed
+		availableAPIPort, err := findAvailablePort(config.BindAddr, config.APIPort)
+		if err != nil {
+			return fmt.Errorf("failed to find available API port: %w", err)
 		}
 
-		apiConfig := &api.ServerConfig{
-			BindAddr:    config.BindAddr,
-			BindPort:    config.APIPort,
-			SerfManager: manager,
+		if availableAPIPort != originalAPIPort {
+			logging.Warn("Default API port %d was busy, using port %d for HTTP API", originalAPIPort, availableAPIPort)
+			config.APIPort = availableAPIPort
 		}
 
-		apiServer = api.NewServer(apiConfig)
-		if err := apiServer.Start(); err != nil {
-			return fmt.Errorf("failed to start API server: %w", err)
-		}
+		logging.Info("Starting HTTP API server on %s:%d", config.BindAddr, config.APIPort)
+	}
+
+	apiConfig := &api.ServerConfig{
+		BindAddr:    config.BindAddr,
+		BindPort:    config.APIPort,
+		SerfManager: manager,
+	}
+
+	apiServer = api.NewServer(apiConfig)
+	if err := apiServer.Start(); err != nil {
+		return fmt.Errorf("failed to start API server: %w", err)
 	}
 
 	// Join cluster if addresses provided
@@ -390,7 +389,7 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		// TODO: Start job execution engine
 	case "control":
 		logging.Info("Starting control plane services...")
-		// TODO: Start Raft, scheduling engine, API server, etc.
+		// TODO: Start Raft, scheduling engine, etc.
 	}
 
 	// Wait for shutdown signal
