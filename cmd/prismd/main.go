@@ -52,14 +52,15 @@ func isConnectionRefusedError(err error) bool {
 var config struct {
 	BindAddr  string   // Network address to bind to
 	BindPort  int      // Network port to bind to
-	APIPort   int      // HTTP API server port
+	APIAddr   string   // HTTP API server address (defaults to same IP as serf with port 8020)
+	APIPort   int      // HTTP API server port (derived from APIAddr)
 	NodeName  string   // Name of this node
 	JoinAddrs []string // List of cluster addresses to join
 	LogLevel  string   // Log level: DEBUG, INFO, WARN, ERROR
 
 	// Flags to track if values were explicitly set by user
 	bindExplicitlySet    bool
-	apiPortExplicitlySet bool
+	apiAddrExplicitlySet bool
 }
 
 // Root command
@@ -77,6 +78,9 @@ serverless functions, native memory, workflows, and other AI-first primitives.`,
   # Start second node and join existing cluster  
   prismd --bind=0.0.0.0:4201 --join=127.0.0.1:4200 --name=second-node
 
+  # Start with API accessible from external hosts
+  prismd --bind=0.0.0.0:4200 --api-addr=0.0.0.0:8020
+
   # Join with multiple addresses for fault tolerance
   prismd --bind=0.0.0.0:4202 --join=node1:4200,node2:4200,node3:4200`,
 	PreRunE: validateConfig,
@@ -87,8 +91,9 @@ func init() {
 	// Network flags
 	rootCmd.Flags().StringVar(&config.BindAddr, "bind", DefaultBind,
 		"Address and port to bind to (e.g., 0.0.0.0:4200)")
-	rootCmd.Flags().IntVar(&config.APIPort, "api-port", DefaultAPIPort,
-		"HTTP API server port (e.g., 8020)")
+	rootCmd.Flags().StringVar(&config.APIAddr, "api-addr", "",
+		"Address and port for HTTP API server (e.g., 0.0.0.0:8020)\n"+
+			"If not specified, uses same IP as serf bind address with port "+fmt.Sprintf("%d", DefaultAPIPort))
 
 	// Node configuration flags
 	rootCmd.Flags().StringVar(&config.NodeName, "name", "",
@@ -107,7 +112,7 @@ func init() {
 // checkExplicitFlags checks if flags were explicitly set by the user
 func checkExplicitFlags(cmd *cobra.Command) {
 	config.bindExplicitlySet = cmd.Flags().Changed("bind")
-	config.apiPortExplicitlySet = cmd.Flags().Changed("api-port")
+	config.apiAddrExplicitlySet = cmd.Flags().Changed("api-addr")
 }
 
 // findAvailablePort finds an available port starting from the given port on the specified address.
@@ -205,9 +210,26 @@ func validateConfig(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid log level: %s", config.LogLevel)
 	}
 
-	// Validate API port
-	if err := validate.ValidateField(config.APIPort, "min=1,max=65535"); err != nil {
-		return fmt.Errorf("invalid API port: %w", err)
+	// Handle API address configuration
+	if config.apiAddrExplicitlySet {
+		// User explicitly set API address - parse and validate it
+		apiNetAddr, err := validate.ParseBindAddress(config.APIAddr)
+		if err != nil {
+			return fmt.Errorf("invalid API address: %w", err)
+		}
+
+		// API requires non-zero ports (port 0 would let OS choose)
+		if err := validate.ValidateField(apiNetAddr.Port, "required,min=1,max=65535"); err != nil {
+			return fmt.Errorf("API address requires specific port (not 0): %w", err)
+		}
+
+		// Store parsed API address components
+		config.APIAddr = apiNetAddr.Host
+		config.APIPort = apiNetAddr.Port
+	} else {
+		// Default: use serf bind IP + default API port (will be set in runDaemon)
+		config.APIAddr = config.BindAddr
+		config.APIPort = DefaultAPIPort
 	}
 
 	// Validate join addresses if provided
@@ -289,26 +311,31 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	// Start HTTP API server on all nodes
 	var apiServer *api.Server
 
-	// Handle API port binding
+	// Handle API address binding
+	// Two scenarios:
+	// 1. User specified --api-addr: use that exact address/port, fail if busy
+	// 2. Using defaults: use serf IP + default port, auto-increment if busy
 	originalAPIPort := config.APIPort
-	if config.apiPortExplicitlySet {
-		// User explicitly set API port - fail if port is busy
-		logging.Info("Starting HTTP API server on %s:%d", config.BindAddr, config.APIPort)
+
+	if config.apiAddrExplicitlySet {
+		// User explicitly set API address - fail if port is busy
+		logging.Info("Starting HTTP API server on %s:%d", config.APIAddr, config.APIPort)
 
 		// Test binding to ensure port is available
-		testAddr := fmt.Sprintf("%s:%d", config.BindAddr, config.APIPort)
+		testAddr := fmt.Sprintf("%s:%d", config.APIAddr, config.APIPort)
 		conn, err := net.Listen("tcp", testAddr)
 		if err != nil {
 			if isAddressInUseError(err) {
 				return fmt.Errorf("cannot bind API server to %s: port %d is already in use",
-					config.BindAddr, config.APIPort)
+					config.APIAddr, config.APIPort)
 			}
 			return fmt.Errorf("failed to bind API server to %s: %w", testAddr, err)
 		}
 		conn.Close()
 	} else {
-		// Using defaults - auto-increment if needed
-		availableAPIPort, err := findAvailablePort(config.BindAddr, config.APIPort)
+		// Using defaults - use serf IP + auto-increment if needed
+		config.APIAddr = config.BindAddr
+		availableAPIPort, err := findAvailablePort(config.APIAddr, config.APIPort)
 		if err != nil {
 			return fmt.Errorf("failed to find available API port: %w", err)
 		}
@@ -318,11 +345,11 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 			config.APIPort = availableAPIPort
 		}
 
-		logging.Info("Starting HTTP API server on %s:%d", config.BindAddr, config.APIPort)
+		logging.Info("Starting HTTP API server on %s:%d", config.APIAddr, config.APIPort)
 	}
 
 	apiConfig := &api.ServerConfig{
-		BindAddr:    config.BindAddr,
+		BindAddr:    config.APIAddr,
 		BindPort:    config.APIPort,
 		SerfManager: manager,
 	}

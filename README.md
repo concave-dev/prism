@@ -16,7 +16,13 @@ go build -o bin/prismctl cmd/prismctl/main.go
 
 Start the daemon:
 ```bash
+# For local development
 ./bin/prismd --bind=0.0.0.0:4200 --name=first-node
+
+# For production with remote API access
+./bin/prismd --bind=0.0.0.0:4200 --api-addr=0.0.0.0:8020 --name=first-node
+
+# Join second node 
 ./bin/prismd --join=127.0.0.1:4200 --bind=127.0.0.1:4201 --name=second-node
 ```
 
