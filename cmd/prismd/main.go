@@ -26,7 +26,7 @@ const (
 	Version = "0.1.0-dev" // Version information
 
 	DefaultBind    = "0.0.0.0:4200" // Default bind address
-	DefaultAPIPort = 8020           // Default API server port
+	DefaultAPIPort = 8008           // Default API server port
 
 )
 
@@ -52,7 +52,7 @@ func isConnectionRefusedError(err error) bool {
 var config struct {
 	BindAddr  string   // Network address to bind to
 	BindPort  int      // Network port to bind to
-	APIAddr   string   // HTTP API server address (defaults to same IP as serf with port 8020)
+	APIAddr   string   // HTTP API server address (defaults to same IP as serf with port 8008)
 	APIPort   int      // HTTP API server port (derived from APIAddr)
 	NodeName  string   // Name of this node
 	JoinAddrs []string // List of cluster addresses to join
@@ -79,7 +79,7 @@ serverless functions, native memory, workflows, and other AI-first primitives.`,
   prismd --bind=0.0.0.0:4201 --join=127.0.0.1:4200 --name=second-node
 
   # Start with API accessible from external hosts
-  prismd --bind=0.0.0.0:4200 --api=0.0.0.0:8020
+  		prismd --bind=0.0.0.0:4200 --api=0.0.0.0:8008
 
   # Join with multiple addresses for fault tolerance
   prismd --bind=0.0.0.0:4202 --join=node1:4200,node2:4200,node3:4200`,
@@ -92,7 +92,7 @@ func init() {
 	rootCmd.Flags().StringVar(&config.BindAddr, "bind", DefaultBind,
 		"Address and port to bind to (e.g., 0.0.0.0:4200)")
 	rootCmd.Flags().StringVar(&config.APIAddr, "api", "",
-		"Address and port for HTTP API server (e.g., 0.0.0.0:8020)\n"+
+		"Address and port for HTTP API server (e.g., 0.0.0.0:8008)\n"+
 			"If not specified, uses same IP as serf bind address with port "+fmt.Sprintf("%d", DefaultAPIPort))
 
 	// Node configuration flags
