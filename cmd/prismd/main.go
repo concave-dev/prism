@@ -25,8 +25,8 @@ import (
 const (
 	Version = "0.1.0-dev" // Version information
 
-	DefaultBind    = "127.0.0.1:4200" // Default bind address
-	DefaultAPIPort = 8020             // Default API server port
+	DefaultBind    = "0.0.0.0:4200" // Default bind address
+	DefaultAPIPort = 8020           // Default API server port
 
 )
 

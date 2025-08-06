@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	Version        = "0.1.0-dev"      // Version information
-	DefaultAPIAddr = "127.0.0.1:8020" // Default API server address
+	Version        = "0.1.0-dev"    // Version information
+	DefaultAPIAddr = "0.0.0.0:8020" // Default API server address
 )
 
 // Global configuration
