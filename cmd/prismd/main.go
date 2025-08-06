@@ -79,7 +79,7 @@ serverless functions, native memory, workflows, and other AI-first primitives.`,
   prismd --bind=0.0.0.0:4201 --join=127.0.0.1:4200 --name=second-node
 
   # Start with API accessible from external hosts
-  prismd --bind=0.0.0.0:4200 --api-addr=0.0.0.0:8020
+  prismd --bind=0.0.0.0:4200 --api=0.0.0.0:8020
 
   # Join with multiple addresses for fault tolerance
   prismd --bind=0.0.0.0:4202 --join=node1:4200,node2:4200,node3:4200`,
@@ -91,7 +91,7 @@ func init() {
 	// Network flags
 	rootCmd.Flags().StringVar(&config.BindAddr, "bind", DefaultBind,
 		"Address and port to bind to (e.g., 0.0.0.0:4200)")
-	rootCmd.Flags().StringVar(&config.APIAddr, "api-addr", "",
+	rootCmd.Flags().StringVar(&config.APIAddr, "api", "",
 		"Address and port for HTTP API server (e.g., 0.0.0.0:8020)\n"+
 			"If not specified, uses same IP as serf bind address with port "+fmt.Sprintf("%d", DefaultAPIPort))
 
@@ -112,7 +112,7 @@ func init() {
 // checkExplicitFlags checks if flags were explicitly set by the user
 func checkExplicitFlags(cmd *cobra.Command) {
 	config.bindExplicitlySet = cmd.Flags().Changed("bind")
-	config.apiAddrExplicitlySet = cmd.Flags().Changed("api-addr")
+	config.apiAddrExplicitlySet = cmd.Flags().Changed("api")
 }
 
 // findAvailablePort finds an available port starting from the given port on the specified address.
