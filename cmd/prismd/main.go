@@ -293,6 +293,7 @@ func buildSerfConfig() *serf.Config {
 
 	// Add custom tags
 	serfConfig.Tags["prism_version"] = Version
+	serfConfig.Tags["raft_port"] = fmt.Sprintf("%d", config.RaftPort) // TODO: Enable Raft peer discovery
 
 	return serfConfig
 }
@@ -406,6 +407,11 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	if err := raftManager.Start(); err != nil {
 		return fmt.Errorf("failed to start raft manager: %w", err)
 	}
+
+	// Integrate Raft with Serf for automatic peer discovery
+	// When Serf discovers new members, Raft will automatically add them as peers
+	logging.Info("Integrating Raft with Serf for automatic peer discovery")
+	raftManager.IntegrateWithSerf(manager.ConsumerEventCh)
 
 	// Start HTTP API server on all nodes
 	var apiServer *api.Server

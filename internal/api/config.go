@@ -23,6 +23,9 @@ type Config struct {
 	BindAddr    string            // HTTP server bind address (e.g., "0.0.0.0")
 	BindPort    int               // HTTP server bind port
 	SerfManager *serf.SerfManager // Reference to cluster manager for data access
+	// RaftManager *raft.RaftManager // Reference to Raft manager for consensus - will be added later
+	// TODO: We will rely on raft's fsm for asking about nodes in the cluster like resources, etc.
+	// instead of serf's members list or serf's query.
 }
 
 // DefaultConfig returns a default API server configuration

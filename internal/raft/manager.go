@@ -6,12 +6,14 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/concave-dev/prism/internal/logging"
 	"github.com/hashicorp/raft"
 	raftboltdb "github.com/hashicorp/raft-boltdb"
+	"github.com/hashicorp/serf/serf"
 )
 
 // RaftManager manages the Raft consensus protocol for the Prism cluster
@@ -177,6 +179,199 @@ func (m *RaftManager) State() string {
 		return "Unknown"
 	}
 	return m.raft.State().String()
+}
+
+// AddPeer adds a new voting peer to the Raft cluster
+// TODO: Add support for non-voting peers for scaling reads
+func (m *RaftManager) AddPeer(nodeID, address string) error {
+	if m.raft == nil {
+		return fmt.Errorf("raft not initialized")
+	}
+
+	// Only the leader can add peers
+	if !m.IsLeader() {
+		return fmt.Errorf("not leader, cannot add peer %s", nodeID)
+	}
+
+	logging.Info("Adding Raft peer: %s at %s", nodeID, address)
+
+	// Add as voting member to the cluster
+	future := m.raft.AddVoter(
+		raft.ServerID(nodeID),
+		raft.ServerAddress(address),
+		0, // index - 0 means append to log
+		0, // timeout - 0 means use default
+	)
+
+	if err := future.Error(); err != nil {
+		return fmt.Errorf("failed to add peer %s: %w", nodeID, err)
+	}
+
+	logging.Success("Successfully added Raft peer: %s", nodeID)
+	return nil
+}
+
+// RemovePeer removes a peer from the Raft cluster
+// TODO: Add graceful peer removal with leadership transfer
+func (m *RaftManager) RemovePeer(nodeID string) error {
+	if m.raft == nil {
+		return fmt.Errorf("raft not initialized")
+	}
+
+	// Only the leader can remove peers
+	if !m.IsLeader() {
+		return fmt.Errorf("not leader, cannot remove peer %s", nodeID)
+	}
+
+	logging.Info("Removing Raft peer: %s", nodeID)
+
+	// Remove from cluster
+	future := m.raft.RemoveServer(
+		raft.ServerID(nodeID),
+		0, // index - 0 means append to log
+		0, // timeout - 0 means use default
+	)
+
+	if err := future.Error(); err != nil {
+		return fmt.Errorf("failed to remove peer %s: %w", nodeID, err)
+	}
+
+	logging.Success("Successfully removed Raft peer: %s", nodeID)
+	return nil
+}
+
+// GetPeers returns the current Raft cluster configuration
+func (m *RaftManager) GetPeers() ([]string, error) {
+	if m.raft == nil {
+		return nil, fmt.Errorf("raft not initialized")
+	}
+
+	future := m.raft.GetConfiguration()
+	if err := future.Error(); err != nil {
+		return nil, fmt.Errorf("failed to get configuration: %w", err)
+	}
+
+	config := future.Configuration()
+	peers := make([]string, 0, len(config.Servers))
+
+	for _, server := range config.Servers {
+		peers = append(peers, fmt.Sprintf("%s@%s", server.ID, server.Address))
+	}
+
+	return peers, nil
+}
+
+// SubmitCommand submits a command to the Raft cluster for consensus (hello world test)
+// TODO: Replace with actual business logic commands
+func (m *RaftManager) SubmitCommand(data string) error {
+	if m.raft == nil {
+		return fmt.Errorf("raft not initialized")
+	}
+
+	if !m.IsLeader() {
+		leader := m.Leader()
+		if leader == "" {
+			return fmt.Errorf("no leader available")
+		}
+		return fmt.Errorf("not leader, redirect to %s", leader)
+	}
+
+	logging.Info("Submitting command to Raft cluster: %s", data)
+
+	future := m.raft.Apply([]byte(data), 10*time.Second)
+	if err := future.Error(); err != nil {
+		return fmt.Errorf("failed to apply command: %w", err)
+	}
+
+	logging.Success("Command applied successfully to Raft cluster")
+	return nil
+}
+
+// IntegrateWithSerf sets up integration between Raft and Serf for automatic peer discovery
+// TODO: Add support for graceful peer removal when nodes leave
+// TODO: Implement leader election coordination with Serf events
+func (m *RaftManager) IntegrateWithSerf(serfEventCh <-chan serf.Event) {
+	logging.Info("Setting up Raft-Serf integration for automatic peer discovery")
+
+	go m.handleSerfEvents(serfEventCh)
+}
+
+// handleSerfEvents processes Serf membership events to manage Raft peers
+func (m *RaftManager) handleSerfEvents(eventCh <-chan serf.Event) {
+	for event := range eventCh {
+		switch e := event.(type) {
+		case serf.MemberEvent:
+			m.handleMemberEvent(e)
+		default:
+			// Ignore other event types for now
+		}
+	}
+}
+
+// handleMemberEvent processes member join/leave events to update Raft cluster
+func (m *RaftManager) handleMemberEvent(event serf.MemberEvent) {
+	for _, member := range event.Members {
+		switch event.Type {
+		case serf.EventMemberJoin:
+			m.handleMemberJoin(member)
+		case serf.EventMemberLeave, serf.EventMemberFailed:
+			m.handleMemberLeave(member)
+		}
+	}
+}
+
+// handleMemberJoin adds a new Serf member as a Raft peer
+func (m *RaftManager) handleMemberJoin(member serf.Member) {
+	// Skip ourselves
+	if member.Name == m.config.NodeName {
+		return
+	}
+
+	// Extract raft_port from member tags
+	raftPortStr, exists := member.Tags["raft_port"]
+	if !exists {
+		logging.Warn("Member %s joined but has no raft_port tag, skipping Raft peer addition", member.Name)
+		return
+	}
+
+	raftPort, err := strconv.Atoi(raftPortStr)
+	if err != nil {
+		logging.Error("Member %s has invalid raft_port tag '%s': %v", member.Name, raftPortStr, err)
+		return
+	}
+
+	// Build Raft address
+	raftAddr := fmt.Sprintf("%s:%d", member.Addr.String(), raftPort)
+
+	logging.Info("Serf member %s joined, attempting to add as Raft peer at %s", member.Name, raftAddr)
+
+	// Add as Raft peer (only leader can do this)
+	if err := m.AddPeer(member.Name, raftAddr); err != nil {
+		if err.Error() == fmt.Sprintf("not leader, cannot add peer %s", member.Name) {
+			logging.Debug("Not Raft leader, cannot add peer %s (this is normal)", member.Name)
+		} else {
+			logging.Error("Failed to add Raft peer %s: %v", member.Name, err)
+		}
+	}
+}
+
+// handleMemberLeave removes a Serf member from Raft peers
+func (m *RaftManager) handleMemberLeave(member serf.Member) {
+	// Skip ourselves
+	if member.Name == m.config.NodeName {
+		return
+	}
+
+	logging.Info("Serf member %s left, attempting to remove from Raft cluster", member.Name)
+
+	// Remove from Raft cluster (only leader can do this)
+	if err := m.RemovePeer(member.Name); err != nil {
+		if err.Error() == fmt.Sprintf("not leader, cannot remove peer %s", member.Name) {
+			logging.Debug("Not Raft leader, cannot remove peer %s (this is normal)", member.Name)
+		} else {
+			logging.Error("Failed to remove Raft peer %s: %v", member.Name, err)
+		}
+	}
 }
 
 // setupTransport configures the network transport for Raft
