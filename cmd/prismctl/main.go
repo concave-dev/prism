@@ -20,7 +20,7 @@ import (
 
 const (
 	Version        = "0.1.0-dev"    // Version information
-	DefaultAPIAddr = "0.0.0.0:8020" // Default API server address
+	DefaultAPIAddr = "0.0.0.0:8008" // Default API server address
 )
 
 // Global configuration
@@ -50,7 +50,7 @@ AI-generated code in sandboxes, manage workflows, and inspect cluster state.`,
   prismctl status
 
   # Connect to remote API server
-  prismctl --api=192.168.1.100:8020 members
+  prismctl --api=192.168.1.100:8008 members
   
   # Output in JSON format
   prismctl --output=json members
@@ -72,7 +72,7 @@ known nodes including their status and last seen times.`,
   prismctl members
 
   # List members from specific API server
-  prismctl --api-addr=192.168.1.100:8020 members
+  prismctl --api=192.168.1.100:8008 members
   
   # Show verbose output during connection
   prismctl --verbose members`,
@@ -91,7 +91,7 @@ This provides a high-level overview of cluster health and composition.`,
   prismctl status
 
   # Show status from specific API server
-  prismctl --api-addr=192.168.1.100:8080 status
+  prismctl --api=192.168.1.100:8008 status
   
   # Show verbose output during connection
   prismctl --verbose status`,
@@ -113,7 +113,7 @@ including CPU cores, memory usage, job capacity, and runtime statistics.`,
   prismctl resources node1
 
   # Show resources from specific API server
-  prismctl --api=192.168.1.100:8080 resources
+  prismctl --api=192.168.1.100:8008 resources
   
   # Output in JSON format
   prismctl -o json resources
