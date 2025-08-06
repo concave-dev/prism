@@ -313,7 +313,7 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 
 	// Handle API address binding
 	// Two scenarios:
-	// 1. User specified --api-addr: use that exact address/port, fail if busy
+	// 1. User specified --api: use that exact address/port, fail if busy
 	// 2. Using defaults: use serf IP + default port, auto-increment if busy
 	originalAPIPort := config.APIPort
 

@@ -107,7 +107,7 @@ including CPU cores, memory usage, job capacity, and runtime statistics.`,
   prismctl resources node1
 
   # Show resources from specific API server
-  prismctl --api-addr=192.168.1.100:8080 resources
+  prismctl --api=192.168.1.100:8080 resources
   
   # Show verbose output during connection
   prismctl --verbose resources`,
@@ -116,7 +116,7 @@ including CPU cores, memory usage, job capacity, and runtime statistics.`,
 
 func init() {
 	// Global flags
-	rootCmd.PersistentFlags().StringVar(&config.APIAddr, "api-addr", DefaultAPIAddr,
+	rootCmd.PersistentFlags().StringVar(&config.APIAddr, "api", DefaultAPIAddr,
 		"Address of Prism API server to connect to")
 	rootCmd.PersistentFlags().StringVar(&config.LogLevel, "log-level", "ERROR",
 		"Log level: DEBUG, INFO, WARN, ERROR")
@@ -134,7 +134,7 @@ func init() {
 	rootCmd.AddCommand(resourcesCmd)
 }
 
-// validateAPIAddress validates the --api-addr flag before running any command
+// validateAPIAddress validates the --api flag before running any command
 func validateAPIAddress(cmd *cobra.Command, args []string) error {
 	// Parse and validate API server address
 	netAddr, err := validate.ParseBindAddress(config.APIAddr)
