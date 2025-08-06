@@ -4,6 +4,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"sort"
@@ -28,6 +29,7 @@ var config struct {
 	LogLevel string // Log level for CLI operations
 	Timeout  int    // Connection timeout in seconds
 	Verbose  bool   // Show verbose output
+	Output   string // Output format: table, json
 }
 
 // Root command
@@ -40,7 +42,7 @@ AI agents, MCP tools, and AI workflows in Prism clusters.
 Similar to kubectl for Kubernetes, prismctl lets you deploy agents, run 
 AI-generated code in sandboxes, manage workflows, and inspect cluster state.`,
 	Version:           Version,
-	PersistentPreRunE: validateAPIAddress,
+	PersistentPreRunE: validateGlobalFlags,
 	Example: `  # List cluster members
   prismctl members
 
@@ -48,7 +50,11 @@ AI-generated code in sandboxes, manage workflows, and inspect cluster state.`,
   prismctl status
 
   # Connect to remote API server
-  prismctl --api-addr=192.168.1.100:8020 members
+  prismctl --api=192.168.1.100:8020 members
+  
+  # Output in JSON format
+  prismctl --output=json members
+  prismctl -o json status
   
   # Show verbose output
   prismctl --verbose members`,
@@ -109,6 +115,10 @@ including CPU cores, memory usage, job capacity, and runtime statistics.`,
   # Show resources from specific API server
   prismctl --api=192.168.1.100:8080 resources
   
+  # Output in JSON format
+  prismctl -o json resources
+  prismctl --output=json resources node1
+  
   # Show verbose output during connection
   prismctl --verbose resources`,
 	RunE: handleResources,
@@ -127,6 +137,8 @@ func init() {
 		"Connection timeout in seconds")
 	rootCmd.PersistentFlags().BoolVarP(&config.Verbose, "verbose", "v", false,
 		"Show verbose output")
+	rootCmd.PersistentFlags().StringVarP(&config.Output, "output", "o", "table",
+		"Output format: table, json")
 
 	// Add subcommands
 	rootCmd.AddCommand(membersCmd)
@@ -134,8 +146,21 @@ func init() {
 	rootCmd.AddCommand(resourcesCmd)
 }
 
-// validateAPIAddress validates the --api flag before running any command
-func validateAPIAddress(cmd *cobra.Command, args []string) error {
+// validateGlobalFlags validates all global flags before running any command
+func validateGlobalFlags(cmd *cobra.Command, args []string) error {
+	if err := validateAPIAddress(); err != nil {
+		return err
+	}
+
+	if err := validateOutputFormat(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// validateAPIAddress validates the --api flag
+func validateAPIAddress() error {
 	// Parse and validate API server address
 	netAddr, err := validate.ParseBindAddress(config.APIAddr)
 	if err != nil {
@@ -147,6 +172,18 @@ func validateAPIAddress(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("API server port must be specific (not 0): %w", err)
 	}
 
+	return nil
+}
+
+// validateOutputFormat validates the --output flag
+func validateOutputFormat() error {
+	validOutputs := map[string]bool{
+		"table": true,
+		"json":  true,
+	}
+	if !validOutputs[config.Output] {
+		return fmt.Errorf("invalid output format '%s' (valid: table, json)", config.Output)
+	}
 	return nil
 }
 
@@ -533,20 +570,6 @@ func getString(m map[string]interface{}, key string) string {
 	return ""
 }
 
-// getStringSlice safely extracts a string slice from interface{} maps
-func getStringSlice(m map[string]interface{}, key string) []string {
-	if val, ok := m[key].([]interface{}); ok {
-		var result []string
-		for _, v := range val {
-			if str, ok := v.(string); ok {
-				result = append(result, str)
-			}
-		}
-		return result
-	}
-	return []string{}
-}
-
 // getStringMap safely extracts a string map from interface{} maps
 func getStringMap(m map[string]interface{}, key string) map[string]string {
 	if val, ok := m[key].(map[string]interface{}); ok {
@@ -719,118 +742,167 @@ func handleResources(cmd *cobra.Command, args []string) error {
 // displayMembersFromAPI displays cluster members from API response
 func displayMembersFromAPI(members []ClusterMember) {
 	if len(members) == 0 {
-		fmt.Println("No cluster members found")
+		if config.Output == "json" {
+			fmt.Println("[]")
+		} else {
+			fmt.Println("No cluster members found")
+		}
 		return
 	}
-
-	// Create tabwriter for aligned output
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	defer w.Flush()
-
-	// Header
-	fmt.Fprintln(w, "ID\tNAME\tADDRESS\tSTATUS\tLAST SEEN")
 
 	// Sort members by name for consistent output
 	sort.Slice(members, func(i, j int) bool {
 		return members[i].Name < members[j].Name
 	})
 
-	// Display each member
-	for _, member := range members {
-		lastSeen := formatDuration(time.Since(member.LastSeen))
+	if config.Output == "json" {
+		// JSON output
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		if err := encoder.Encode(members); err != nil {
+			logging.Error("Failed to encode JSON: %v", err)
+			fmt.Println("Error encoding JSON output")
+		}
+	} else {
+		// Table output
+		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+		defer w.Flush()
 
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-			member.ID, member.Name, member.Address, member.Status, lastSeen)
+		// Header
+		fmt.Fprintln(w, "ID\tNAME\tADDRESS\tSTATUS\tLAST SEEN")
+
+		// Display each member
+		for _, member := range members {
+			lastSeen := formatDuration(time.Since(member.LastSeen))
+
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+				member.ID, member.Name, member.Address, member.Status, lastSeen)
+		}
 	}
 }
 
 // displayStatusFromAPI displays cluster status from API response
 func displayStatusFromAPI(status ClusterStatus) {
-	fmt.Printf("Cluster Status:\n")
-	fmt.Printf("  Total Nodes: %d\n\n", status.TotalNodes)
+	if config.Output == "json" {
+		// JSON output
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		if err := encoder.Encode(status); err != nil {
+			logging.Error("Failed to encode JSON: %v", err)
+			fmt.Println("Error encoding JSON output")
+		}
+	} else {
+		// Table output
+		fmt.Printf("Cluster Status:\n")
+		fmt.Printf("  Total Nodes: %d\n\n", status.TotalNodes)
 
-	fmt.Printf("Nodes by Status:\n")
-	for nodeStatus, count := range status.NodesByStatus {
-		fmt.Printf("  %-12s: %d\n", nodeStatus, count)
+		fmt.Printf("Nodes by Status:\n")
+		for nodeStatus, count := range status.NodesByStatus {
+			fmt.Printf("  %-12s: %d\n", nodeStatus, count)
+		}
+		fmt.Println()
 	}
-	fmt.Println()
-
 }
 
 // displayClusterResourcesFromAPI displays cluster resources from API response
 func displayClusterResourcesFromAPI(resources []NodeResources) {
 	if len(resources) == 0 {
-		fmt.Println("No cluster resources found")
+		if config.Output == "json" {
+			fmt.Println("[]")
+		} else {
+			fmt.Println("No cluster resources found")
+		}
 		return
 	}
-
-	// Create tabwriter for aligned output
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	defer w.Flush()
-
-	// Header
-	fmt.Fprintln(w, "ID\tNAME\tCPU\tMEMORY\tJOBS\tUPTIME\tGOROUTINES")
 
 	// Sort resources by node name for consistent output
 	sort.Slice(resources, func(i, j int) bool {
 		return resources[i].NodeName < resources[j].NodeName
 	})
 
-	// Display each node's resources
-	for _, resource := range resources {
-		memoryWithPercent := fmt.Sprintf("%dMB/%dMB (%.1f%%)",
-			resource.MemoryUsedMB, resource.MemoryTotalMB, resource.MemoryUsage)
-		jobs := fmt.Sprintf("%d/%d", resource.CurrentJobs, resource.MaxJobs)
+	if config.Output == "json" {
+		// JSON output
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		if err := encoder.Encode(resources); err != nil {
+			logging.Error("Failed to encode JSON: %v", err)
+			fmt.Println("Error encoding JSON output")
+		}
+	} else {
+		// Table output
+		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+		defer w.Flush()
 
-		fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%d\n",
-			resource.NodeID,
-			resource.NodeName,
-			resource.CPUCores,
-			memoryWithPercent,
-			jobs,
-			resource.Uptime,
-			resource.GoRoutines)
+		// Header
+		fmt.Fprintln(w, "ID\tNAME\tCPU\tMEMORY\tJOBS\tUPTIME\tGOROUTINES")
+
+		// Display each node's resources
+		for _, resource := range resources {
+			memoryWithPercent := fmt.Sprintf("%dMB/%dMB (%.1f%%)",
+				resource.MemoryUsedMB, resource.MemoryTotalMB, resource.MemoryUsage)
+			jobs := fmt.Sprintf("%d/%d", resource.CurrentJobs, resource.MaxJobs)
+
+			fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%d\n",
+				resource.NodeID,
+				resource.NodeName,
+				resource.CPUCores,
+				memoryWithPercent,
+				jobs,
+				resource.Uptime,
+				resource.GoRoutines)
+		}
 	}
 }
 
 // displayNodeResourceFromAPI displays detailed resources for a single node
 func displayNodeResourceFromAPI(resource NodeResources) {
-	fmt.Printf("Node: %s (%s)\n", resource.NodeName, resource.NodeID)
-	fmt.Printf("Timestamp: %s\n", resource.Timestamp.Format(time.RFC3339))
-	fmt.Println()
+	if config.Output == "json" {
+		// JSON output
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		if err := encoder.Encode(resource); err != nil {
+			logging.Error("Failed to encode JSON: %v", err)
+			fmt.Println("Error encoding JSON output")
+		}
+	} else {
+		// Table output
+		fmt.Printf("Node: %s (%s)\n", resource.NodeName, resource.NodeID)
+		fmt.Printf("Timestamp: %s\n", resource.Timestamp.Format(time.RFC3339))
+		fmt.Println()
 
-	// CPU Information
-	fmt.Printf("CPU:\n")
-	fmt.Printf("  Cores:     %d\n", resource.CPUCores)
-	fmt.Printf("  Usage:     %.1f%%\n", resource.CPUUsage)
-	fmt.Printf("  Available: %.1f%%\n", resource.CPUAvailable)
-	fmt.Println()
+		// CPU Information
+		fmt.Printf("CPU:\n")
+		fmt.Printf("  Cores:     %d\n", resource.CPUCores)
+		fmt.Printf("  Usage:     %.1f%%\n", resource.CPUUsage)
+		fmt.Printf("  Available: %.1f%%\n", resource.CPUAvailable)
+		fmt.Println()
 
-	// Memory Information
-	fmt.Printf("Memory:\n")
-	fmt.Printf("  Total:     %d MB\n", resource.MemoryTotalMB)
-	fmt.Printf("  Used:      %d MB\n", resource.MemoryUsedMB)
-	fmt.Printf("  Available: %d MB\n", resource.MemoryAvailableMB)
-	fmt.Printf("  Usage:     %.1f%%\n", resource.MemoryUsage)
-	fmt.Println()
+		// Memory Information
+		fmt.Printf("Memory:\n")
+		fmt.Printf("  Total:     %d MB\n", resource.MemoryTotalMB)
+		fmt.Printf("  Used:      %d MB\n", resource.MemoryUsedMB)
+		fmt.Printf("  Available: %d MB\n", resource.MemoryAvailableMB)
+		fmt.Printf("  Usage:     %.1f%%\n", resource.MemoryUsage)
+		fmt.Println()
 
-	// Job Capacity
-	fmt.Printf("Capacity:\n")
-	fmt.Printf("  Max Jobs:        %d\n", resource.MaxJobs)
-	fmt.Printf("  Current Jobs:    %d\n", resource.CurrentJobs)
-	fmt.Printf("  Available Slots: %d\n", resource.AvailableSlots)
-	fmt.Println()
+		// Job Capacity
+		fmt.Printf("Capacity:\n")
+		fmt.Printf("  Max Jobs:        %d\n", resource.MaxJobs)
+		fmt.Printf("  Current Jobs:    %d\n", resource.CurrentJobs)
+		fmt.Printf("  Available Slots: %d\n", resource.AvailableSlots)
+		fmt.Println()
 
-	// Runtime Information
-	fmt.Printf("Runtime:\n")
-	fmt.Printf("  Uptime:     %s\n", resource.Uptime)
-	fmt.Printf("  Goroutines: %d\n", resource.GoRoutines)
-	fmt.Printf("  Go Memory:  %d MB allocated, %d MB from system\n",
-		resource.GoMemAlloc/(1024*1024), resource.GoMemSys/(1024*1024))
-	fmt.Printf("  GC Cycles:  %d (last pause: %.2fms)\n", resource.GoGCCycles, resource.GoGCPause)
+		// Runtime Information
+		fmt.Printf("Runtime:\n")
+		fmt.Printf("  Uptime:     %s\n", resource.Uptime)
+		fmt.Printf("  Goroutines: %d\n", resource.GoRoutines)
+		fmt.Printf("  Go Memory:  %d MB allocated, %d MB from system\n",
+			resource.GoMemAlloc/(1024*1024), resource.GoMemSys/(1024*1024))
+		fmt.Printf("  GC Cycles:  %d (last pause: %.2fms)\n", resource.GoGCCycles, resource.GoGCPause)
 
-	if resource.Load1 > 0 || resource.Load5 > 0 || resource.Load15 > 0 {
-		fmt.Printf("  Load Avg:   %.2f, %.2f, %.2f\n", resource.Load1, resource.Load5, resource.Load15)
+		if resource.Load1 > 0 || resource.Load5 > 0 || resource.Load15 > 0 {
+			fmt.Printf("  Load Avg:   %.2f, %.2f, %.2f\n", resource.Load1, resource.Load5, resource.Load15)
+		}
 	}
 }
 
