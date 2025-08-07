@@ -84,7 +84,8 @@ var rootCmd = &cobra.Command{
 
 Think Kubernetes for AI agents - with isolated VMs, sandboxed execution, 
 serverless functions, native memory, workflows, and other AI-first primitives.`,
-	Version: Version,
+	Version:      Version,
+	SilenceUsage: true, // Don't show usage on errors
 	Example: `  	  # Start first node in cluster
 	  prismd --serf=` + DefaultSerf + `
 
