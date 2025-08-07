@@ -181,6 +181,7 @@ func isRaftPeerConnected(member *serf.PrismNode, raftPeers []string) bool {
 	}
 
 	// Build expected Raft address for this member
+	// Note: Raft peers are stored as "nodeID@address:port" where nodeID = nodeName
 	expectedRaftAddr := fmt.Sprintf("%s@%s:%d", member.Name, member.Addr.String(), raftPort)
 
 	// Check if this address is in the Raft peers list

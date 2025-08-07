@@ -90,12 +90,27 @@ func (m *RaftManager) Start() error {
 	if m.config.Bootstrap {
 		logging.Info("Bootstrapping new Raft cluster")
 
+		// Use the same address resolution logic as setupTransport for consistency
+		bindAddr := m.config.BindAddr
+		if bindAddr == "0.0.0.0" {
+			// Get the local IP address that can be used by other nodes
+			conn, err := net.Dial("udp", "8.8.8.8:80")
+			if err != nil {
+				// Fallback
+				bindAddr = "127.0.0.1"
+			} else {
+				localAddr := conn.LocalAddr().(*net.UDPAddr)
+				bindAddr = localAddr.IP.String()
+				conn.Close()
+			}
+		}
+
 		// Create initial cluster configuration with this node only
 		configuration := raft.Configuration{
 			Servers: []raft.Server{
 				{
 					ID:      raft.ServerID(m.config.NodeID),
-					Address: raft.ServerAddress(fmt.Sprintf("%s:%d", m.config.BindAddr, m.config.BindPort)),
+					Address: raft.ServerAddress(fmt.Sprintf("%s:%d", bindAddr, m.config.BindPort)),
 				},
 			},
 		}
