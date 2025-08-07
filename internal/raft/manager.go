@@ -56,6 +56,7 @@ func (m *RaftManager) Start() error {
 	logging.Info("Starting Raft manager on %s:%d", m.config.BindAddr, m.config.BindPort)
 
 	// Create data directory if it doesn't exist
+	// TODO: Path traversal fix
 	if err := os.MkdirAll(m.config.DataDir, 0755); err != nil {
 		return fmt.Errorf("failed to create data directory: %w", err)
 	}
@@ -440,6 +441,15 @@ func (m *RaftManager) buildRaftConfig() *raft.Config {
 	config.ElectionTimeout = m.config.ElectionTimeout
 	config.CommitTimeout = m.config.CommitTimeout
 	config.LeaderLeaseTimeout = m.config.LeaderLeaseTimeout
+
+	// Reduce excessive retry logging by configuring Raft to be less chatty
+	// This prevents spamming logs when nodes are unreachable
+	config.LogOutput = io.Discard // Disable Raft's internal logging to reduce noise
+
+	// Set more reasonable timeouts to reduce retry frequency
+	// Note: ElectionTimeout must be >= HeartbeatTimeout
+	config.HeartbeatTimeout = m.config.HeartbeatTimeout * 2 // Increase heartbeat timeout
+	config.ElectionTimeout = m.config.ElectionTimeout * 4   // Increase election timeout (must be >= heartbeat)
 
 	// TODO: Configure logger to match Prism's logging format
 	// TODO: Add Raft metrics integration

@@ -12,6 +12,7 @@ import (
 
 	"github.com/concave-dev/prism/internal/api/handlers"
 	"github.com/concave-dev/prism/internal/logging"
+	"github.com/concave-dev/prism/internal/raft"
 	"github.com/concave-dev/prism/internal/serf"
 	"github.com/gin-gonic/gin"
 )
@@ -19,6 +20,7 @@ import (
 // Represents the Prism API server
 type Server struct {
 	serfManager *serf.SerfManager
+	raftManager *raft.RaftManager
 	httpServer  *http.Server
 	bindAddr    string
 	bindPort    int
@@ -31,6 +33,7 @@ func NewServer(config *Config) *Server {
 
 	return &Server{
 		serfManager: config.SerfManager,
+		raftManager: config.RaftManager,
 		bindAddr:    config.BindAddr,
 		bindPort:    config.BindPort,
 	}
@@ -114,7 +117,7 @@ func (s *Server) handleMembers(c *gin.Context) {
 
 // getHandlerMembers is a members endpoint handler factory
 func (s *Server) getHandlerMembers() gin.HandlerFunc {
-	return handlers.HandleMembers(s.serfManager)
+	return handlers.HandleMembers(s.serfManager, s.raftManager)
 }
 
 // handleStatus delegates to handlers.HandleStatus
@@ -147,7 +150,7 @@ func (s *Server) handleNodes(c *gin.Context) {
 
 // getHandlerNodes is a nodes endpoint handler factory
 func (s *Server) getHandlerNodes() gin.HandlerFunc {
-	return handlers.HandleNodes(s.serfManager)
+	return handlers.HandleNodes(s.serfManager, s.raftManager)
 }
 
 // handleNodeByID delegates to handlers.HandleNodeByID

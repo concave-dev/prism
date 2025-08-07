@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/concave-dev/prism/internal/config"
+	"github.com/concave-dev/prism/internal/raft"
 	"github.com/concave-dev/prism/internal/serf"
 )
 
@@ -23,9 +24,7 @@ type Config struct {
 	BindAddr    string            // HTTP server bind address (e.g., "0.0.0.0")
 	BindPort    int               // HTTP server bind port
 	SerfManager *serf.SerfManager // Reference to cluster manager for data access
-	// RaftManager *raft.RaftManager // Reference to Raft manager for consensus - will be added later
-	// TODO: We will rely on raft's fsm for asking about nodes in the cluster like resources, etc.
-	// instead of serf's members list or serf's query.
+	RaftManager *raft.RaftManager // Reference to Raft manager for consensus status
 }
 
 // DefaultConfig returns a default API server configuration
@@ -36,6 +35,7 @@ func DefaultConfig() *Config {
 		BindAddr:    config.DefaultBindAddr,
 		BindPort:    DefaultAPIPort,
 		SerfManager: nil, // Must be set by caller
+		RaftManager: nil, // Must be set by caller
 	}
 }
 
@@ -51,6 +51,9 @@ func (c *Config) Validate() error {
 	}
 	if c.SerfManager == nil {
 		return fmt.Errorf("serf manager cannot be nil")
+	}
+	if c.RaftManager == nil {
+		return fmt.Errorf("raft manager cannot be nil")
 	}
 
 	return nil

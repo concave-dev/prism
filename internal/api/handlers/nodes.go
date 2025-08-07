@@ -4,14 +4,15 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/concave-dev/prism/internal/raft"
 	"github.com/concave-dev/prism/internal/serf"
 	"github.com/gin-gonic/gin"
 )
 
 // HandleNodes returns all nodes (alias for members for now)
-func HandleNodes(serfManager *serf.SerfManager) gin.HandlerFunc {
+func HandleNodes(serfManager *serf.SerfManager, raftManager *raft.RaftManager) gin.HandlerFunc {
 	// For now, nodes and members are the same
-	return HandleMembers(serfManager)
+	return HandleMembers(serfManager, raftManager)
 }
 
 // HandleNodeByID returns a specific node by ID

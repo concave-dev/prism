@@ -202,6 +202,10 @@ type ClusterMember struct {
 	Status   string            `json:"status"`
 	Tags     map[string]string `json:"tags"`
 	LastSeen time.Time         `json:"lastSeen"`
+
+	// Connection status
+	SerfConnected bool `json:"serfConnected"`
+	RaftConnected bool `json:"raftConnected"`
 }
 
 type ClusterStatus struct {
@@ -346,12 +350,14 @@ func (api *PrismAPIClient) GetMembers() ([]ClusterMember, error) {
 		for _, memberData := range membersData {
 			if memberMap, ok := memberData.(map[string]interface{}); ok {
 				member := ClusterMember{
-					ID:       getString(memberMap, "id"),
-					Name:     getString(memberMap, "name"),
-					Address:  getString(memberMap, "address"),
-					Status:   getString(memberMap, "status"),
-					Tags:     getStringMap(memberMap, "tags"),
-					LastSeen: getTime(memberMap, "lastSeen"),
+					ID:            getString(memberMap, "id"),
+					Name:          getString(memberMap, "name"),
+					Address:       getString(memberMap, "address"),
+					Status:        getString(memberMap, "status"),
+					Tags:          getStringMap(memberMap, "tags"),
+					LastSeen:      getTime(memberMap, "lastSeen"),
+					SerfConnected: getBool(memberMap, "serfConnected"),
+					RaftConnected: getBool(memberMap, "raftConnected"),
 				}
 				members = append(members, member)
 			}
@@ -641,6 +647,14 @@ func getUint32(m map[string]interface{}, key string) uint32 {
 	return 0
 }
 
+// getBool safely extracts a bool value from interface{} maps
+func getBool(m map[string]interface{}, key string) bool {
+	if val, ok := m[key].(bool); ok {
+		return val
+	}
+	return false
+}
+
 // setupLogging sets up logging based on verbose flag and log level
 func setupLogging() {
 	if config.Verbose {
@@ -770,14 +784,26 @@ func displayMembersFromAPI(members []ClusterMember) {
 		defer w.Flush()
 
 		// Header
-		fmt.Fprintln(w, "ID\tNAME\tADDRESS\tSTATUS\tLAST SEEN")
+		fmt.Fprintln(w, "ID\tNAME\tADDRESS\tSTATUS\tSERF\tRAFT\tLAST SEEN")
 
 		// Display each member
 		for _, member := range members {
 			lastSeen := formatDuration(time.Since(member.LastSeen))
 
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-				member.ID, member.Name, member.Address, member.Status, lastSeen)
+			// Format connection status as yes/no
+			serfStatus := "no"
+			if member.SerfConnected {
+				serfStatus = "yes"
+			}
+
+			raftStatus := "no"
+			if member.RaftConnected {
+				raftStatus = "yes"
+			}
+
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+				member.ID, member.Name, member.Address, member.Status,
+				serfStatus, raftStatus, lastSeen)
 		}
 	}
 }

@@ -547,6 +547,7 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	apiConfig.BindAddr = config.APIAddr
 	apiConfig.BindPort = config.APIPort
 	apiConfig.SerfManager = manager
+	apiConfig.RaftManager = raftManager
 
 	apiServer = api.NewServer(apiConfig)
 	if err := apiServer.Start(); err != nil {
