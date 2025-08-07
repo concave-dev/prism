@@ -17,12 +17,14 @@ func TestDefaultConfig(t *testing.T) {
 
 	// Test default values
 	expectedDefaults := map[string]interface{}{
-		"BindAddr":        "0.0.0.0",
-		"BindPort":        4200,
-		"EventBufferSize": 1024,
-		"JoinRetries":     3,
-		"JoinTimeout":     30 * time.Second,
-		"LogLevel":        "INFO",
+		"BindAddr":         "0.0.0.0",
+		"BindPort":         4200,
+		"EventBufferSize":  1024,
+		"JoinRetries":      3,
+		"JoinTimeout":      30 * time.Second,
+		"LogLevel":         "INFO",
+		"ReapInterval":     5 * time.Minute,
+		"TombstoneTimeout": 10 * time.Minute,
 	}
 
 	// Test individual default values
@@ -48,6 +50,14 @@ func TestDefaultConfig(t *testing.T) {
 
 	if config.LogLevel != expectedDefaults["LogLevel"] {
 		t.Errorf("Expected LogLevel=%v, got %v", expectedDefaults["LogLevel"], config.LogLevel)
+	}
+
+	if config.ReapInterval != expectedDefaults["ReapInterval"] {
+		t.Errorf("Expected ReapInterval=%v, got %v", expectedDefaults["ReapInterval"], config.ReapInterval)
+	}
+
+	if config.TombstoneTimeout != expectedDefaults["TombstoneTimeout"] {
+		t.Errorf("Expected TombstoneTimeout=%v, got %v", expectedDefaults["TombstoneTimeout"], config.TombstoneTimeout)
 	}
 
 	// Test that Tags map is initialized (not nil)

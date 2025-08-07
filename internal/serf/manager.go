@@ -137,6 +137,11 @@ func (sm *SerfManager) Start() error {
 	serfConfig.MemberlistConfig.BindAddr = sm.config.BindAddr
 	serfConfig.MemberlistConfig.BindPort = sm.config.BindPort
 
+	// Configure dead node removal timeouts
+	// TODO: Customize dead node removal timeouts for faster cleanup in dev environments
+	serfConfig.MemberlistConfig.GossipInterval = sm.config.ReapInterval
+	serfConfig.MemberlistConfig.DeadNodeReclaimTime = sm.config.TombstoneTimeout
+
 	// Producer-Consumer Connection: Serf writes events to our internal ingestEventQueue
 	// This ensures internal processing (member tracking) always happens, regardless
 	// of external ConsumerEventCh consumer availability
