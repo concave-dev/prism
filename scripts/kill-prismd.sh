@@ -35,14 +35,16 @@ kill_pids() {
   if [ ${#pids[@]} -eq 0 ]; then
     return 0
   fi
-  # Unique PIDs
-  mapfile -t unique < <(printf "%s\n" "${pids[@]}" | awk 'NF' | sort -u)
-  if [ ${#unique[@]} -eq 0 ]; then
+  # Unique PIDs (portable, avoids 'mapfile' not present on macOS's bash 3.2)
+  local unique_pids
+  unique_pids=$(printf "%s\n" "${pids[@]}" | awk 'NF' | sort -u)
+  if [ -z "$unique_pids" ]; then
     return 0
   fi
-  echo "Killing PIDs: ${unique[*]}"
+  echo "Killing PIDs: $unique_pids"
   # Force kill to avoid lingering listeners
-  kill -9 "${unique[@]}" 2>/dev/null || true
+  # shellcheck disable=SC2086
+  kill -9 $unique_pids 2>/dev/null || true
 }
 
 kill_port_range() {
