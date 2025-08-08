@@ -354,14 +354,14 @@ func (sm *SerfManager) QueryResources() (map[string]*NodeResources, error) {
 	// Serf:         [------ collecting ------] Done, but too late
 	// API:                                     Tries to respond... Too late
 	//
-	// AFTER (staggered timeouts):
-	// Time:    0s    2s    4s    6s    8s    10s
+	// AFTER (consistent timeouts):
+	// Time:    0s    2s    4s    5s    6s    8s
 	// HTTP:    [---- waiting --------] Gets response
 	// Serf:         [-- fast --] Done at 5s
-	// API:                      Process & respond at 7s
+	// API:                      Process & respond at 6s
 	//
 	// - Serf query timeout: 5s (reduced from 10s)
-	// - Response collection: 6s (allows extra buffer)
+	// - Response collection: 5s (matches Serf timeout)
 	// - HTTP client timeout: 8s (in prismctl)
 	//
 	// This cascade prevents HTTP timeouts during normal Serf operations.
@@ -385,8 +385,8 @@ func (sm *SerfManager) QueryResources() (map[string]*NodeResources, error) {
 	// OPTIMIZATION: Early Return + Response Timeout
 	// - Collect responses until all expected nodes reply OR timeout
 	// - Early return when we get all responses (faster for small clusters)
-	// - 6s response timeout gives 1s buffer after 5s Serf query timeout
-	responseTimeout := time.NewTimer(6 * time.Second) // Slightly longer than query timeout
+	// - 5s response timeout matches Serf query timeout (Serf closes channel at 5s anyway)
+	responseTimeout := time.NewTimer(5 * time.Second) // Matches query timeout
 	defer responseTimeout.Stop()
 
 	for {

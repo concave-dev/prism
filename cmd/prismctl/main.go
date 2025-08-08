@@ -207,7 +207,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&config.LogLevel, "log-level", "ERROR",
 		"Log level: DEBUG, INFO, WARN, ERROR")
 	// PERFORMANCE FIX: Reduced HTTP timeout from 10s to 8s
-	// This allows Serf queries (5s) + response collection (6s) to complete
+	// This allows Serf queries (5s) + response collection (5s) to complete
 	// before HTTP client times out, preventing false timeout errors
 	rootCmd.PersistentFlags().IntVar(&config.Timeout, "timeout", 8,
 		"Connection timeout in seconds")
