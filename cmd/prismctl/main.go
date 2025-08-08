@@ -112,29 +112,32 @@ This provides a complete overview of cluster state, composition, and health.`,
 	RunE: handleClusterInfo,
 }
 
-// Resources command
-var resourcesCmd = &cobra.Command{
-	Use:   "resources [node-name]",
-	Short: "Show resource usage and capacity for cluster nodes",
-	Long: `Display CPU, memory, and capacity information for cluster nodes.
+// Node info command
+var nodeInfoCmd = &cobra.Command{
+	Use:   "info [node-name-or-id]",
+	Short: "Show detailed information for cluster nodes",
+	Long: `Display detailed information including CPU, memory, and capacity for cluster nodes.
 
 This command shows resource utilization similar to 'kubectl top nodes',
 including CPU cores, memory usage, job capacity, and runtime statistics.`,
-	Example: `  # Show resources for all nodes
-  prismctl resources
+	Example: `  # Show info for all nodes
+  prismctl node info
 
-  # Show resources for specific node
-  prismctl resources node1
+  # Show info for specific node by name
+  prismctl node info node1
 
-  # Show resources from specific API server
-  prismctl --api=192.168.1.100:8008 resources
+  # Show info for specific node by ID
+  prismctl node info abc123def456
+
+  # Show info from specific API server
+  prismctl --api=192.168.1.100:8008 node info
   
   # Output in JSON format
-  prismctl -o json resources
-  prismctl --output=json resources node1
+  prismctl -o json node info
+  prismctl --output=json node info node1
   
   # Show verbose output during connection
-  prismctl --verbose resources`,
+  prismctl --verbose node info`,
 	RunE: handleResources,
 }
 
@@ -156,11 +159,11 @@ func init() {
 
 	// Add subcommands to node command
 	nodeCmd.AddCommand(nodeLsCmd)
+	nodeCmd.AddCommand(nodeInfoCmd)
 
 	// Add subcommands to root
 	rootCmd.AddCommand(nodeCmd)
 	rootCmd.AddCommand(clusterInfoCmd)
-	rootCmd.AddCommand(resourcesCmd)
 }
 
 // validateGlobalFlags validates all global flags before running any command
@@ -780,14 +783,14 @@ func handleClusterInfo(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// handleResources handles the resources subcommand
+// handleResources handles the node info subcommand
 func handleResources(cmd *cobra.Command, args []string) error {
 	setupLogging()
 
 	// Check if specific node was requested
 	if len(args) > 0 {
 		nodeIdentifier := args[0]
-		logging.Info("Fetching resources for node '%s' from API server: %s", nodeIdentifier, config.APIAddr)
+		logging.Info("Fetching information for node '%s' from API server: %s", nodeIdentifier, config.APIAddr)
 
 		// Create API client
 		apiClient := createAPIClient()
@@ -805,12 +808,12 @@ func handleResources(cmd *cobra.Command, args []string) error {
 		}
 
 		displayNodeResourceFromAPI(*resource)
-		logging.Success("Successfully retrieved resources for node '%s'", resource.NodeName)
+		logging.Success("Successfully retrieved information for node '%s'", resource.NodeName)
 		return nil
 	}
 
 	// Get all cluster resources
-	logging.Info("Fetching cluster resources from API server: %s", config.APIAddr)
+	logging.Info("Fetching cluster node information from API server: %s", config.APIAddr)
 
 	// Create API client and get cluster resources
 	apiClient := createAPIClient()
@@ -820,7 +823,7 @@ func handleResources(cmd *cobra.Command, args []string) error {
 	}
 
 	displayClusterResourcesFromAPI(resources)
-	logging.Success("Successfully retrieved resources for %d cluster nodes", len(resources))
+	logging.Success("Successfully retrieved information for %d cluster nodes", len(resources))
 	return nil
 }
 
@@ -955,13 +958,13 @@ func displayClusterInfoFromAPI(info ClusterInfo) {
 	}
 }
 
-// displayClusterResourcesFromAPI displays cluster resources from API response
+// displayClusterResourcesFromAPI displays cluster node information from API response
 func displayClusterResourcesFromAPI(resources []NodeResources) {
 	if len(resources) == 0 {
 		if config.Output == "json" {
 			fmt.Println("[]")
 		} else {
-			fmt.Println("No cluster resources found")
+			fmt.Println("No cluster node information found")
 		}
 		return
 	}
@@ -1005,7 +1008,7 @@ func displayClusterResourcesFromAPI(resources []NodeResources) {
 	}
 }
 
-// displayNodeResourceFromAPI displays detailed resources for a single node
+// displayNodeResourceFromAPI displays detailed information for a single node
 func displayNodeResourceFromAPI(resource NodeResources) {
 	if config.Output == "json" {
 		// JSON output
