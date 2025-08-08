@@ -4,11 +4,29 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/concave-dev/prism/internal/config"
 	"github.com/concave-dev/prism/internal/validate"
 )
 
-// Holds configuration for the SerfManager
-type ManagerConfig struct {
+const (
+	// DefaultSerfPort is the default port for Serf communication
+	DefaultSerfPort = 4200
+
+	// DefaultEventBufferSize is the default event buffer size
+	DefaultEventBufferSize = 1024
+
+	// DefaultJoinRetries is the default join retries
+	DefaultJoinRetries = 3
+
+	// DefaultJoinTimeout is the default join timeout
+	DefaultJoinTimeout = 30 * time.Second
+
+	// DefaultDeadNodeReclaimTime is how long we wait before removing dead nodes
+	DefaultDeadNodeReclaimTime = 10 * time.Minute
+)
+
+// Config holds configuration for the SerfManager
+type Config struct {
 	BindAddr string            // Bind address
 	BindPort int               // Bind port
 	NodeName string            // Name of the node
@@ -18,23 +36,26 @@ type ManagerConfig struct {
 	JoinRetries     int           // Join retries
 	JoinTimeout     time.Duration // Join timeout
 	LogLevel        string        // Log level
+
+	DeadNodeReclaimTime time.Duration // How long to wait before removing dead nodes
 }
 
-// DefaultManagerConfig returns a default configuration for SerfManager
-func DefaultManagerConfig() *ManagerConfig {
-	return &ManagerConfig{
-		BindAddr:        "127.0.0.1",
-		BindPort:        4200,
-		EventBufferSize: 1024,
-		JoinRetries:     3,
-		JoinTimeout:     30 * time.Second,
-		LogLevel:        "INFO",
-		Tags:            make(map[string]string),
+// DefaultConfig returns a default configuration for SerfManager
+func DefaultConfig() *Config {
+	return &Config{
+		BindAddr:            config.DefaultBindAddr,
+		BindPort:            DefaultSerfPort,
+		EventBufferSize:     DefaultEventBufferSize,
+		JoinRetries:         DefaultJoinRetries,
+		JoinTimeout:         DefaultJoinTimeout,
+		LogLevel:            config.DefaultLogLevel,
+		DeadNodeReclaimTime: DefaultDeadNodeReclaimTime,
+		Tags:                make(map[string]string),
 	}
 }
 
 // validateConfig validates manager configuration
-func validateConfig(config *ManagerConfig) error {
+func validateConfig(config *Config) error {
 	if config.NodeName == "" {
 		return fmt.Errorf("node name cannot be empty")
 	}
@@ -44,7 +65,9 @@ func validateConfig(config *ManagerConfig) error {
 		return fmt.Errorf("invalid bind address: %w", err)
 	}
 
-	if err := validate.ValidateField(config.BindPort, "min=0,max=65535"); err != nil {
+	// Port 0 means "OS chooses port", but distributed systems need predictable addresses
+	// for peer discovery and gossip protocol. Require explicit port selection.
+	if err := validate.ValidateField(config.BindPort, "min=1,max=65535"); err != nil {
 		return fmt.Errorf("invalid bind port: %w", err)
 	}
 

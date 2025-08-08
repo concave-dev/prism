@@ -64,13 +64,13 @@ type SerfManager struct {
 	cancel     context.CancelFunc    // Cancel function
 	shutdownCh chan struct{}         // Shutdown channel (future use)
 	wg         sync.WaitGroup        // Wait group
-	config     *ManagerConfig        // Manager Configuration
+	config     *Config               // Manager Configuration
 }
 
 // NewSerfManager creates a new SerfManager instance
-func NewSerfManager(config *ManagerConfig) (*SerfManager, error) {
+func NewSerfManager(config *Config) (*SerfManager, error) {
 	if config == nil {
-		config = DefaultManagerConfig()
+		config = DefaultConfig()
 	}
 
 	if err := validateConfig(config); err != nil {
@@ -137,6 +137,13 @@ func (sm *SerfManager) Start() error {
 	serfConfig.MemberlistConfig.BindAddr = sm.config.BindAddr
 	serfConfig.MemberlistConfig.BindPort = sm.config.BindPort
 
+	// Configure membership/cleanup behavior
+	// TODO(prism): Expose fine-grained memberlist tuning (GossipInterval, ProbeInterval, SuspicionMult)
+	// Keep GossipInterval at memberlist default (~200ms) for fast failure detection.
+	// Control permanent removal of failed nodes via DeadNodeReclaimTime.
+	// NOTE: Do not tie gossip frequency to the reap window; that would severely delay failure detection.
+	serfConfig.MemberlistConfig.DeadNodeReclaimTime = sm.config.DeadNodeReclaimTime
+
 	// Producer-Consumer Connection: Serf writes events to our internal ingestEventQueue
 	// This ensures internal processing (member tracking) always happens, regardless
 	// of external ConsumerEventCh consumer availability
@@ -190,20 +197,51 @@ func (sm *SerfManager) Join(addresses []string) error {
 
 	var lastErr error
 	for attempt := 1; attempt <= sm.config.JoinRetries; attempt++ {
-		n, err := sm.serf.Join(addresses, false)
-		if err != nil {
-			lastErr = err
-			logging.Warn("Join attempt %d/%d failed: %v",
-				attempt, sm.config.JoinRetries, err)
+		// Create context with timeout for this join attempt
+		ctx, cancel := context.WithTimeout(context.Background(), sm.config.JoinTimeout)
+
+		// Use a channel to handle the join operation with timeout
+		joinDone := make(chan struct {
+			n   int
+			err error
+		}, 1)
+
+		go func() {
+			n, err := sm.serf.Join(addresses, false)
+			joinDone <- struct {
+				n   int
+				err error
+			}{n, err}
+		}()
+
+		select {
+		case result := <-joinDone:
+			cancel()
+			if result.err != nil {
+				lastErr = result.err
+				logging.Warn("Join attempt %d/%d failed: %v",
+					attempt, sm.config.JoinRetries, result.err)
+
+				if attempt < sm.config.JoinRetries {
+					time.Sleep(time.Duration(attempt) * time.Second)
+				}
+				continue
+			}
+
+			logging.Success("Successfully joined cluster, discovered %d nodes", result.n)
+			return nil
+
+		case <-ctx.Done():
+			cancel()
+			lastErr = fmt.Errorf("join attempt timed out after %v", sm.config.JoinTimeout)
+			logging.Warn("Join attempt %d/%d timed out after %v",
+				attempt, sm.config.JoinRetries, sm.config.JoinTimeout)
 
 			if attempt < sm.config.JoinRetries {
 				time.Sleep(time.Duration(attempt) * time.Second)
 			}
 			continue
 		}
-
-		logging.Success("Successfully joined cluster, discovered %d nodes", n)
-		return nil
 	}
 
 	return fmt.Errorf("failed to join cluster after %d attempts: %w",
@@ -316,14 +354,14 @@ func (sm *SerfManager) QueryResources() (map[string]*NodeResources, error) {
 	// Serf:         [------ collecting ------] Done, but too late
 	// API:                                     Tries to respond... Too late
 	//
-	// AFTER (staggered timeouts):
-	// Time:    0s    2s    4s    6s    8s    10s
+	// AFTER (consistent timeouts):
+	// Time:    0s    2s    4s    5s    6s    8s
 	// HTTP:    [---- waiting --------] Gets response
 	// Serf:         [-- fast --] Done at 5s
-	// API:                      Process & respond at 7s
+	// API:                      Process & respond at 6s
 	//
 	// - Serf query timeout: 5s (reduced from 10s)
-	// - Response collection: 6s (allows extra buffer)
+	// - Response collection: 5s (matches Serf timeout)
 	// - HTTP client timeout: 8s (in prismctl)
 	//
 	// This cascade prevents HTTP timeouts during normal Serf operations.
@@ -347,8 +385,8 @@ func (sm *SerfManager) QueryResources() (map[string]*NodeResources, error) {
 	// OPTIMIZATION: Early Return + Response Timeout
 	// - Collect responses until all expected nodes reply OR timeout
 	// - Early return when we get all responses (faster for small clusters)
-	// - 6s response timeout gives 1s buffer after 5s Serf query timeout
-	responseTimeout := time.NewTimer(6 * time.Second) // Slightly longer than query timeout
+	// - 5s response timeout matches Serf query timeout (Serf closes channel at 5s anyway)
+	responseTimeout := time.NewTimer(5 * time.Second) // Matches query timeout
 	defer responseTimeout.Stop()
 
 	for {

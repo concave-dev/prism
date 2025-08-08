@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	stdlog "log"
+
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/log"
 )
@@ -208,6 +210,11 @@ func (csw *ColorfulSerfWriter) processLogs() {
 			level := matches[1]
 			message := matches[2]
 
+			// Avoid redundant component prefixes since we add our own "serf:" label
+			if strings.HasPrefix(strings.ToLower(message), "serf: ") {
+				message = strings.TrimSpace(message[len("serf: "):])
+			}
+
 			// Route through appropriate colorful logging function based on level
 			switch level {
 			case "DEBUG":
@@ -228,4 +235,134 @@ func (csw *ColorfulSerfWriter) processLogs() {
 			Info("serf: %s", line)
 		}
 	}
+}
+
+// ColorfulRaftWriter captures HashiCorp Raft logs and routes them through our logging system
+// The Raft library typically emits lines like:
+//
+//	2024/01/02 15:04:05 [WARN] raft: heartbeat timeout reached, starting election
+//
+// We parse the level token and re-emit via our colored logger.
+// TODO: Deduplicate with ColorfulSerfWriter by creating a generic component log writer.
+type ColorfulRaftWriter struct {
+	reader *io.PipeReader
+	writer *io.PipeWriter
+}
+
+// NewColorfulRaftWriter creates a new colorful writer for Raft logs
+func NewColorfulRaftWriter() *ColorfulRaftWriter {
+	r, w := io.Pipe()
+	crw := &ColorfulRaftWriter{
+		reader: r,
+		writer: w,
+	}
+
+	go crw.processLogs()
+	return crw
+}
+
+// Write implements io.Writer
+func (crw *ColorfulRaftWriter) Write(p []byte) (n int, err error) {
+	return crw.writer.Write(p)
+}
+
+// Close closes the writer
+func (crw *ColorfulRaftWriter) Close() error {
+	return crw.writer.Close()
+}
+
+// processLogs parses and re-routes Raft logs
+func (crw *ColorfulRaftWriter) processLogs() {
+	scanner := bufio.NewScanner(crw.reader)
+
+	// Example: 2024/01/02 15:04:05 [WARN] raft: message
+	logRegex := regexp.MustCompile(`^\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} \[(\w+)\] (.+)$`)
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+
+		matches := logRegex.FindStringSubmatch(line)
+		if len(matches) == 3 {
+			level := matches[1]
+			message := matches[2]
+
+			// Avoid redundant component prefixes since we add our own "raft:" label
+			if strings.HasPrefix(strings.ToLower(message), "raft: ") {
+				message = strings.TrimSpace(message[len("raft: "):])
+			}
+
+			switch level {
+			case "DEBUG":
+				Debug("raft: %s", message)
+			case "INFO":
+				Info("raft: %s", message)
+			case "WARN", "WARNING":
+				Warn("raft: %s", message)
+			case "ERR", "ERROR":
+				Error("raft: %s", message)
+			default:
+				Info("raft[%s]: %s", level, message)
+			}
+		} else {
+			Info("raft: %s", line)
+		}
+	}
+}
+
+// LevelWriter is a simple io.Writer that forwards lines to a specific log level with an optional prefix
+// Useful for integrating third-party libraries (Gin, gRPC) that expect io.Writer sinks.
+type LevelWriter struct {
+	level  string
+	prefix string
+}
+
+// NewLevelWriter creates a writer that logs each line at the specified level with a prefix.
+// Valid levels: DEBUG, INFO, WARN, ERROR
+func NewLevelWriter(level, prefix string) io.Writer {
+	return &LevelWriter{level: strings.ToUpper(level), prefix: prefix}
+}
+
+// Write implements io.Writer by splitting input into lines and logging each
+func (w *LevelWriter) Write(p []byte) (int, error) {
+	text := string(p)
+	lines := strings.Split(text, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		msg := line
+		if w.prefix != "" {
+			msg = w.prefix + ": " + line
+		}
+		switch w.level {
+		case "DEBUG":
+			Debug("%s", msg)
+		case "INFO":
+			Info("%s", msg)
+		case "WARN":
+			Warn("%s", msg)
+		case "ERROR":
+			Error("%s", msg)
+		default:
+			Info("%s", msg)
+		}
+	}
+	return len(p), nil
+}
+
+// RedirectStandardLog redirects Go's standard library logger output to the provided writer.
+// This helps capture logs from dependencies that use the global logger (e.g., raft-boltdb)
+// and route them through our logging pipeline.
+// Passing nil will discard standard log output.
+// TODO: Consider scoping redirection per component if needed in future.
+func RedirectStandardLog(w io.Writer) {
+	if w == nil {
+		stdlog.SetOutput(io.Discard)
+		return
+	}
+	stdlog.SetOutput(w)
 }

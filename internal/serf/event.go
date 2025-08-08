@@ -158,7 +158,9 @@ func (sm *SerfManager) removeMember(member serf.Member) {
 	sm.memberLock.Unlock()
 }
 
-// memberFromSerf converts a serf.Member to a PrismNode
+// memberFromSerf converts a serf.Member to a PrismNode struct
+// This is a pure conversion function that creates a new PrismNode from serf.Member data.
+// Thread-safe: Does not access sm.members map or any shared state - only converts data.
 func (sm *SerfManager) memberFromSerf(member serf.Member) *PrismNode {
 	nodeID := member.Tags["node_id"]
 	if nodeID == "" {

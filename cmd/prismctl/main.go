@@ -7,20 +7,23 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/signal"
 	"sort"
 	"strings"
+	"syscall"
 	"text/tabwriter"
 	"time"
 
 	"github.com/concave-dev/prism/internal/logging"
 	"github.com/concave-dev/prism/internal/validate"
+	"github.com/dustin/go-humanize"
 	"github.com/go-resty/resty/v2"
 	"github.com/spf13/cobra"
 )
 
 const (
-	Version        = "0.1.0-dev"    // Version information
-	DefaultAPIAddr = "0.0.0.0:8020" // Default API server address
+	Version        = "0.1.0-dev"      // Version information
+	DefaultAPIAddr = "127.0.0.1:8008" // Default API server address (routable)
 )
 
 // Global configuration
@@ -30,6 +33,12 @@ var config struct {
 	Timeout  int    // Connection timeout in seconds
 	Verbose  bool   // Show verbose output
 	Output   string // Output format: table, json
+}
+
+// Node command configuration
+var nodeConfig struct {
+	Watch        bool   // Enable watch mode for live updates
+	StatusFilter string // Filter nodes by status (alive, failed, left)
 }
 
 // Root command
@@ -42,86 +51,153 @@ AI agents, MCP tools, and AI workflows in Prism clusters.
 Similar to kubectl for Kubernetes, prismctl lets you deploy agents, run 
 AI-generated code in sandboxes, manage workflows, and inspect cluster state.`,
 	Version:           Version,
+	SilenceUsage:      true, // Don't show usage on errors
 	PersistentPreRunE: validateGlobalFlags,
-	Example: `  # List cluster members
-  prismctl members
+	Example: `  # Show cluster information
+  prismctl info
 
-  # Show cluster status
-  prismctl status
+  # List cluster nodes
+  prismctl node ls
+
+  # Watch nodes with live updates
+  prismctl node ls --watch
+
+  # Filter nodes by status
+  prismctl node ls --status=alive
+
+  # Show node resource overview
+  prismctl node top
+
+  # Show detailed node information
+  prismctl node info node1
 
   # Connect to remote API server
-  prismctl --api=192.168.1.100:8020 members
+  prismctl --api=192.168.1.100:8008 info
   
   # Output in JSON format
-  prismctl --output=json members
-  prismctl -o json status
+  prismctl --output=json node top
+  prismctl -o json info
   
   # Show verbose output
-  prismctl --verbose members`,
+  prismctl --verbose node ls`,
 }
 
-// Members command
-var membersCmd = &cobra.Command{
-	Use:   "members",
-	Short: "List all cluster members",
-	Long: `List all members (nodes) in the Prism cluster.
+// Node command (parent command for node operations)
+var nodeCmd = &cobra.Command{
+	Use:   "node",
+	Short: "Manage and inspect cluster nodes",
+	Long: `Commands for managing and inspecting nodes in the Prism cluster.
+
+This command group provides operations for listing nodes, viewing node details,
+and managing node-specific resources.`,
+}
+
+// Node list command
+var nodeLsCmd = &cobra.Command{
+	Use:   "ls",
+	Short: "List all cluster nodes",
+	Long: `List all nodes in the Prism cluster.
 
 This command connects to the cluster and displays information about all
 known nodes including their status and last seen times.`,
-	Example: `  # List all members
-  prismctl members
+	Example: `  # List all nodes
+  prismctl node ls
 
-  # List members from specific API server
-  prismctl --api-addr=192.168.1.100:8020 members
+  # List nodes with live updates
+  prismctl node ls --watch
+
+  # Filter nodes by status
+  prismctl node ls --status=alive
+
+
+
+  # List nodes from specific API server
+  prismctl --api=192.168.1.100:8008 node ls
   
   # Show verbose output during connection
-  prismctl --verbose members`,
+  prismctl --verbose node ls`,
+	Args: cobra.NoArgs,
 	RunE: handleMembers,
 }
 
-// Status command
-var statusCmd = &cobra.Command{
-	Use:   "status",
-	Short: "Show cluster status information",
-	Long: `Show a summary of cluster status including node counts by status
-and status.
+// Info command (cluster information)
+var infoCmd = &cobra.Command{
+	Use:   "info",
+	Short: "Show comprehensive cluster information",
+	Long: `Show comprehensive cluster information including member details,
+uptime, version, and cluster health status.
 
-This provides a high-level overview of cluster health and composition.`,
-	Example: `  # Show cluster status
-  prismctl status
+This provides a complete overview of cluster state, composition, and health.`,
+	Example: `  # Show cluster information
+  prismctl info
 
-  # Show status from specific API server
-  prismctl --api-addr=192.168.1.100:8080 status
+  # Show cluster info from specific API server
+  prismctl --api=192.168.1.100:8008 info
+  
+  # Output in JSON format
+  prismctl -o json info
   
   # Show verbose output during connection
-  prismctl --verbose status`,
-	RunE: handleStatus,
+  prismctl --verbose info`,
+	Args: cobra.NoArgs,
+	RunE: handleClusterInfo,
 }
 
-// Resources command
-var resourcesCmd = &cobra.Command{
-	Use:   "resources [node-name]",
-	Short: "Show resource usage and capacity for cluster nodes",
-	Long: `Display CPU, memory, and capacity information for cluster nodes.
+// Node top command (resource overview for all nodes)
+var nodeTopCmd = &cobra.Command{
+	Use:   "top",
+	Short: "Show resource overview for all cluster nodes",
+	Long: `Display resource overview including CPU, memory, and capacity for all cluster nodes.
 
 This command shows resource utilization similar to 'kubectl top nodes',
 including CPU cores, memory usage, job capacity, and runtime statistics.`,
-	Example: `  # Show resources for all nodes
-  prismctl resources
+	Example: `  # Show resource overview for all nodes
+  prismctl node top
 
-  # Show resources for specific node
-  prismctl resources node1
+  # Show live updates with watch
+  prismctl node top --watch
 
-  # Show resources from specific API server
-  prismctl --api=192.168.1.100:8080 resources
+  # Filter nodes by status
+  prismctl node top --status=alive
+
+
+
+  # Show resource overview from specific API server
+  prismctl --api=192.168.1.100:8008 node top
   
   # Output in JSON format
-  prismctl -o json resources
-  prismctl --output=json resources node1
+  prismctl -o json node top
   
   # Show verbose output during connection
-  prismctl --verbose resources`,
-	RunE: handleResources,
+  prismctl --verbose node top`,
+	Args: cobra.NoArgs,
+	RunE: handleNodeTop,
+}
+
+// Node info command (detailed info for specific node)
+var nodeInfoCmd = &cobra.Command{
+	Use:   "info <node-name-or-id>",
+	Short: "Show detailed information for a specific node",
+	Long: `Display detailed information including CPU, memory, and capacity for a specific node.
+
+This command shows comprehensive resource details and runtime statistics
+for a single node specified by name or ID.`,
+	Example: `  # Show info for specific node by name
+  prismctl node info node1
+
+  # Show info for specific node by ID
+  prismctl node info abc123def456
+
+  # Show info from specific API server
+  prismctl --api=192.168.1.100:8008 node info node1
+  
+  # Output in JSON format
+  prismctl --output=json node info node1
+  
+  # Show verbose output during connection
+  prismctl --verbose node info node1`,
+	Args: cobra.ExactArgs(1),
+	RunE: handleNodeInfo,
 }
 
 func init() {
@@ -131,7 +207,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&config.LogLevel, "log-level", "ERROR",
 		"Log level: DEBUG, INFO, WARN, ERROR")
 	// PERFORMANCE FIX: Reduced HTTP timeout from 10s to 8s
-	// This allows Serf queries (5s) + response collection (6s) to complete
+	// This allows Serf queries (5s) + response collection (5s) to complete
 	// before HTTP client times out, preventing false timeout errors
 	rootCmd.PersistentFlags().IntVar(&config.Timeout, "timeout", 8,
 		"Connection timeout in seconds")
@@ -140,10 +216,26 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&config.Output, "output", "o", "table",
 		"Output format: table, json")
 
-	// Add subcommands
-	rootCmd.AddCommand(membersCmd)
-	rootCmd.AddCommand(statusCmd)
-	rootCmd.AddCommand(resourcesCmd)
+	// Add flags to node ls command
+	nodeLsCmd.Flags().BoolVarP(&nodeConfig.Watch, "watch", "w", false,
+		"Watch for changes and continuously update the display")
+	nodeLsCmd.Flags().StringVar(&nodeConfig.StatusFilter, "status", "",
+		"Filter nodes by status (alive, failed, left)")
+
+	// Add flags to node top command
+	nodeTopCmd.Flags().BoolVarP(&nodeConfig.Watch, "watch", "w", false,
+		"Watch for changes and continuously update the display")
+	nodeTopCmd.Flags().StringVar(&nodeConfig.StatusFilter, "status", "",
+		"Filter nodes by status (alive, failed, left)")
+
+	// Add subcommands to node command
+	nodeCmd.AddCommand(nodeLsCmd)
+	nodeCmd.AddCommand(nodeTopCmd)
+	nodeCmd.AddCommand(nodeInfoCmd)
+
+	// Add subcommands to root
+	rootCmd.AddCommand(infoCmd)
+	rootCmd.AddCommand(nodeCmd)
 }
 
 // validateGlobalFlags validates all global flags before running any command
@@ -165,6 +257,11 @@ func validateAPIAddress() error {
 	netAddr, err := validate.ParseBindAddress(config.APIAddr)
 	if err != nil {
 		return fmt.Errorf("invalid API server address '%s': %w", config.APIAddr, err)
+	}
+
+	// Reject unroutable 0.0.0.0 target for client connections
+	if netAddr.Host == "0.0.0.0" {
+		return fmt.Errorf("unroutable API address '0.0.0.0:%d'; use 127.0.0.1 or a specific IP address", netAddr.Port)
 	}
 
 	// Client must connect to specific port (not 0)
@@ -201,11 +298,25 @@ type ClusterMember struct {
 	Status   string            `json:"status"`
 	Tags     map[string]string `json:"tags"`
 	LastSeen time.Time         `json:"lastSeen"`
+
+	// Connection status using consistent string values matching Serf pattern
+	SerfStatus string `json:"serfStatus"` // alive, failed, left
+	RaftStatus string `json:"raftStatus"` // alive, failed, left
 }
 
 type ClusterStatus struct {
 	TotalNodes    int            `json:"totalNodes"`
 	NodesByStatus map[string]int `json:"nodesByStatus"`
+}
+
+type ClusterInfo struct {
+	Version    string          `json:"version"`
+	Status     ClusterStatus   `json:"status"`
+	Members    []ClusterMember `json:"members"`
+	Uptime     time.Duration   `json:"uptime"`
+	StartTime  time.Time       `json:"startTime"`
+	RaftLeader string          `json:"raftLeader,omitempty"`
+	ClusterID  string          `json:"clusterId,omitempty"`
 }
 
 type NodeResources struct {
@@ -345,12 +456,14 @@ func (api *PrismAPIClient) GetMembers() ([]ClusterMember, error) {
 		for _, memberData := range membersData {
 			if memberMap, ok := memberData.(map[string]interface{}); ok {
 				member := ClusterMember{
-					ID:       getString(memberMap, "id"),
-					Name:     getString(memberMap, "name"),
-					Address:  getString(memberMap, "address"),
-					Status:   getString(memberMap, "status"),
-					Tags:     getStringMap(memberMap, "tags"),
-					LastSeen: getTime(memberMap, "lastSeen"),
+					ID:         getString(memberMap, "id"),
+					Name:       getString(memberMap, "name"),
+					Address:    getString(memberMap, "address"),
+					Status:     getString(memberMap, "status"),
+					Tags:       getStringMap(memberMap, "tags"),
+					LastSeen:   getTime(memberMap, "lastSeen"),
+					SerfStatus: getString(memberMap, "serfStatus"),
+					RaftStatus: getString(memberMap, "raftStatus"),
 				}
 				members = append(members, member)
 			}
@@ -360,13 +473,13 @@ func (api *PrismAPIClient) GetMembers() ([]ClusterMember, error) {
 	return members, nil
 }
 
-// GetStatus fetches cluster status from the API
-func (api *PrismAPIClient) GetStatus() (*ClusterStatus, error) {
+// GetClusterInfo fetches comprehensive cluster information from the API
+func (api *PrismAPIClient) GetClusterInfo() (*ClusterInfo, error) {
 	var response APIResponse
 
 	resp, err := api.client.R().
 		SetResult(&response).
-		Get("/cluster/status")
+		Get("/cluster/info")
 
 	if err != nil {
 		logging.Error("Failed to connect to API server: %v", err)
@@ -379,15 +492,54 @@ func (api *PrismAPIClient) GetStatus() (*ClusterStatus, error) {
 		return nil, fmt.Errorf("API request failed")
 	}
 
-	// Parse status from the response data
-	if statusData, ok := response.Data.(map[string]interface{}); ok {
-		return &ClusterStatus{
+	// Parse cluster info from the response data
+	if infoData, ok := response.Data.(map[string]interface{}); ok {
+		// Parse status
+		statusData := infoData["status"].(map[string]interface{})
+		status := ClusterStatus{
 			TotalNodes:    getInt(statusData, "totalNodes"),
 			NodesByStatus: getIntMap(statusData, "nodesByStatus"),
+		}
+
+		// Parse members
+		var members []ClusterMember
+		if membersData, ok := infoData["members"].([]interface{}); ok {
+			for _, memberData := range membersData {
+				if memberMap, ok := memberData.(map[string]interface{}); ok {
+					member := ClusterMember{
+						ID:         getString(memberMap, "id"),
+						Name:       getString(memberMap, "name"),
+						Address:    getString(memberMap, "address"),
+						Status:     getString(memberMap, "status"),
+						Tags:       getStringMap(memberMap, "tags"),
+						LastSeen:   getTime(memberMap, "lastSeen"),
+						SerfStatus: getString(memberMap, "serfStatus"),
+						RaftStatus: getString(memberMap, "raftStatus"),
+					}
+					members = append(members, member)
+				}
+			}
+		}
+
+		// Parse uptime
+		uptimeNs := int64(getFloat(infoData, "uptime"))
+		uptime := time.Duration(uptimeNs)
+
+		// Parse start time
+		startTime := getTime(infoData, "startTime")
+
+		return &ClusterInfo{
+			Version:    getString(infoData, "version"),
+			Status:     status,
+			Members:    members,
+			Uptime:     uptime,
+			StartTime:  startTime,
+			RaftLeader: getString(infoData, "raftLeader"),
+			ClusterID:  getString(infoData, "clusterId"),
 		}, nil
 	}
 
-	return nil, fmt.Errorf("unexpected response format for status")
+	return nil, fmt.Errorf("unexpected response format for cluster info")
 }
 
 // GetClusterResources fetches cluster resources from the API
@@ -516,8 +668,8 @@ func resolveNodeIdentifier(apiClient *PrismAPIClient, identifier string) (string
 		return "", fmt.Errorf("failed to get cluster members for ID resolution: %w", err)
 	}
 
-	// Check for partial ID matches (only for identifiers that look like hex)
-	if isHexString(identifier) {
+	// Check for partial ID matches (only for identifiers that look like hex and have valid length)
+	if isHexString(identifier) && isValidPartialIDLength(identifier) {
 		var matches []ClusterMember
 		for _, member := range members {
 			if strings.HasPrefix(member.ID, identifier) {
@@ -560,6 +712,15 @@ func isHexString(s string) bool {
 		}
 	}
 	return true
+}
+
+// isValidPartialIDLength checks if a string has valid length for partial node ID matching
+func isValidPartialIDLength(s string) bool {
+	// Node IDs are 12 hex characters (6 bytes)
+	// Allow partial matching for inputs between 1-12 characters
+	// - Minimum 1 char (as requested)
+	// - Maximum 12 chars (full node ID length)
+	return len(s) >= 1 && len(s) <= 12
 }
 
 // getString safely extracts a string value from interface{} maps
@@ -659,93 +820,200 @@ func createAPIClient() *PrismAPIClient {
 	return NewPrismAPIClient(config.APIAddr, config.Timeout)
 }
 
-// handleMembers handles the members subcommand
+// filterMembers applies filters to a list of members
+func filterMembers(members []ClusterMember) []ClusterMember {
+	if nodeConfig.StatusFilter == "" {
+		return members
+	}
+
+	var filtered []ClusterMember
+	for _, member := range members {
+		// Filter by status
+		if nodeConfig.StatusFilter != "" && member.Status != nodeConfig.StatusFilter {
+			continue
+		}
+
+		filtered = append(filtered, member)
+	}
+	return filtered
+}
+
+// filterResources applies filters to a list of node resources
+func filterResources(resources []NodeResources, members []ClusterMember) []NodeResources {
+	if nodeConfig.StatusFilter == "" {
+		return resources
+	}
+
+	// Create a map of nodeID to member for quick lookup
+	memberMap := make(map[string]ClusterMember)
+	for _, member := range members {
+		memberMap[member.ID] = member
+	}
+
+	var filtered []NodeResources
+	for _, resource := range resources {
+		member, exists := memberMap[resource.NodeID]
+		if !exists {
+			continue
+		}
+
+		// Filter by status
+		if nodeConfig.StatusFilter != "" && member.Status != nodeConfig.StatusFilter {
+			continue
+		}
+
+		filtered = append(filtered, resource)
+	}
+	return filtered
+}
+
+// runWithWatch executes a function periodically until interrupted
+func runWithWatch(fn func() error) error {
+	if !nodeConfig.Watch {
+		return fn()
+	}
+
+	// Set up signal handling for graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	// Create a ticker for periodic updates
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	// Clear screen and show initial data
+	fmt.Print("\033[2J\033[H") // Clear screen and move cursor to top
+	if err := fn(); err != nil {
+		return err
+	}
+
+	for {
+		select {
+		case <-ticker.C:
+			fmt.Print("\033[2J\033[H") // Clear screen and move cursor to top
+			if err := fn(); err != nil {
+				logging.Error("Error updating display: %v", err)
+				continue
+			}
+		case <-sigChan:
+			fmt.Println("\nWatch mode interrupted")
+			return nil
+		}
+	}
+}
+
+// handleMembers handles the node ls subcommand
 func handleMembers(cmd *cobra.Command, args []string) error {
 	setupLogging()
 
-	logging.Info("Fetching cluster members from API server: %s", config.APIAddr)
+	fetchAndDisplayMembers := func() error {
+		logging.Info("Fetching cluster nodes from API server: %s", config.APIAddr)
 
-	// Create API client and get members
-	apiClient := createAPIClient()
-	members, err := apiClient.GetMembers()
-	if err != nil {
-		return err
-	}
-
-	displayMembersFromAPI(members)
-	logging.Success("Successfully retrieved %d cluster members", len(members))
-	return nil
-}
-
-// handleStatus handles the status subcommand
-func handleStatus(cmd *cobra.Command, args []string) error {
-	setupLogging()
-
-	logging.Info("Fetching cluster status from API server: %s", config.APIAddr)
-
-	// Create API client and get status
-	apiClient := createAPIClient()
-	status, err := apiClient.GetStatus()
-	if err != nil {
-		return err
-	}
-
-	displayStatusFromAPI(*status)
-	logging.Success("Successfully retrieved cluster status (%d total nodes)", status.TotalNodes)
-	return nil
-}
-
-// handleResources handles the resources subcommand
-func handleResources(cmd *cobra.Command, args []string) error {
-	setupLogging()
-
-	// Check if specific node was requested
-	if len(args) > 0 {
-		nodeIdentifier := args[0]
-		logging.Info("Fetching resources for node '%s' from API server: %s", nodeIdentifier, config.APIAddr)
-
-		// Create API client
+		// Create API client and get members
 		apiClient := createAPIClient()
-
-		// Resolve partial ID if needed
-		resolvedNodeID, err := resolveNodeIdentifier(apiClient, nodeIdentifier)
+		members, err := apiClient.GetMembers()
 		if err != nil {
 			return err
 		}
 
-		// Get node resources using resolved ID
-		resource, err := apiClient.GetNodeResources(resolvedNodeID)
-		if err != nil {
-			return err
-		}
+		// Apply filters
+		filtered := filterMembers(members)
 
-		displayNodeResourceFromAPI(*resource)
-		logging.Success("Successfully retrieved resources for node '%s'", resource.NodeName)
+		displayMembersFromAPI(filtered)
+		if !nodeConfig.Watch {
+			logging.Success("Successfully retrieved %d cluster nodes (%d after filtering)", len(members), len(filtered))
+		}
 		return nil
 	}
 
-	// Get all cluster resources
-	logging.Info("Fetching cluster resources from API server: %s", config.APIAddr)
+	return runWithWatch(fetchAndDisplayMembers)
+}
 
-	// Create API client and get cluster resources
+// handleClusterInfo handles the cluster info subcommand
+func handleClusterInfo(cmd *cobra.Command, args []string) error {
+	setupLogging()
+
+	logging.Info("Fetching cluster information from API server: %s", config.APIAddr)
+
+	// Create API client and get cluster info
 	apiClient := createAPIClient()
-	resources, err := apiClient.GetClusterResources()
+	info, err := apiClient.GetClusterInfo()
 	if err != nil {
 		return err
 	}
 
-	displayClusterResourcesFromAPI(resources)
-	logging.Success("Successfully retrieved resources for %d cluster nodes", len(resources))
+	displayClusterInfoFromAPI(*info)
+	logging.Success("Successfully retrieved cluster information (%d total nodes)", info.Status.TotalNodes)
 	return nil
 }
 
-// displayMembersFromAPI displays cluster members from API response
+// handleNodeTop handles the node top subcommand (resource overview for all nodes)
+func handleNodeTop(cmd *cobra.Command, args []string) error {
+	setupLogging()
+
+	fetchAndDisplayResources := func() error {
+		logging.Info("Fetching cluster node information from API server: %s", config.APIAddr)
+
+		// Create API client and get cluster resources
+		apiClient := createAPIClient()
+		resources, err := apiClient.GetClusterResources()
+		if err != nil {
+			return err
+		}
+
+		// Get members for filtering
+		members, err := apiClient.GetMembers()
+		if err != nil {
+			return err
+		}
+
+		// Apply filters
+		filtered := filterResources(resources, members)
+
+		displayClusterResourcesFromAPI(filtered)
+		if !nodeConfig.Watch {
+			logging.Success("Successfully retrieved information for %d cluster nodes (%d after filtering)", len(resources), len(filtered))
+		}
+		return nil
+	}
+
+	return runWithWatch(fetchAndDisplayResources)
+}
+
+// handleNodeInfo handles the node info subcommand (detailed info for specific node)
+func handleNodeInfo(cmd *cobra.Command, args []string) error {
+	setupLogging()
+
+	nodeIdentifier := args[0]
+	logging.Info("Fetching information for node '%s' from API server: %s", nodeIdentifier, config.APIAddr)
+
+	// Create API client
+	apiClient := createAPIClient()
+
+	// Resolve partial ID if needed
+	resolvedNodeID, err := resolveNodeIdentifier(apiClient, nodeIdentifier)
+	if err != nil {
+		return err
+	}
+
+	// Get node resources using resolved ID
+	resource, err := apiClient.GetNodeResources(resolvedNodeID)
+	if err != nil {
+		return err
+	}
+
+	displayNodeResourceFromAPI(*resource)
+	logging.Success("Successfully retrieved information for node '%s'", resource.NodeName)
+	return nil
+}
+
+// displayMembersFromAPI displays cluster nodes from API response
 func displayMembersFromAPI(members []ClusterMember) {
 	if len(members) == 0 {
 		if config.Output == "json" {
 			fmt.Println("[]")
 		} else {
-			fmt.Println("No cluster members found")
+			fmt.Println("No cluster nodes found")
 		}
 		return
 	}
@@ -768,49 +1036,115 @@ func displayMembersFromAPI(members []ClusterMember) {
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 		defer w.Flush()
 
-		// Header
-		fmt.Fprintln(w, "ID\tNAME\tADDRESS\tSTATUS\tLAST SEEN")
+		// Header - show SERF and RAFT columns only in verbose mode
+		if config.Verbose {
+			fmt.Fprintln(w, "ID\tNAME\tADDRESS\tSTATUS\tSERF\tRAFT\tLAST SEEN")
+		} else {
+			fmt.Fprintln(w, "ID\tNAME\tADDRESS\tSTATUS\tLAST SEEN")
+		}
 
 		// Display each member
 		for _, member := range members {
 			lastSeen := formatDuration(time.Since(member.LastSeen))
 
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-				member.ID, member.Name, member.Address, member.Status, lastSeen)
+			if config.Verbose {
+				// Use the new three-state status values directly
+				serfStatus := member.SerfStatus
+				if serfStatus == "" {
+					serfStatus = "unknown" // Fallback for missing data
+				}
+
+				raftStatus := member.RaftStatus
+				if raftStatus == "" {
+					raftStatus = "unknown" // Fallback for missing data
+				}
+
+				// Map display of Serf status to ensure 'left' -> 'dead' for consistency
+				// NOTE: API already maps this, but this also guards older servers
+				serfDisplay := member.SerfStatus
+				if serfDisplay == "left" {
+					serfDisplay = "dead"
+				}
+
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+					member.ID, member.Name, member.Address, member.Status,
+					serfDisplay, raftStatus, lastSeen)
+			} else {
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+					member.ID, member.Name, member.Address, member.Status, lastSeen)
+			}
 		}
 	}
 }
 
-// displayStatusFromAPI displays cluster status from API response
-func displayStatusFromAPI(status ClusterStatus) {
+// displayClusterInfoFromAPI displays comprehensive cluster information from API response
+func displayClusterInfoFromAPI(info ClusterInfo) {
 	if config.Output == "json" {
 		// JSON output
 		encoder := json.NewEncoder(os.Stdout)
 		encoder.SetIndent("", "  ")
-		if err := encoder.Encode(status); err != nil {
+		if err := encoder.Encode(info); err != nil {
 			logging.Error("Failed to encode JSON: %v", err)
 			fmt.Println("Error encoding JSON output")
 		}
 	} else {
 		// Table output
-		fmt.Printf("Cluster Status:\n")
-		fmt.Printf("  Total Nodes: %d\n\n", status.TotalNodes)
+		fmt.Printf("Cluster Information:\n")
+		fmt.Printf("  Version:     %s\n", info.Version)
+		if info.ClusterID != "" {
+			fmt.Printf("  Cluster ID:  %s\n", info.ClusterID)
+		}
+		fmt.Printf("  Uptime:      %s\n", formatDuration(info.Uptime))
+		if !info.StartTime.IsZero() {
+			fmt.Printf("  Started:     %s\n", info.StartTime.Format(time.RFC3339))
+		}
+		if info.RaftLeader != "" {
+			fmt.Printf("  Raft Leader: %s\n", info.RaftLeader)
+		}
+		fmt.Printf("  Total Nodes: %d\n\n", info.Status.TotalNodes)
 
 		fmt.Printf("Nodes by Status:\n")
-		for nodeStatus, count := range status.NodesByStatus {
+		for nodeStatus, count := range info.Status.NodesByStatus {
 			fmt.Printf("  %-12s: %d\n", nodeStatus, count)
 		}
 		fmt.Println()
+
+		// Show detailed member information in verbose mode
+		if config.Verbose && len(info.Members) > 0 {
+			fmt.Printf("Cluster Members:\n")
+			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+			defer w.Flush()
+
+			fmt.Fprintln(w, "ID\tNAME\tADDRESS\tSTATUS\tSERF\tRAFT\tLAST SEEN")
+
+			for _, member := range info.Members {
+				lastSeen := formatDuration(time.Since(member.LastSeen))
+
+				serfStatus := member.SerfStatus
+				if serfStatus == "" {
+					serfStatus = "unknown"
+				}
+
+				raftStatus := member.RaftStatus
+				if raftStatus == "" {
+					raftStatus = "unknown"
+				}
+
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+					member.ID, member.Name, member.Address, member.Status,
+					serfStatus, raftStatus, lastSeen)
+			}
+		}
 	}
 }
 
-// displayClusterResourcesFromAPI displays cluster resources from API response
+// displayClusterResourcesFromAPI displays cluster node information from API response
 func displayClusterResourcesFromAPI(resources []NodeResources) {
 	if len(resources) == 0 {
 		if config.Output == "json" {
 			fmt.Println("[]")
 		} else {
-			fmt.Println("No cluster resources found")
+			fmt.Println("No cluster node information found")
 		}
 		return
 	}
@@ -838,8 +1172,10 @@ func displayClusterResourcesFromAPI(resources []NodeResources) {
 
 		// Display each node's resources
 		for _, resource := range resources {
-			memoryWithPercent := fmt.Sprintf("%dMB/%dMB (%.1f%%)",
-				resource.MemoryUsedMB, resource.MemoryTotalMB, resource.MemoryUsage)
+			memoryWithPercent := fmt.Sprintf("%s/%s (%.1f%%)",
+				humanize.IBytes(uint64(resource.MemoryUsedMB)*1024*1024),
+				humanize.IBytes(uint64(resource.MemoryTotalMB)*1024*1024),
+				resource.MemoryUsage)
 			jobs := fmt.Sprintf("%d/%d", resource.CurrentJobs, resource.MaxJobs)
 
 			fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%d\n",
@@ -854,7 +1190,7 @@ func displayClusterResourcesFromAPI(resources []NodeResources) {
 	}
 }
 
-// displayNodeResourceFromAPI displays detailed resources for a single node
+// displayNodeResourceFromAPI displays detailed information for a single node
 func displayNodeResourceFromAPI(resource NodeResources) {
 	if config.Output == "json" {
 		// JSON output
@@ -879,9 +1215,9 @@ func displayNodeResourceFromAPI(resource NodeResources) {
 
 		// Memory Information
 		fmt.Printf("Memory:\n")
-		fmt.Printf("  Total:     %d MB\n", resource.MemoryTotalMB)
-		fmt.Printf("  Used:      %d MB\n", resource.MemoryUsedMB)
-		fmt.Printf("  Available: %d MB\n", resource.MemoryAvailableMB)
+		fmt.Printf("  Total:     %s\n", humanize.IBytes(uint64(resource.MemoryTotalMB)*1024*1024))
+		fmt.Printf("  Used:      %s\n", humanize.IBytes(uint64(resource.MemoryUsedMB)*1024*1024))
+		fmt.Printf("  Available: %s\n", humanize.IBytes(uint64(resource.MemoryAvailableMB)*1024*1024))
 		fmt.Printf("  Usage:     %.1f%%\n", resource.MemoryUsage)
 		fmt.Println()
 
@@ -896,8 +1232,8 @@ func displayNodeResourceFromAPI(resource NodeResources) {
 		fmt.Printf("Runtime:\n")
 		fmt.Printf("  Uptime:     %s\n", resource.Uptime)
 		fmt.Printf("  Goroutines: %d\n", resource.GoRoutines)
-		fmt.Printf("  Go Memory:  %d MB allocated, %d MB from system\n",
-			resource.GoMemAlloc/(1024*1024), resource.GoMemSys/(1024*1024))
+		fmt.Printf("  Go Memory:  %s allocated, %s from system\n",
+			humanize.IBytes(resource.GoMemAlloc), humanize.IBytes(resource.GoMemSys))
 		fmt.Printf("  GC Cycles:  %d (last pause: %.2fms)\n", resource.GoGCCycles, resource.GoGCPause)
 
 		if resource.Load1 > 0 || resource.Load5 > 0 || resource.Load15 > 0 {

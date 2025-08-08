@@ -12,6 +12,7 @@ import (
 
 	"github.com/concave-dev/prism/internal/api/handlers"
 	"github.com/concave-dev/prism/internal/logging"
+	"github.com/concave-dev/prism/internal/raft"
 	"github.com/concave-dev/prism/internal/serf"
 	"github.com/gin-gonic/gin"
 )
@@ -19,25 +20,20 @@ import (
 // Represents the Prism API server
 type Server struct {
 	serfManager *serf.SerfManager
+	raftManager *raft.RaftManager
 	httpServer  *http.Server
 	bindAddr    string
 	bindPort    int
 }
 
-// Holds configuration for the Prism API server
-type ServerConfig struct {
-	BindAddr    string            // HTTP server bind address
-	BindPort    int               // HTTP server bind port
-	SerfManager *serf.SerfManager // Reference to cluster manager
-}
-
 // NewServer creates a new Prism API server instance
-func NewServer(config *ServerConfig) *Server {
+func NewServer(config *Config) *Server {
 	// Set Gin to release mode for production
 	gin.SetMode(gin.ReleaseMode)
 
 	return &Server{
 		serfManager: config.SerfManager,
+		raftManager: config.RaftManager,
 		bindAddr:    config.BindAddr,
 		bindPort:    config.BindPort,
 	}
@@ -49,6 +45,9 @@ func (s *Server) Start() error {
 
 	// Create Gin router
 	router := gin.New()
+	// TODO: make Gin internal log level configurable via API config
+	gin.DefaultWriter = logging.NewLevelWriter("INFO", "gin")
+	gin.DefaultErrorWriter = logging.NewLevelWriter("ERROR", "gin")
 
 	// Add middleware
 	router.Use(s.loggingMiddleware())
@@ -121,18 +120,7 @@ func (s *Server) handleMembers(c *gin.Context) {
 
 // getHandlerMembers is a members endpoint handler factory
 func (s *Server) getHandlerMembers() gin.HandlerFunc {
-	return handlers.HandleMembers(s.serfManager)
-}
-
-// handleStatus delegates to handlers.HandleStatus
-func (s *Server) handleStatus(c *gin.Context) {
-	handler := s.getHandlerStatus()
-	handler(c)
-}
-
-// getHandlerStatus is a status endpoint handler factory
-func (s *Server) getHandlerStatus() gin.HandlerFunc {
-	return handlers.HandleStatus(s.serfManager)
+	return handlers.HandleMembers(s.serfManager, s.raftManager)
 }
 
 // handleClusterInfo delegates to handlers.HandleClusterInfo
@@ -143,7 +131,7 @@ func (s *Server) handleClusterInfo(c *gin.Context) {
 
 // getHandlerClusterInfo is a cluster info endpoint handler factory
 func (s *Server) getHandlerClusterInfo() gin.HandlerFunc {
-	return handlers.HandleClusterInfo(s.serfManager, version, startTime)
+	return handlers.HandleClusterInfo(s.serfManager, s.raftManager, version, startTime)
 }
 
 // handleNodes delegates to handlers.HandleNodes
@@ -154,7 +142,7 @@ func (s *Server) handleNodes(c *gin.Context) {
 
 // getHandlerNodes is a nodes endpoint handler factory
 func (s *Server) getHandlerNodes() gin.HandlerFunc {
-	return handlers.HandleNodes(s.serfManager)
+	return handlers.HandleNodes(s.serfManager, s.raftManager)
 }
 
 // handleNodeByID delegates to handlers.HandleNodeByID

@@ -74,4 +74,8 @@ docs/_build/
 
 # Local development
 .local/
-local/ 
+local/
+
+# Data directories (Raft logs, snapshots, etc.)
+data/
+/data/ 
