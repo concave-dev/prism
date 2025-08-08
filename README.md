@@ -5,6 +5,12 @@
 
 Distributed runtime platform for AI agents.
 
+## CAP Theorem Design
+
+**Control Plane (CP):** Prioritizes Consistency + Partition tolerance. Raft consensus ensures no split-brain scheduling but sacrifices availability during network partitions.
+
+**Data Plane (AP):** Prioritizes Availability + Partition tolerance. Running Firecracker VMs continue execution even when control plane is unreachable.
+
 ## Build
 
 ```bash
