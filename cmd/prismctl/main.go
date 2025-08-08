@@ -788,34 +788,43 @@ func displayMembersFromAPI(members []ClusterMember) {
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 		defer w.Flush()
 
-		// Header
-		fmt.Fprintln(w, "ID\tNAME\tADDRESS\tSTATUS\tSERF\tRAFT\tLAST SEEN")
+		// Header - show SERF and RAFT columns only in verbose mode
+		if config.Verbose {
+			fmt.Fprintln(w, "ID\tNAME\tADDRESS\tSTATUS\tSERF\tRAFT\tLAST SEEN")
+		} else {
+			fmt.Fprintln(w, "ID\tNAME\tADDRESS\tSTATUS\tLAST SEEN")
+		}
 
 		// Display each member
 		for _, member := range members {
 			lastSeen := formatDuration(time.Since(member.LastSeen))
 
-			// Use the new three-state status values directly
-			serfStatus := member.SerfStatus
-			if serfStatus == "" {
-				serfStatus = "unknown" // Fallback for missing data
-			}
+			if config.Verbose {
+				// Use the new three-state status values directly
+				serfStatus := member.SerfStatus
+				if serfStatus == "" {
+					serfStatus = "unknown" // Fallback for missing data
+				}
 
-			raftStatus := member.RaftStatus
-			if raftStatus == "" {
-				raftStatus = "unknown" // Fallback for missing data
-			}
+				raftStatus := member.RaftStatus
+				if raftStatus == "" {
+					raftStatus = "unknown" // Fallback for missing data
+				}
 
-			// Map display of Serf status to ensure 'left' -> 'dead' for consistency
-			// NOTE: API already maps this, but this also guards older servers
-			serfDisplay := member.SerfStatus
-			if serfDisplay == "left" {
-				serfDisplay = "dead"
-			}
+				// Map display of Serf status to ensure 'left' -> 'dead' for consistency
+				// NOTE: API already maps this, but this also guards older servers
+				serfDisplay := member.SerfStatus
+				if serfDisplay == "left" {
+					serfDisplay = "dead"
+				}
 
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-				member.ID, member.Name, member.Address, member.Status,
-				serfDisplay, raftStatus, lastSeen)
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+					member.ID, member.Name, member.Address, member.Status,
+					serfDisplay, raftStatus, lastSeen)
+			} else {
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+					member.ID, member.Name, member.Address, member.Status, lastSeen)
+			}
 		}
 	}
 }
