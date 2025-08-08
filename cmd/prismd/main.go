@@ -55,19 +55,20 @@ func isConnectionRefusedError(err error) bool {
 
 // Global configuration
 var config struct {
-	SerfAddr  string   // Network address for Serf cluster membership
-	SerfPort  int      // Network port for Serf cluster membership
-	APIAddr   string   // HTTP API server address (defaults to same IP as serf with port 8008)
-	APIPort   int      // HTTP API server port (derived from APIAddr)
-	RaftAddr  string   // Raft consensus address (defaults to same IP as serf with port 6969)
-	RaftPort  int      // Raft consensus port (derived from RaftAddr)
-	GRPCAddr  string   // gRPC server address (defaults to same IP as serf with port 7117)
-	GRPCPort  int      // gRPC server port (derived from GRPCAddr)
-	NodeName  string   // Name of this node
-	JoinAddrs []string // List of cluster addresses to join
-	LogLevel  string   // Log level: DEBUG, INFO, WARN, ERROR
-	DataDir   string   // Data directory for persistent storage
-	Bootstrap bool     // Whether to bootstrap a new Raft cluster
+	SerfAddr   string   // Network address for Serf cluster membership
+	SerfPort   int      // Network port for Serf cluster membership
+	APIAddr    string   // HTTP API server address (defaults to same IP as serf with port 8008)
+	APIPort    int      // HTTP API server port (derived from APIAddr)
+	RaftAddr   string   // Raft consensus address (defaults to same IP as serf with port 6969)
+	RaftPort   int      // Raft consensus port (derived from RaftAddr)
+	GRPCAddr   string   // gRPC server address (defaults to same IP as serf with port 7117)
+	GRPCPort   int      // gRPC server port (derived from GRPCAddr)
+	NodeName   string   // Name of this node
+	JoinAddrs  []string // List of cluster addresses to join
+	StrictJoin bool     // Exit if cluster join fails (default: continue in isolation)
+	LogLevel   string   // Log level: DEBUG, INFO, WARN, ERROR
+	DataDir    string   // Data directory for persistent storage
+	Bootstrap  bool     // Whether to bootstrap a new Raft cluster
 
 	// Flags to track if values were explicitly set by user
 	serfExplicitlySet     bool
@@ -108,6 +109,9 @@ func init() {
 	rootCmd.Flags().StringSliceVar(&config.JoinAddrs, "join", nil,
 		"Comma-separated list of cluster addresses to join (e.g., node1:4200,node2:4200)\n"+
 			"Multiple addresses provide fault tolerance - if first node is down, tries next one")
+	rootCmd.Flags().BoolVar(&config.StrictJoin, "strict-join", false,
+		"Exit daemon if cluster join fails (default: continue in isolation)\n"+
+			"Useful for production deployments with orchestrators like systemd/K8s")
 
 	// Raft flags
 	rootCmd.Flags().StringVar(&config.RaftAddr, "raft", DefaultRaft,
@@ -598,9 +602,18 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 				logging.Error("TIP: Check if the target node(s) are running and accessible")
 				logging.Error("     You can verify with: prismctl members")
 			}
+
+			// Handle strict join mode
+			if config.StrictJoin {
+				logging.Error("Strict join mode enabled: exiting due to cluster join failure")
+				os.Exit(1) // Exit with error code for orchestrators
+			}
+
+			// Default behavior: continue in isolation
 			// Note: Name conflicts are handled in SerfManager.Join() after successful connection
 			// Don't fail startup - node can still operate independently
 			// This allows for "split-brain" recovery and bootstrap scenarios
+			logging.Warn("Continuing in isolation mode (use --strict-join to exit on join failure)")
 		}
 	}
 
