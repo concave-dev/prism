@@ -38,8 +38,8 @@ type ClusterMember struct {
 	LastSeen time.Time         `json:"lastSeen"`
 
 	// Connection status using consistent string values matching Serf pattern
-	SerfStatus string `json:"serfStatus"` // alive, failed, left
-	RaftStatus string `json:"raftStatus"` // alive, failed, left
+	SerfStatus string `json:"serfStatus"` // alive, failed, dead
+	RaftStatus string `json:"raftStatus"` // alive, failed, dead
 }
 
 // Represents cluster status in API responses
