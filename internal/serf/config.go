@@ -69,7 +69,9 @@ func validateConfig(config *Config) error {
 		return fmt.Errorf("invalid bind address: %w", err)
 	}
 
-	if err := validate.ValidateField(config.BindPort, "min=0,max=65535"); err != nil {
+	// Port 0 means "OS chooses port", but distributed systems need predictable addresses
+	// for peer discovery and gossip protocol. Require explicit port selection.
+	if err := validate.ValidateField(config.BindPort, "min=1,max=65535"); err != nil {
 		return fmt.Errorf("invalid bind port: %w", err)
 	}
 
