@@ -137,10 +137,12 @@ func (sm *SerfManager) Start() error {
 	serfConfig.MemberlistConfig.BindAddr = sm.config.BindAddr
 	serfConfig.MemberlistConfig.BindPort = sm.config.BindPort
 
-	// Configure dead node removal timeouts
-	// TODO: Customize dead node removal timeouts for faster cleanup in dev environments
-	serfConfig.MemberlistConfig.GossipInterval = sm.config.ReapInterval
-	serfConfig.MemberlistConfig.DeadNodeReclaimTime = sm.config.TombstoneTimeout
+	// Configure membership/cleanup behavior
+	// TODO(prism): Expose fine-grained memberlist tuning (GossipInterval, ProbeInterval, SuspicionMult)
+	// Keep GossipInterval at memberlist default (~200ms) for fast failure detection.
+	// Control permanent removal of failed nodes via DeadNodeReclaimTime.
+	// NOTE: Do not tie gossip frequency to the reap window; that would severely delay failure detection.
+	serfConfig.MemberlistConfig.DeadNodeReclaimTime = sm.config.DeadNodeReclaimTime
 
 	// Producer-Consumer Connection: Serf writes events to our internal ingestEventQueue
 	// This ensures internal processing (member tracking) always happens, regardless

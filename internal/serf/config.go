@@ -21,11 +21,8 @@ const (
 	// DefaultJoinTimeout is the default join timeout
 	DefaultJoinTimeout = 30 * time.Second
 
-	// DefaultReapInterval is how often we check for dead nodes to remove
-	DefaultReapInterval = 5 * time.Minute
-
-	// DefaultTombstoneTimeout is how long we wait before removing dead nodes
-	DefaultTombstoneTimeout = 10 * time.Minute
+	// DefaultDeadNodeReclaimTime is how long we wait before removing dead nodes
+	DefaultDeadNodeReclaimTime = 10 * time.Minute
 )
 
 // Config holds configuration for the SerfManager
@@ -35,26 +32,25 @@ type Config struct {
 	NodeName string            // Name of the node
 	Tags     map[string]string // Tags for the node
 
-	EventBufferSize  int           // Event buffer size
-	JoinRetries      int           // Join retries
-	JoinTimeout      time.Duration // Join timeout
-	LogLevel         string        // Log level
-	ReapInterval     time.Duration // How often to check for dead nodes to remove
-	TombstoneTimeout time.Duration // How long to wait before removing dead nodes
+	EventBufferSize int           // Event buffer size
+	JoinRetries     int           // Join retries
+	JoinTimeout     time.Duration // Join timeout
+	LogLevel        string        // Log level
+
+	DeadNodeReclaimTime time.Duration // How long to wait before removing dead nodes
 }
 
 // DefaultConfig returns a default configuration for SerfManager
 func DefaultConfig() *Config {
 	return &Config{
-		BindAddr:         config.DefaultBindAddr,
-		BindPort:         DefaultSerfPort,
-		EventBufferSize:  DefaultEventBufferSize,
-		JoinRetries:      DefaultJoinRetries,
-		JoinTimeout:      DefaultJoinTimeout,
-		LogLevel:         config.DefaultLogLevel,
-		ReapInterval:     DefaultReapInterval,
-		TombstoneTimeout: DefaultTombstoneTimeout,
-		Tags:             make(map[string]string),
+		BindAddr:            config.DefaultBindAddr,
+		BindPort:            DefaultSerfPort,
+		EventBufferSize:     DefaultEventBufferSize,
+		JoinRetries:         DefaultJoinRetries,
+		JoinTimeout:         DefaultJoinTimeout,
+		LogLevel:            config.DefaultLogLevel,
+		DeadNodeReclaimTime: DefaultDeadNodeReclaimTime,
+		Tags:                make(map[string]string),
 	}
 }
 

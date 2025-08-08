@@ -17,14 +17,13 @@ func TestDefaultConfig(t *testing.T) {
 
 	// Test default values
 	expectedDefaults := map[string]interface{}{
-		"BindAddr":         "0.0.0.0",
-		"BindPort":         4200,
-		"EventBufferSize":  1024,
-		"JoinRetries":      3,
-		"JoinTimeout":      30 * time.Second,
-		"LogLevel":         "INFO",
-		"ReapInterval":     5 * time.Minute,
-		"TombstoneTimeout": 10 * time.Minute,
+		"BindAddr":            "0.0.0.0",
+		"BindPort":            4200,
+		"EventBufferSize":     1024,
+		"JoinRetries":         3,
+		"JoinTimeout":         30 * time.Second,
+		"LogLevel":            "INFO",
+		"DeadNodeReclaimTime": 10 * time.Minute,
 	}
 
 	// Test individual default values
@@ -52,12 +51,8 @@ func TestDefaultConfig(t *testing.T) {
 		t.Errorf("Expected LogLevel=%v, got %v", expectedDefaults["LogLevel"], config.LogLevel)
 	}
 
-	if config.ReapInterval != expectedDefaults["ReapInterval"] {
-		t.Errorf("Expected ReapInterval=%v, got %v", expectedDefaults["ReapInterval"], config.ReapInterval)
-	}
-
-	if config.TombstoneTimeout != expectedDefaults["TombstoneTimeout"] {
-		t.Errorf("Expected TombstoneTimeout=%v, got %v", expectedDefaults["TombstoneTimeout"], config.TombstoneTimeout)
+	if config.DeadNodeReclaimTime != expectedDefaults["DeadNodeReclaimTime"] {
+		t.Errorf("Expected DeadNodeReclaimTime=%v, got %v", expectedDefaults["DeadNodeReclaimTime"], config.DeadNodeReclaimTime)
 	}
 
 	// Test that Tags map is initialized (not nil)
