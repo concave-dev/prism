@@ -367,22 +367,49 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	logging.Info("Node: %s", config.NodeName)
 
 	// Handle Serf port binding
+	//
+	// Serf uses UDP for gossip (memberlist), but memberlist also opens a TCP stream
+	// on the same port for larger/state sync traffic. Since Serf 0.7 there is also
+	// a TCP fallback probe to reduce flappy failure detection when UDP is blocked
+	// or lossy. Therefore, when the user explicitly sets --serf, we validate that
+	// BOTH UDP and TCP are available on that port to avoid partial functionality
+	// at runtime. The auto-pick path also checks both.
+	//
+	// TODO: Consider a flag to run in UDP-only validation mode for constrained
+	//       environments where TCP is intentionally blocked.
 	originalSerfPort := config.SerfPort
 	if config.serfExplicitlySet {
 		// User explicitly set serf address - fail if port is busy
 		logging.Info("Binding to %s:%d", config.SerfAddr, config.SerfPort)
 
-		// Test binding to ensure port is available
+		// Test binding to ensure both UDP (gossip) and TCP (stream) ports are available
+		// TODO: If we ever allow running Serf in UDP-only mode for constrained environments,
+		//       make the TCP check optional via a flag.
 		testAddr := fmt.Sprintf("%s:%d", config.SerfAddr, config.SerfPort)
-		conn, err := net.Listen("tcp", testAddr)
+
+		// Check UDP availability first (Serf gossip)
+		udpAddr, err := net.ResolveUDPAddr("udp", testAddr)
 		if err != nil {
-			if isAddressInUseError(err) {
-				return fmt.Errorf("cannot bind Serf to %s: port %d is already in use",
-					config.SerfAddr, config.SerfPort)
-			}
-			return fmt.Errorf("failed to bind Serf to %s: %w", testAddr, err)
+			return fmt.Errorf("failed to resolve UDP address %s: %w", testAddr, err)
 		}
-		conn.Close()
+		udpConn, udpErr := net.ListenUDP("udp", udpAddr)
+		if udpErr != nil {
+			if isAddressInUseError(udpErr) {
+				return fmt.Errorf("cannot bind Serf (UDP) to %s: port %d is already in use", config.SerfAddr, config.SerfPort)
+			}
+			return fmt.Errorf("failed to bind Serf (UDP) to %s: %w", testAddr, udpErr)
+		}
+		udpConn.Close()
+
+		// Check TCP availability (memberlist stream connections)
+		tcpListener, tcpErr := net.Listen("tcp", testAddr)
+		if tcpErr != nil {
+			if isAddressInUseError(tcpErr) {
+				return fmt.Errorf("cannot bind Serf (TCP) to %s: port %d is already in use", config.SerfAddr, config.SerfPort)
+			}
+			return fmt.Errorf("failed to bind Serf (TCP) to %s: %w", testAddr, tcpErr)
+		}
+		tcpListener.Close()
 	} else {
 		// Using defaults - auto-increment if needed
 		availableSerfPort, err := findAvailablePort(config.SerfAddr, config.SerfPort)
