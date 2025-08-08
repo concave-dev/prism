@@ -203,9 +203,9 @@ type ClusterMember struct {
 	Tags     map[string]string `json:"tags"`
 	LastSeen time.Time         `json:"lastSeen"`
 
-	// Connection status
-	SerfConnected bool `json:"serfConnected"`
-	RaftConnected bool `json:"raftConnected"`
+	// Connection status using consistent string values matching Serf pattern
+	SerfStatus string `json:"serfStatus"` // alive, failed, left
+	RaftStatus string `json:"raftStatus"` // alive, failed, left
 }
 
 type ClusterStatus struct {
@@ -350,14 +350,14 @@ func (api *PrismAPIClient) GetMembers() ([]ClusterMember, error) {
 		for _, memberData := range membersData {
 			if memberMap, ok := memberData.(map[string]interface{}); ok {
 				member := ClusterMember{
-					ID:            getString(memberMap, "id"),
-					Name:          getString(memberMap, "name"),
-					Address:       getString(memberMap, "address"),
-					Status:        getString(memberMap, "status"),
-					Tags:          getStringMap(memberMap, "tags"),
-					LastSeen:      getTime(memberMap, "lastSeen"),
-					SerfConnected: getBool(memberMap, "serfConnected"),
-					RaftConnected: getBool(memberMap, "raftConnected"),
+					ID:         getString(memberMap, "id"),
+					Name:       getString(memberMap, "name"),
+					Address:    getString(memberMap, "address"),
+					Status:     getString(memberMap, "status"),
+					Tags:       getStringMap(memberMap, "tags"),
+					LastSeen:   getTime(memberMap, "lastSeen"),
+					SerfStatus: getString(memberMap, "serfStatus"),
+					RaftStatus: getString(memberMap, "raftStatus"),
 				}
 				members = append(members, member)
 			}
@@ -790,15 +790,15 @@ func displayMembersFromAPI(members []ClusterMember) {
 		for _, member := range members {
 			lastSeen := formatDuration(time.Since(member.LastSeen))
 
-			// Format connection status as yes/no
-			serfStatus := "no"
-			if member.SerfConnected {
-				serfStatus = "yes"
+			// Use the new three-state status values directly
+			serfStatus := member.SerfStatus
+			if serfStatus == "" {
+				serfStatus = "unknown" // Fallback for missing data
 			}
 
-			raftStatus := "no"
-			if member.RaftConnected {
-				raftStatus = "yes"
+			raftStatus := member.RaftStatus
+			if raftStatus == "" {
+				raftStatus = "unknown" // Fallback for missing data
 			}
 
 			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
