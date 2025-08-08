@@ -16,7 +16,6 @@ func (s *Server) setupRoutes(router *gin.Engine) {
 	cluster := v1.Group("/cluster")
 	{
 		cluster.GET("/members", s.handleMembers)
-		cluster.GET("/status", s.handleStatus)
 		cluster.GET("/info", s.handleClusterInfo)
 		cluster.GET("/resources", s.handleClusterResources)
 	}

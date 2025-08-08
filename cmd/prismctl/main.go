@@ -44,18 +44,24 @@ AI-generated code in sandboxes, manage workflows, and inspect cluster state.`,
 	Version:           Version,
 	SilenceUsage:      true, // Don't show usage on errors
 	PersistentPreRunE: validateGlobalFlags,
-	Example: `  # List cluster nodes
+	Example: `  # Show cluster information
+  prismctl info
+
+  # List cluster nodes
   prismctl node ls
 
-  # Show cluster information
-  prismctl cluster info
+  # Show node resource overview
+  prismctl node top
+
+  # Show detailed node information
+  prismctl node info node1
 
   # Connect to remote API server
-  prismctl --api=192.168.1.100:8008 node ls
+  prismctl --api=192.168.1.100:8008 info
   
   # Output in JSON format
-  prismctl --output=json node ls
-  prismctl -o json cluster info
+  prismctl --output=json node top
+  prismctl -o json info
   
   # Show verbose output
   prismctl --verbose node ls`,
@@ -90,55 +96,74 @@ known nodes including their status and last seen times.`,
 	RunE: handleMembers,
 }
 
-// Cluster info command
-var clusterInfoCmd = &cobra.Command{
-	Use:   "cluster info",
+// Info command (cluster information)
+var infoCmd = &cobra.Command{
+	Use:   "info",
 	Short: "Show comprehensive cluster information",
 	Long: `Show comprehensive cluster information including member details,
 uptime, version, and cluster health status.
 
 This provides a complete overview of cluster state, composition, and health.`,
 	Example: `  # Show cluster information
-  prismctl cluster info
+  prismctl info
 
   # Show cluster info from specific API server
-  prismctl --api=192.168.1.100:8008 cluster info
+  prismctl --api=192.168.1.100:8008 info
   
   # Output in JSON format
-  prismctl -o json cluster info
+  prismctl -o json info
   
   # Show verbose output during connection
-  prismctl --verbose cluster info`,
+  prismctl --verbose info`,
 	RunE: handleClusterInfo,
 }
 
-// Node info command
-var nodeInfoCmd = &cobra.Command{
-	Use:   "info [node-name-or-id]",
-	Short: "Show detailed information for cluster nodes",
-	Long: `Display detailed information including CPU, memory, and capacity for cluster nodes.
+// Node top command (resource overview for all nodes)
+var nodeTopCmd = &cobra.Command{
+	Use:   "top",
+	Short: "Show resource overview for all cluster nodes",
+	Long: `Display resource overview including CPU, memory, and capacity for all cluster nodes.
 
 This command shows resource utilization similar to 'kubectl top nodes',
 including CPU cores, memory usage, job capacity, and runtime statistics.`,
-	Example: `  # Show info for all nodes
-  prismctl node info
+	Example: `  # Show resource overview for all nodes
+  prismctl node top
 
-  # Show info for specific node by name
+  # Show resource overview from specific API server
+  prismctl --api=192.168.1.100:8008 node top
+  
+  # Output in JSON format
+  prismctl -o json node top
+  
+  # Show verbose output during connection
+  prismctl --verbose node top`,
+	RunE: handleNodeTop,
+}
+
+// Node info command (detailed info for specific node)
+var nodeInfoCmd = &cobra.Command{
+	Use:   "info <node-name-or-id>",
+	Short: "Show detailed information for a specific node",
+	Long: `Display detailed information including CPU, memory, and capacity for a specific node.
+
+This command shows comprehensive resource details and runtime statistics
+for a single node specified by name or ID.`,
+	Example: `  # Show info for specific node by name
   prismctl node info node1
 
   # Show info for specific node by ID
   prismctl node info abc123def456
 
   # Show info from specific API server
-  prismctl --api=192.168.1.100:8008 node info
+  prismctl --api=192.168.1.100:8008 node info node1
   
   # Output in JSON format
-  prismctl -o json node info
   prismctl --output=json node info node1
   
   # Show verbose output during connection
-  prismctl --verbose node info`,
-	RunE: handleResources,
+  prismctl --verbose node info node1`,
+	Args: cobra.ExactArgs(1),
+	RunE: handleNodeInfo,
 }
 
 func init() {
@@ -159,11 +184,12 @@ func init() {
 
 	// Add subcommands to node command
 	nodeCmd.AddCommand(nodeLsCmd)
+	nodeCmd.AddCommand(nodeTopCmd)
 	nodeCmd.AddCommand(nodeInfoCmd)
 
 	// Add subcommands to root
+	rootCmd.AddCommand(infoCmd)
 	rootCmd.AddCommand(nodeCmd)
-	rootCmd.AddCommand(clusterInfoCmd)
 }
 
 // validateGlobalFlags validates all global flags before running any command
@@ -720,14 +746,6 @@ func getUint32(m map[string]interface{}, key string) uint32 {
 	return 0
 }
 
-// getBool safely extracts a bool value from interface{} maps
-func getBool(m map[string]interface{}, key string) bool {
-	if val, ok := m[key].(bool); ok {
-		return val
-	}
-	return false
-}
-
 // setupLogging sets up logging based on verbose flag and log level
 func setupLogging() {
 	if config.Verbose {
@@ -783,34 +801,9 @@ func handleClusterInfo(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// handleResources handles the node info subcommand
-func handleResources(cmd *cobra.Command, args []string) error {
+// handleNodeTop handles the node top subcommand (resource overview for all nodes)
+func handleNodeTop(cmd *cobra.Command, args []string) error {
 	setupLogging()
-
-	// Check if specific node was requested
-	if len(args) > 0 {
-		nodeIdentifier := args[0]
-		logging.Info("Fetching information for node '%s' from API server: %s", nodeIdentifier, config.APIAddr)
-
-		// Create API client
-		apiClient := createAPIClient()
-
-		// Resolve partial ID if needed
-		resolvedNodeID, err := resolveNodeIdentifier(apiClient, nodeIdentifier)
-		if err != nil {
-			return err
-		}
-
-		// Get node resources using resolved ID
-		resource, err := apiClient.GetNodeResources(resolvedNodeID)
-		if err != nil {
-			return err
-		}
-
-		displayNodeResourceFromAPI(*resource)
-		logging.Success("Successfully retrieved information for node '%s'", resource.NodeName)
-		return nil
-	}
 
 	// Get all cluster resources
 	logging.Info("Fetching cluster node information from API server: %s", config.APIAddr)
@@ -824,6 +817,33 @@ func handleResources(cmd *cobra.Command, args []string) error {
 
 	displayClusterResourcesFromAPI(resources)
 	logging.Success("Successfully retrieved information for %d cluster nodes", len(resources))
+	return nil
+}
+
+// handleNodeInfo handles the node info subcommand (detailed info for specific node)
+func handleNodeInfo(cmd *cobra.Command, args []string) error {
+	setupLogging()
+
+	nodeIdentifier := args[0]
+	logging.Info("Fetching information for node '%s' from API server: %s", nodeIdentifier, config.APIAddr)
+
+	// Create API client
+	apiClient := createAPIClient()
+
+	// Resolve partial ID if needed
+	resolvedNodeID, err := resolveNodeIdentifier(apiClient, nodeIdentifier)
+	if err != nil {
+		return err
+	}
+
+	// Get node resources using resolved ID
+	resource, err := apiClient.GetNodeResources(resolvedNodeID)
+	if err != nil {
+		return err
+	}
+
+	displayNodeResourceFromAPI(*resource)
+	logging.Success("Successfully retrieved information for node '%s'", resource.NodeName)
 	return nil
 }
 

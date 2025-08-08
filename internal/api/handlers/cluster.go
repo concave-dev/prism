@@ -128,31 +128,6 @@ func HandleMembers(serfManager *serf.SerfManager, raftManager *raft.RaftManager)
 	}
 }
 
-// HandleStatus returns cluster status summary
-func HandleStatus(serfManager *serf.SerfManager) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		members := serfManager.GetMembers()
-
-		// Count members by status
-		statusCount := make(map[string]int)
-
-		for _, member := range members {
-			// Count by status
-			statusCount[member.Status.String()]++
-		}
-
-		status := ClusterStatus{
-			TotalNodes:    len(members),
-			NodesByStatus: statusCount,
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"status": "success",
-			"data":   status,
-		})
-	}
-}
-
 // HandleClusterInfo returns comprehensive cluster information
 func HandleClusterInfo(serfManager *serf.SerfManager, raftManager *raft.RaftManager, version string, startTime time.Time) gin.HandlerFunc {
 	return func(c *gin.Context) {

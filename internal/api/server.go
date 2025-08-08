@@ -123,17 +123,6 @@ func (s *Server) getHandlerMembers() gin.HandlerFunc {
 	return handlers.HandleMembers(s.serfManager, s.raftManager)
 }
 
-// handleStatus delegates to handlers.HandleStatus
-func (s *Server) handleStatus(c *gin.Context) {
-	handler := s.getHandlerStatus()
-	handler(c)
-}
-
-// getHandlerStatus is a status endpoint handler factory
-func (s *Server) getHandlerStatus() gin.HandlerFunc {
-	return handlers.HandleStatus(s.serfManager)
-}
-
 // handleClusterInfo delegates to handlers.HandleClusterInfo
 func (s *Server) handleClusterInfo(c *gin.Context) {
 	handler := s.getHandlerClusterInfo()
