@@ -668,8 +668,8 @@ func resolveNodeIdentifier(apiClient *PrismAPIClient, identifier string) (string
 		return "", fmt.Errorf("failed to get cluster members for ID resolution: %w", err)
 	}
 
-	// Check for partial ID matches (only for identifiers that look like hex)
-	if isHexString(identifier) {
+	// Check for partial ID matches (only for identifiers that look like hex and have valid length)
+	if isHexString(identifier) && isValidPartialIDLength(identifier) {
 		var matches []ClusterMember
 		for _, member := range members {
 			if strings.HasPrefix(member.ID, identifier) {
@@ -712,6 +712,15 @@ func isHexString(s string) bool {
 		}
 	}
 	return true
+}
+
+// isValidPartialIDLength checks if a string has valid length for partial node ID matching
+func isValidPartialIDLength(s string) bool {
+	// Node IDs are 12 hex characters (6 bytes)
+	// Allow partial matching for inputs between 1-12 characters
+	// - Minimum 1 char (as requested)
+	// - Maximum 12 chars (full node ID length)
+	return len(s) >= 1 && len(s) <= 12
 }
 
 // getString safely extracts a string value from interface{} maps
