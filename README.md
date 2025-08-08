@@ -34,9 +34,9 @@ Start the daemon:
 
 Use the CLI:
 ```bash
-./bin/prismctl members
-./bin/prismctl status
-./bin/prismctl --api=127.0.0.1:8008 status
+./bin/prismctl node ls
+./bin/prismctl cluster info
+./bin/prismctl --api=127.0.0.1:8008 cluster info
 ```
 
 
