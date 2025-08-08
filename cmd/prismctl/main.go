@@ -801,9 +801,16 @@ func displayMembersFromAPI(members []ClusterMember) {
 				raftStatus = "unknown" // Fallback for missing data
 			}
 
+			// Map display of Serf status to ensure 'left' -> 'dead' for consistency
+			// NOTE: API already maps this, but this also guards older servers
+			serfDisplay := member.SerfStatus
+			if serfDisplay == "left" {
+				serfDisplay = "dead"
+			}
+
 			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 				member.ID, member.Name, member.Address, member.Status,
-				serfStatus, raftStatus, lastSeen)
+				serfDisplay, raftStatus, lastSeen)
 		}
 	}
 }

@@ -22,9 +22,10 @@ const (
 	// RaftAlive indicates the node is in Raft configuration and responding to heartbeats
 	RaftAlive RaftStatus = "alive"
 	// RaftFailed indicates the node is in Raft configuration but unreachable (network partition)
+	// or is misconfigured (e.g., missing/invalid raft port)
 	RaftFailed RaftStatus = "failed"
-	// RaftLeft indicates the node is not in Raft configuration
-	RaftLeft RaftStatus = "left"
+	// RaftDead indicates the node is not in the Raft configuration (never added or removed)
+	RaftDead RaftStatus = "dead"
 )
 
 // Represents a cluster member in API responses
@@ -55,6 +56,20 @@ type ClusterInfo struct {
 	Uptime  time.Duration   `json:"uptime"`
 }
 
+// mapSerfStatus normalizes Serf member status for display consistency
+// Serf emits: alive | failed | left. We show: alive | failed | dead.
+// TODO: Consider surfacing raw status separately if needed for debugging
+func mapSerfStatus(raw string) string {
+	switch raw {
+	case "left":
+		return "dead"
+	case "alive", "failed":
+		return raw
+	default:
+		return raw
+	}
+}
+
 // HandleMembers returns all cluster members with connection status
 func HandleMembers(serfManager *serf.SerfManager, raftManager *raft.RaftManager) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -78,8 +93,8 @@ func HandleMembers(serfManager *serf.SerfManager, raftManager *raft.RaftManager)
 		// Convert internal members to API response format
 		apiMembers := make([]ClusterMember, 0, len(members))
 		for _, member := range members {
-			// Determine Serf status using consistent string values
-			serfStatus := member.Status.String() // Uses Serf's native status (alive/failed/left)
+			// Determine Serf status using consistent string values (alive/failed/dead)
+			serfStatus := mapSerfStatus(member.Status.String())
 
 			// Determine Raft status using new three-state system
 			raftStatus := string(getRaftPeerStatus(member, raftPeers))
@@ -188,12 +203,12 @@ func getRaftPeerStatus(member *serf.PrismNode, raftPeers []string) RaftStatus {
 	// Extract raft_port from member tags
 	raftPortStr, exists := member.Tags["raft_port"]
 	if !exists {
-		return RaftLeft // No raft_port tag means never added to Raft
+		return RaftFailed // Missing raft_port is a misconfiguration => failed
 	}
 
 	raftPort, err := strconv.Atoi(raftPortStr)
 	if err != nil {
-		return RaftLeft // Invalid raft_port tag means not properly configured
+		return RaftFailed // Invalid raft_port => failed
 	}
 
 	// Build expected Raft address for this member
@@ -210,7 +225,7 @@ func getRaftPeerStatus(member *serf.PrismNode, raftPeers []string) RaftStatus {
 	}
 
 	if !isInConfig {
-		return RaftLeft // Not in Raft configuration
+		return RaftDead // Not in Raft configuration
 	}
 
 	// Node is in Raft config, now check if it's actually reachable
