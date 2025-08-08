@@ -420,18 +420,8 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		}
 		tcpListener.Close()
 	} else {
-		// Using defaults - auto-increment if needed
-		availableSerfPort, err := findAvailablePort(config.SerfAddr, config.SerfPort)
-		if err != nil {
-			return fmt.Errorf("failed to find available Serf port: %w", err)
-		}
-
-		if availableSerfPort != originalSerfPort {
-			logging.Warn("Default port %d was busy, using port %d for Serf", originalSerfPort, availableSerfPort)
-			config.SerfPort = availableSerfPort
-		}
-
-		logging.Info("Binding to %s:%d", config.SerfAddr, config.SerfPort)
+		// Using defaults - find available port just before starting Serf to minimize race window
+		logging.Info("Finding available Serf port starting from %d", config.SerfPort)
 	}
 
 	// Handle Raft address binding first (before creating Serf tags)
@@ -454,19 +444,9 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		}
 		conn.Close()
 	} else {
-		// Using defaults - use serf IP + auto-increment if needed
+		// Using defaults - use serf IP + find port just before starting Raft
 		config.RaftAddr = config.SerfAddr
-		availableRaftPort, err := findAvailablePort(config.RaftAddr, config.RaftPort)
-		if err != nil {
-			return fmt.Errorf("failed to find available Raft port: %w", err)
-		}
-
-		if availableRaftPort != originalRaftPort {
-			logging.Warn("Default Raft port %d was busy, using port %d for Raft", originalRaftPort, availableRaftPort)
-			config.RaftPort = availableRaftPort
-		}
-
-		logging.Info("Starting Raft consensus on %s:%d", config.RaftAddr, config.RaftPort)
+		logging.Info("Finding available Raft port starting from %d", config.RaftPort)
 	}
 
 	// Handle gRPC address binding (before creating Serf tags)
@@ -488,19 +468,9 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		}
 		conn.Close()
 	} else {
-		// Using defaults - use serf IP + auto-increment if needed
+		// Using defaults - use serf IP + find port just before starting gRPC
 		config.GRPCAddr = config.SerfAddr
-		availableGRPCPort, err := findAvailablePort(config.GRPCAddr, config.GRPCPort)
-		if err != nil {
-			return fmt.Errorf("failed to find available gRPC port: %w", err)
-		}
-
-		if availableGRPCPort != originalGRPCPort {
-			logging.Warn("Default gRPC port %d was busy, using port %d for gRPC", originalGRPCPort, availableGRPCPort)
-			config.GRPCPort = availableGRPCPort
-		}
-
-		logging.Info("Starting gRPC server on %s:%d", config.GRPCAddr, config.GRPCPort)
+		logging.Info("Finding available gRPC port starting from %d", config.GRPCPort)
 	}
 
 	// Handle API address binding (before creating Serf tags)
@@ -522,18 +492,23 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		}
 		conn.Close()
 	} else {
-		// Using defaults - keep default loopback address, auto-increment port if needed
-		availableAPIPort, err := findAvailablePort(config.APIAddr, config.APIPort)
+		// Using defaults - keep default loopback address, find port just before starting API
+		logging.Info("Finding available API port starting from %d", config.APIPort)
+	}
+
+	// Atomic port resolution: Find available Serf port right before starting to minimize race window
+	if !config.serfExplicitlySet {
+		availableSerfPort, err := findAvailablePort(config.SerfAddr, config.SerfPort)
 		if err != nil {
-			return fmt.Errorf("failed to find available API port: %w", err)
+			return fmt.Errorf("failed to find available Serf port: %w", err)
 		}
 
-		if availableAPIPort != originalAPIPort {
-			logging.Warn("Default API port %d was busy, using port %d for HTTP API", originalAPIPort, availableAPIPort)
-			config.APIPort = availableAPIPort
+		if availableSerfPort != originalSerfPort {
+			logging.Warn("Default port %d was busy, using port %d for Serf", originalSerfPort, availableSerfPort)
+			config.SerfPort = availableSerfPort
 		}
 
-		logging.Info("Starting HTTP API server on %s:%d", config.APIAddr, config.APIPort)
+		logging.Info("Binding to %s:%d", config.SerfAddr, config.SerfPort)
 	}
 
 	// Now create SerfManager with correct port tags
@@ -543,12 +518,27 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to create serf manager: %w", err)
 	}
 
-	// Start SerfManager
+	// Start SerfManager immediately after port discovery
 	if err := manager.Start(); err != nil {
 		return fmt.Errorf("failed to start serf manager: %w", err)
 	}
 
-	// Create and start Raft manager
+	// Atomic port resolution: Find available Raft port right before starting to minimize race window
+	if !config.raftAddrExplicitlySet {
+		availableRaftPort, err := findAvailablePort(config.RaftAddr, config.RaftPort)
+		if err != nil {
+			return fmt.Errorf("failed to find available Raft port: %w", err)
+		}
+
+		if availableRaftPort != originalRaftPort {
+			logging.Warn("Default Raft port %d was busy, using port %d for Raft", originalRaftPort, availableRaftPort)
+			config.RaftPort = availableRaftPort
+		}
+
+		logging.Info("Starting Raft consensus on %s:%d", config.RaftAddr, config.RaftPort)
+	}
+
+	// Create and start Raft manager immediately after port discovery
 	raftConfig := buildRaftConfig()
 	raftManager, err = raft.NewRaftManager(raftConfig)
 	if err != nil {
@@ -564,7 +554,22 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	logging.Info("Integrating Raft with Serf for automatic peer discovery")
 	raftManager.IntegrateWithSerf(manager.ConsumerEventCh)
 
-	// Create and start gRPC server
+	// Atomic port resolution: Find available gRPC port right before starting to minimize race window
+	if !config.grpcAddrExplicitlySet {
+		availableGRPCPort, err := findAvailablePort(config.GRPCAddr, config.GRPCPort)
+		if err != nil {
+			return fmt.Errorf("failed to find available gRPC port: %w", err)
+		}
+
+		if availableGRPCPort != originalGRPCPort {
+			logging.Warn("Default gRPC port %d was busy, using port %d for gRPC", originalGRPCPort, availableGRPCPort)
+			config.GRPCPort = availableGRPCPort
+		}
+
+		logging.Info("Starting gRPC server on %s:%d", config.GRPCAddr, config.GRPCPort)
+	}
+
+	// Create and start gRPC server immediately after port discovery
 	var grpcServer *grpc.Server
 	grpcConfig := buildGRPCConfig()
 	grpcServer, err = grpc.NewServer(grpcConfig)
@@ -576,7 +581,22 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to start gRPC server: %w", err)
 	}
 
-	// Start HTTP API server on all nodes
+	// Atomic port resolution: Find available API port right before starting to minimize race window
+	if !config.apiAddrExplicitlySet {
+		availableAPIPort, err := findAvailablePort(config.APIAddr, config.APIPort)
+		if err != nil {
+			return fmt.Errorf("failed to find available API port: %w", err)
+		}
+
+		if availableAPIPort != originalAPIPort {
+			logging.Warn("Default API port %d was busy, using port %d for HTTP API", originalAPIPort, availableAPIPort)
+			config.APIPort = availableAPIPort
+		}
+
+		logging.Info("Starting HTTP API server on %s:%d", config.APIAddr, config.APIPort)
+	}
+
+	// Start HTTP API server immediately after port discovery
 	var apiServer *api.Server
 
 	apiConfig := api.DefaultConfig()
