@@ -65,6 +65,7 @@ func (s *Server) Start() error {
 	// TODO: Add authentication interceptors
 
 	s.grpcServer = grpc.NewServer(opts...)
+	// TODO: attach interceptors for structured logging; gRPC itself does not use std logger by default.
 
 	// TODO: Register service implementations here
 	// Example: pb.RegisterResourceServiceServer(s.grpcServer, resourceService)

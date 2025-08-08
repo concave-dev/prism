@@ -55,6 +55,29 @@ func NewRaftManager(config *Config) (*RaftManager, error) {
 func (m *RaftManager) Start() error {
 	logging.Info("Starting Raft manager on %s:%d", m.config.BindAddr, m.config.BindPort)
 
+	// Configure logging level if CLI hasn't configured it already
+	if !logging.IsConfiguredByCLI() {
+		logging.SetLevel(m.config.LogLevel)
+	}
+
+	// Create a shared Raft log writer based on log level
+	// - ERROR: suppress noisy internal logs
+	// - else: route through colorful writer
+	var raftLogWriter io.Writer
+	if m.config.LogLevel == "ERROR" {
+		raftLogWriter = io.Discard
+	} else {
+		raftLogWriter = logging.NewColorfulRaftWriter()
+	}
+
+	// Redirect stdlib logger to our Raft writer to capture dependency logs
+	// (e.g., raft-boltdb may use the global logger)
+	if raftLogWriter == io.Discard {
+		logging.RedirectStandardLog(nil)
+	} else {
+		logging.RedirectStandardLog(raftLogWriter)
+	}
+
 	// Create data directory if it doesn't exist
 	// TODO: Path traversal fix
 	if err := os.MkdirAll(m.config.DataDir, 0755); err != nil {
@@ -66,17 +89,17 @@ func (m *RaftManager) Start() error {
 	m.fsm = &simpleFSM{}
 
 	// Setup transport layer for Raft communication
-	if err := m.setupTransport(); err != nil {
+	if err := m.setupTransport(raftLogWriter); err != nil {
 		return fmt.Errorf("failed to setup transport: %w", err)
 	}
 
 	// Setup storage layers
-	if err := m.setupStorage(); err != nil {
+	if err := m.setupStorage(raftLogWriter); err != nil {
 		return fmt.Errorf("failed to setup storage: %w", err)
 	}
 
 	// Create Raft configuration
-	raftConfig := m.buildRaftConfig()
+	raftConfig := m.buildRaftConfig(raftLogWriter)
 
 	// Create Raft instance
 	r, err := raft.NewRaft(raftConfig, m.fsm, m.logStore, m.stableStore, m.snapshots, m.transport)
@@ -391,7 +414,7 @@ func (m *RaftManager) handleMemberLeave(member serf.Member) {
 }
 
 // setupTransport configures the network transport for Raft
-func (m *RaftManager) setupTransport() error {
+func (m *RaftManager) setupTransport(logWriter io.Writer) error {
 	// For Raft transport, we need an advertisable address, not 0.0.0.0
 	// If bind address is 0.0.0.0, we need to get the actual local IP
 	bindAddr := m.config.BindAddr
@@ -419,7 +442,8 @@ func (m *RaftManager) setupTransport() error {
 
 	// Bind to the configured address but advertise the advertisable address
 	bindAddress := fmt.Sprintf("%s:%d", m.config.BindAddr, m.config.BindPort)
-	transport, err := raft.NewTCPTransport(bindAddress, addr, 3, 10*time.Second, os.Stderr)
+	// TODO: Consider exposing maxPool and timeout as config knobs
+	transport, err := raft.NewTCPTransport(bindAddress, addr, 3, 10*time.Second, logWriter)
 	if err != nil {
 		return fmt.Errorf("failed to create TCP transport: %w", err)
 	}
@@ -429,7 +453,7 @@ func (m *RaftManager) setupTransport() error {
 }
 
 // setupStorage configures the storage layers for Raft
-func (m *RaftManager) setupStorage() error {
+func (m *RaftManager) setupStorage(logWriter io.Writer) error {
 	// Setup BoltDB for log and stable storage
 	logStore, err := raftboltdb.NewBoltStore(filepath.Join(m.config.DataDir, "raft-log.db"))
 	if err != nil {
@@ -439,7 +463,8 @@ func (m *RaftManager) setupStorage() error {
 	m.stableStore = logStore // BoltDB can serve as both log and stable store
 
 	// Setup file snapshot store
-	snapshots, err := raft.NewFileSnapshotStore(m.config.DataDir, 3, os.Stderr)
+	// TODO: Make snapshot retain count configurable
+	snapshots, err := raft.NewFileSnapshotStore(m.config.DataDir, 3, logWriter)
 	if err != nil {
 		return fmt.Errorf("failed to create snapshot store: %w", err)
 	}
@@ -449,7 +474,7 @@ func (m *RaftManager) setupStorage() error {
 }
 
 // buildRaftConfig creates the Raft configuration
-func (m *RaftManager) buildRaftConfig() *raft.Config {
+func (m *RaftManager) buildRaftConfig(logWriter io.Writer) *raft.Config {
 	config := raft.DefaultConfig()
 	config.LocalID = raft.ServerID(m.config.NodeID)
 	config.HeartbeatTimeout = m.config.HeartbeatTimeout
@@ -457,16 +482,15 @@ func (m *RaftManager) buildRaftConfig() *raft.Config {
 	config.CommitTimeout = m.config.CommitTimeout
 	config.LeaderLeaseTimeout = m.config.LeaderLeaseTimeout
 
-	// Reduce excessive retry logging by configuring Raft to be less chatty
-	// This prevents spamming logs when nodes are unreachable
-	config.LogOutput = io.Discard // Disable Raft's internal logging to reduce noise
+	// Route Raft internal logging through the provided writer (colorful or discarded)
+	config.LogOutput = logWriter
 
 	// Set more reasonable timeouts to reduce retry frequency
 	// Note: ElectionTimeout must be >= HeartbeatTimeout
 	config.HeartbeatTimeout = m.config.HeartbeatTimeout * 2 // Increase heartbeat timeout
 	config.ElectionTimeout = m.config.ElectionTimeout * 4   // Increase election timeout (must be >= heartbeat)
 
-	// TODO: Configure logger to match Prism's logging format
+	// TODO: Configure Raft metrics and tracing hooks
 	// TODO: Add Raft metrics integration
 
 	return config
