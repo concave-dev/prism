@@ -16,6 +16,7 @@ import (
 
 	"github.com/concave-dev/prism/internal/logging"
 	"github.com/concave-dev/prism/internal/validate"
+	"github.com/dustin/go-humanize"
 	"github.com/go-resty/resty/v2"
 	"github.com/spf13/cobra"
 )
@@ -1162,8 +1163,10 @@ func displayClusterResourcesFromAPI(resources []NodeResources) {
 
 		// Display each node's resources
 		for _, resource := range resources {
-			memoryWithPercent := fmt.Sprintf("%dMB/%dMB (%.1f%%)",
-				resource.MemoryUsedMB, resource.MemoryTotalMB, resource.MemoryUsage)
+			memoryWithPercent := fmt.Sprintf("%s/%s (%.1f%%)",
+				humanize.IBytes(uint64(resource.MemoryUsedMB)*1024*1024),
+				humanize.IBytes(uint64(resource.MemoryTotalMB)*1024*1024),
+				resource.MemoryUsage)
 			jobs := fmt.Sprintf("%d/%d", resource.CurrentJobs, resource.MaxJobs)
 
 			fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%d\n",
@@ -1203,9 +1206,9 @@ func displayNodeResourceFromAPI(resource NodeResources) {
 
 		// Memory Information
 		fmt.Printf("Memory:\n")
-		fmt.Printf("  Total:     %d MB\n", resource.MemoryTotalMB)
-		fmt.Printf("  Used:      %d MB\n", resource.MemoryUsedMB)
-		fmt.Printf("  Available: %d MB\n", resource.MemoryAvailableMB)
+		fmt.Printf("  Total:     %s\n", humanize.IBytes(uint64(resource.MemoryTotalMB)*1024*1024))
+		fmt.Printf("  Used:      %s\n", humanize.IBytes(uint64(resource.MemoryUsedMB)*1024*1024))
+		fmt.Printf("  Available: %s\n", humanize.IBytes(uint64(resource.MemoryAvailableMB)*1024*1024))
 		fmt.Printf("  Usage:     %.1f%%\n", resource.MemoryUsage)
 		fmt.Println()
 
@@ -1220,8 +1223,8 @@ func displayNodeResourceFromAPI(resource NodeResources) {
 		fmt.Printf("Runtime:\n")
 		fmt.Printf("  Uptime:     %s\n", resource.Uptime)
 		fmt.Printf("  Goroutines: %d\n", resource.GoRoutines)
-		fmt.Printf("  Go Memory:  %d MB allocated, %d MB from system\n",
-			resource.GoMemAlloc/(1024*1024), resource.GoMemSys/(1024*1024))
+		fmt.Printf("  Go Memory:  %s allocated, %s from system\n",
+			humanize.IBytes(resource.GoMemAlloc), humanize.IBytes(resource.GoMemSys))
 		fmt.Printf("  GC Cycles:  %d (last pause: %.2fms)\n", resource.GoGCCycles, resource.GoGCPause)
 
 		if resource.Load1 > 0 || resource.Load5 > 0 || resource.Load15 > 0 {
