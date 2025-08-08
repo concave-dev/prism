@@ -23,13 +23,14 @@ Start the daemon:
 ./bin/prismd --serf=0.0.0.0:4200 --api=0.0.0.0:8008 --name=first-node
 
 # Join second node 
-./bin/prismd --join=0.0.0.0:4200 --serf=0.0.0.0:4201 --name=second-node
+./bin/prismd --join=192.168.1.100:4200 --serf=0.0.0.0:4201 --name=second-node
 ```
 
 Use the CLI:
 ```bash
 ./bin/prismctl members
 ./bin/prismctl status
+./bin/prismctl --api=127.0.0.1:8008 status
 ```
 
 
