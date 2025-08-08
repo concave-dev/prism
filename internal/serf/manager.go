@@ -195,20 +195,51 @@ func (sm *SerfManager) Join(addresses []string) error {
 
 	var lastErr error
 	for attempt := 1; attempt <= sm.config.JoinRetries; attempt++ {
-		n, err := sm.serf.Join(addresses, false)
-		if err != nil {
-			lastErr = err
-			logging.Warn("Join attempt %d/%d failed: %v",
-				attempt, sm.config.JoinRetries, err)
+		// Create context with timeout for this join attempt
+		ctx, cancel := context.WithTimeout(context.Background(), sm.config.JoinTimeout)
+
+		// Use a channel to handle the join operation with timeout
+		joinDone := make(chan struct {
+			n   int
+			err error
+		}, 1)
+
+		go func() {
+			n, err := sm.serf.Join(addresses, false)
+			joinDone <- struct {
+				n   int
+				err error
+			}{n, err}
+		}()
+
+		select {
+		case result := <-joinDone:
+			cancel()
+			if result.err != nil {
+				lastErr = result.err
+				logging.Warn("Join attempt %d/%d failed: %v",
+					attempt, sm.config.JoinRetries, result.err)
+
+				if attempt < sm.config.JoinRetries {
+					time.Sleep(time.Duration(attempt) * time.Second)
+				}
+				continue
+			}
+
+			logging.Success("Successfully joined cluster, discovered %d nodes", result.n)
+			return nil
+
+		case <-ctx.Done():
+			cancel()
+			lastErr = fmt.Errorf("join attempt timed out after %v", sm.config.JoinTimeout)
+			logging.Warn("Join attempt %d/%d timed out after %v",
+				attempt, sm.config.JoinRetries, sm.config.JoinTimeout)
 
 			if attempt < sm.config.JoinRetries {
 				time.Sleep(time.Duration(attempt) * time.Second)
 			}
 			continue
 		}
-
-		logging.Success("Successfully joined cluster, discovered %d nodes", n)
-		return nil
 	}
 
 	return fmt.Errorf("failed to join cluster after %d attempts: %w",
