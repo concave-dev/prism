@@ -44,39 +44,49 @@ AI-generated code in sandboxes, manage workflows, and inspect cluster state.`,
 	Version:           Version,
 	SilenceUsage:      true, // Don't show usage on errors
 	PersistentPreRunE: validateGlobalFlags,
-	Example: `  # List cluster members
-  prismctl members
+	Example: `  # List cluster nodes
+  prismctl node ls
 
   # Show cluster information
   prismctl cluster info
 
   # Connect to remote API server
-  prismctl --api=192.168.1.100:8008 members
+  prismctl --api=192.168.1.100:8008 node ls
   
   # Output in JSON format
-  prismctl --output=json members
+  prismctl --output=json node ls
   prismctl -o json cluster info
   
   # Show verbose output
-  prismctl --verbose cluster info`,
+  prismctl --verbose node ls`,
 }
 
-// Members command
-var membersCmd = &cobra.Command{
-	Use:   "members",
-	Short: "List all cluster members",
-	Long: `List all members (nodes) in the Prism cluster.
+// Node command (parent command for node operations)
+var nodeCmd = &cobra.Command{
+	Use:   "node",
+	Short: "Manage and inspect cluster nodes",
+	Long: `Commands for managing and inspecting nodes in the Prism cluster.
+
+This command group provides operations for listing nodes, viewing node details,
+and managing node-specific resources.`,
+}
+
+// Node list command
+var nodeLsCmd = &cobra.Command{
+	Use:   "ls",
+	Short: "List all cluster nodes",
+	Long: `List all nodes in the Prism cluster.
 
 This command connects to the cluster and displays information about all
 known nodes including their status and last seen times.`,
-	Example: `  # List all members
-  prismctl members
+	Example: `  # List all nodes
+  prismctl node ls
 
-  # List members from specific API server
-  prismctl --api=192.168.1.100:8008 members
+  # List nodes from specific API server
+  prismctl --api=192.168.1.100:8008 node ls
   
   # Show verbose output during connection
-  prismctl --verbose members`,
+  prismctl --verbose node ls`,
 	RunE: handleMembers,
 }
 
@@ -144,8 +154,11 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&config.Output, "output", "o", "table",
 		"Output format: table, json")
 
-	// Add subcommands
-	rootCmd.AddCommand(membersCmd)
+	// Add subcommands to node command
+	nodeCmd.AddCommand(nodeLsCmd)
+
+	// Add subcommands to root
+	rootCmd.AddCommand(nodeCmd)
 	rootCmd.AddCommand(clusterInfoCmd)
 	rootCmd.AddCommand(resourcesCmd)
 }
@@ -731,11 +744,11 @@ func createAPIClient() *PrismAPIClient {
 	return NewPrismAPIClient(config.APIAddr, config.Timeout)
 }
 
-// handleMembers handles the members subcommand
+// handleMembers handles the node ls subcommand
 func handleMembers(cmd *cobra.Command, args []string) error {
 	setupLogging()
 
-	logging.Info("Fetching cluster members from API server: %s", config.APIAddr)
+	logging.Info("Fetching cluster nodes from API server: %s", config.APIAddr)
 
 	// Create API client and get members
 	apiClient := createAPIClient()
@@ -745,7 +758,7 @@ func handleMembers(cmd *cobra.Command, args []string) error {
 	}
 
 	displayMembersFromAPI(members)
-	logging.Success("Successfully retrieved %d cluster members", len(members))
+	logging.Success("Successfully retrieved %d cluster nodes", len(members))
 	return nil
 }
 
@@ -811,13 +824,13 @@ func handleResources(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// displayMembersFromAPI displays cluster members from API response
+// displayMembersFromAPI displays cluster nodes from API response
 func displayMembersFromAPI(members []ClusterMember) {
 	if len(members) == 0 {
 		if config.Output == "json" {
 			fmt.Println("[]")
 		} else {
-			fmt.Println("No cluster members found")
+			fmt.Println("No cluster nodes found")
 		}
 		return
 	}
