@@ -332,8 +332,8 @@ func buildSerfConfig() *serf.Config {
 
 	// Add custom tags
 	serfConfig.Tags["prism_version"] = Version
-	serfConfig.Tags["raft_port"] = fmt.Sprintf("%d", config.RaftPort) // TODO: Enable Raft peer discovery
-	serfConfig.Tags["grpc_port"] = fmt.Sprintf("%d", config.GRPCPort) // Enable gRPC peer discovery
+	serfConfig.Tags["raft_port"] = fmt.Sprintf("%d", config.RaftPort) // Raft peer discovery
+	serfConfig.Tags["grpc_port"] = fmt.Sprintf("%d", config.GRPCPort) // gRPC peer discovery
 
 	return serfConfig
 }

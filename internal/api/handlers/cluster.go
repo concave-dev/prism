@@ -201,9 +201,12 @@ func HandleClusterInfo(serfManager *serf.SerfManager, version string, startTime 
 // TODO: Add configurable timeout for connectivity checks
 func getRaftPeerStatus(member *serf.PrismNode, raftPeers []string) RaftStatus {
 	// Extract raft_port from member tags
+	// In Prism, all cluster nodes should participate in Raft consensus
 	raftPortStr, exists := member.Tags["raft_port"]
 	if !exists {
-		return RaftFailed // Missing raft_port is a misconfiguration => failed
+		// Missing raft_port indicates misconfiguration (e.g., startup failure, wrong version)
+		// rather than intentional exclusion. Return "failed" to suggest operator action needed.
+		return RaftFailed
 	}
 
 	raftPort, err := strconv.Atoi(raftPortStr)
