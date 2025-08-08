@@ -477,6 +477,7 @@ func (m *RaftManager) setupStorage(logWriter io.Writer) error {
 func (m *RaftManager) buildRaftConfig(logWriter io.Writer) *raft.Config {
 	config := raft.DefaultConfig()
 	config.LocalID = raft.ServerID(m.config.NodeID)
+	// Use config timeouts directly (already scaled for production in config defaults)
 	config.HeartbeatTimeout = m.config.HeartbeatTimeout
 	config.ElectionTimeout = m.config.ElectionTimeout
 	config.CommitTimeout = m.config.CommitTimeout
@@ -484,11 +485,6 @@ func (m *RaftManager) buildRaftConfig(logWriter io.Writer) *raft.Config {
 
 	// Route Raft internal logging through the provided writer (colorful or discarded)
 	config.LogOutput = logWriter
-
-	// Set more reasonable timeouts to reduce retry frequency
-	// Note: ElectionTimeout must be >= HeartbeatTimeout
-	config.HeartbeatTimeout = m.config.HeartbeatTimeout * 2 // Increase heartbeat timeout
-	config.ElectionTimeout = m.config.ElectionTimeout * 4   // Increase election timeout (must be >= heartbeat)
 
 	// TODO: Configure Raft metrics and tracing hooks
 	// TODO: Add Raft metrics integration

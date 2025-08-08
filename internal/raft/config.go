@@ -21,10 +21,13 @@ const (
 	RaftTimeout = 10 * time.Second
 
 	// DefaultHeartbeatTimeout is the default heartbeat timeout
-	DefaultHeartbeatTimeout = 1000 * time.Millisecond
+	// NOTE: This is the final timeout value used by Raft (already scaled for production use)
+	DefaultHeartbeatTimeout = 2000 * time.Millisecond // 2x base for stability
 
 	// DefaultElectionTimeout is the default election timeout
-	DefaultElectionTimeout = 1000 * time.Millisecond
+	// NOTE: This is the final timeout value used by Raft (already scaled for production use)
+	// Must be >= HeartbeatTimeout for proper Raft operation
+	DefaultElectionTimeout = 4000 * time.Millisecond // 4x base for stability
 
 	// DefaultCommitTimeout is the default commit timeout
 	DefaultCommitTimeout = 50 * time.Millisecond
