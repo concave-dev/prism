@@ -197,7 +197,7 @@ func HandleClusterInfo(serfManager *serf.SerfManager, version string, startTime 
 }
 
 // getRaftPeerStatus determines the Raft connectivity status of a Serf member
-// Returns alive/failed/left based on Raft configuration and network connectivity
+// Returns alive/failed/dead based on Raft configuration and network connectivity
 // TODO: Add configurable timeout for connectivity checks
 func getRaftPeerStatus(member *serf.PrismNode, raftPeers []string) RaftStatus {
 	// Extract raft_port from member tags
