@@ -31,7 +31,7 @@ const (
 	DefaultSerf = configDefaults.DefaultBindAddr + ":4200" // Default serf address
 	DefaultRaft = configDefaults.DefaultBindAddr + ":6969" // Default raft address
 	DefaultGRPC = configDefaults.DefaultBindAddr + ":7117" // Default gRPC address
-	DefaultAPI  = configDefaults.DefaultBindAddr + ":8008" // Default API address
+	DefaultAPI  = "127.0.0.1:8008"                         // Default API address (loopback for local prismctl)
 
 )
 
@@ -255,9 +255,14 @@ func validateConfig(cmd *cobra.Command, args []string) error {
 		config.APIAddr = apiNetAddr.Host
 		config.APIPort = apiNetAddr.Port
 	} else {
-		// Default: use serf IP + default API port
-		config.APIAddr = config.SerfAddr
-		config.APIPort = api.DefaultAPIPort
+		// Default: honor the flag's default (loopback) rather than forcing Serf IP
+		// Parse whatever is currently in config.APIAddr (e.g., 127.0.0.1:8008)
+		apiNetAddr, err := validate.ParseBindAddress(config.APIAddr)
+		if err != nil {
+			return fmt.Errorf("invalid default API address: %w", err)
+		}
+		config.APIAddr = apiNetAddr.Host
+		config.APIPort = apiNetAddr.Port
 	}
 
 	// Handle Raft address configuration

@@ -19,8 +19,8 @@ import (
 )
 
 const (
-	Version        = "0.1.0-dev"    // Version information
-	DefaultAPIAddr = "0.0.0.0:8008" // Default API server address
+	Version        = "0.1.0-dev"      // Version information
+	DefaultAPIAddr = "127.0.0.1:8008" // Default API server address (routable)
 )
 
 // Global configuration
@@ -166,6 +166,11 @@ func validateAPIAddress() error {
 	netAddr, err := validate.ParseBindAddress(config.APIAddr)
 	if err != nil {
 		return fmt.Errorf("invalid API server address '%s': %w", config.APIAddr, err)
+	}
+
+	// Reject unroutable 0.0.0.0 target for client connections
+	if netAddr.Host == "0.0.0.0" {
+		return fmt.Errorf("unroutable API address '0.0.0.0:%d'; use 127.0.0.1 or a specific IP address", netAddr.Port)
 	}
 
 	// Client must connect to specific port (not 0)

@@ -6,7 +6,6 @@ package api
 import (
 	"fmt"
 
-	"github.com/concave-dev/prism/internal/config"
 	"github.com/concave-dev/prism/internal/raft"
 	"github.com/concave-dev/prism/internal/serf"
 )
@@ -32,7 +31,9 @@ type Config struct {
 // TODO: Add support for rate limiting configuration
 func DefaultConfig() *Config {
 	return &Config{
-		BindAddr:    config.DefaultBindAddr,
+		// Default to loopback for safer local development. Daemon can override.
+		// TODO(api): Consider env/config to expose externally when needed.
+		BindAddr:    "127.0.0.1",
 		BindPort:    DefaultAPIPort,
 		SerfManager: nil, // Must be set by caller
 		RaftManager: nil, // Must be set by caller
