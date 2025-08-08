@@ -518,8 +518,7 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		}
 		conn.Close()
 	} else {
-		// Using defaults - use serf IP + auto-increment if needed
-		config.APIAddr = config.SerfAddr
+		// Using defaults - keep default loopback address, auto-increment port if needed
 		availableAPIPort, err := findAvailablePort(config.APIAddr, config.APIPort)
 		if err != nil {
 			return fmt.Errorf("failed to find available API port: %w", err)
