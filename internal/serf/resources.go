@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/concave-dev/prism/internal/logging"
+	"github.com/shirou/gopsutil/v3/mem"
 )
 
 // NodeResources represents the available resources on a cluster node
@@ -20,11 +21,11 @@ type NodeResources struct {
 	CPUUsage     float64 `json:"cpuUsage"`     // Current CPU usage percentage (0-100)
 	CPUAvailable float64 `json:"cpuAvailable"` // Available CPU percentage (0-100)
 
-	// Memory Information (in bytes)
-	MemoryTotal     uint64  `json:"memoryTotal"`     // Total system memory
-	MemoryUsed      uint64  `json:"memoryUsed"`      // Currently used memory
-	MemoryAvailable uint64  `json:"memoryAvailable"` // Available memory
-	MemoryUsage     float64 `json:"memoryUsage"`     // Memory usage percentage (0-100)
+	// Memory Information (in bytes) - actual system memory, not Go runtime
+	MemoryTotal     uint64  `json:"memoryTotal"`     // Total physical system memory
+	MemoryUsed      uint64  `json:"memoryUsed"`      // Currently used system memory
+	MemoryAvailable uint64  `json:"memoryAvailable"` // Available system memory for new processes
+	MemoryUsage     float64 `json:"memoryUsage"`     // System memory usage percentage (0-100)
 
 	// Go Runtime Information
 	GoRoutines int     `json:"goRoutines"` // Number of active goroutines
@@ -49,9 +50,21 @@ type NodeResources struct {
 func (sm *SerfManager) gatherResources() *NodeResources {
 	now := time.Now()
 
-	// Get Go runtime memory stats
+	// Get Go runtime memory stats for Go-specific metrics
 	var memStats runtime.MemStats
 	runtime.ReadMemStats(&memStats)
+
+	// Get actual system memory information
+	virtualMem, err := mem.VirtualMemory()
+	if err != nil {
+		logging.Error("Failed to get system memory stats: %v", err)
+		// Fallback to Go runtime stats if system stats fail
+		virtualMem = &mem.VirtualMemoryStat{
+			Total:     memStats.Sys,
+			Used:      memStats.Alloc,
+			Available: memStats.Sys - memStats.Alloc,
+		}
+	}
 
 	// Calculate basic resource metrics
 	resources := &NodeResources{
@@ -64,11 +77,11 @@ func (sm *SerfManager) gatherResources() *NodeResources {
 		CPUUsage:     0.0,   // TODO: Implement actual CPU monitoring
 		CPUAvailable: 100.0, // TODO: Calculate based on current load
 
-		// Memory Information
-		MemoryTotal:     memStats.Sys,
-		MemoryUsed:      memStats.Alloc,
-		MemoryAvailable: memStats.Sys - memStats.Alloc,
-		MemoryUsage:     float64(memStats.Alloc) / float64(memStats.Sys) * 100,
+		// Memory Information (actual system memory)
+		MemoryTotal:     virtualMem.Total,
+		MemoryUsed:      virtualMem.Used,
+		MemoryAvailable: virtualMem.Available,
+		MemoryUsage:     virtualMem.UsedPercent,
 
 		// Go Runtime Information
 		GoRoutines: runtime.NumGoroutine(),
