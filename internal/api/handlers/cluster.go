@@ -50,10 +50,13 @@ type ClusterStatus struct {
 
 // Represents general cluster information
 type ClusterInfo struct {
-	Version string          `json:"version"`
-	Status  ClusterStatus   `json:"status"`
-	Members []ClusterMember `json:"members"`
-	Uptime  time.Duration   `json:"uptime"`
+	Version    string          `json:"version"`
+	Status     ClusterStatus   `json:"status"`
+	Members    []ClusterMember `json:"members"`
+	Uptime     time.Duration   `json:"uptime"`
+	StartTime  time.Time       `json:"startTime"`
+	RaftLeader string          `json:"raftLeader,omitempty"`
+	ClusterID  string          `json:"clusterId,omitempty"`
 }
 
 // mapSerfStatus normalizes Serf member status for display consistency
@@ -151,27 +154,53 @@ func HandleStatus(serfManager *serf.SerfManager) gin.HandlerFunc {
 }
 
 // HandleClusterInfo returns comprehensive cluster information
-func HandleClusterInfo(serfManager *serf.SerfManager, version string, startTime time.Time) gin.HandlerFunc {
+func HandleClusterInfo(serfManager *serf.SerfManager, raftManager *raft.RaftManager, version string, startTime time.Time) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		members := serfManager.GetMembers()
 
-		// Convert members
+		// Get Raft peer information for connection status
+		var raftPeers []string
+		var raftLeader string
+		if raftManager != nil {
+			var err error
+			raftPeers, err = raftManager.GetPeers()
+			if err != nil {
+				// If we can't get Raft peers, log but continue (show all as disconnected)
+				raftPeers = []string{}
+			}
+
+			// Get Raft leader
+			raftLeader = raftManager.Leader()
+		} else {
+			// Raft manager is nil (not running), show all as disconnected
+			raftPeers = []string{}
+		}
+
+		// Convert members with enhanced status
 		apiMembers := make([]ClusterMember, 0, len(members))
 		statusCount := make(map[string]int)
 
 		for _, member := range members {
+			// Determine Serf status using consistent string values (alive/failed/dead)
+			serfStatus := mapSerfStatus(member.Status.String())
+
+			// Determine Raft status using new three-state system
+			raftStatus := string(getRaftPeerStatus(member, raftPeers))
+
 			apiMember := ClusterMember{
-				ID:       member.ID,
-				Name:     member.Name,
-				Address:  fmt.Sprintf("%s:%d", member.Addr.String(), member.Port),
-				Status:   member.Status.String(),
-				Tags:     member.Tags,
-				LastSeen: member.LastSeen,
+				ID:         member.ID,
+				Name:       member.Name,
+				Address:    fmt.Sprintf("%s:%d", member.Addr.String(), member.Port),
+				Status:     member.Status.String(),
+				Tags:       member.Tags,
+				LastSeen:   member.LastSeen,
+				SerfStatus: serfStatus,
+				RaftStatus: raftStatus,
 			}
 			apiMembers = append(apiMembers, apiMember)
 
-			// Count stats
-			statusCount[member.Status.String()]++
+			// Count stats by Serf status
+			statusCount[serfStatus]++
 		}
 
 		// Sort members
@@ -179,14 +208,36 @@ func HandleClusterInfo(serfManager *serf.SerfManager, version string, startTime 
 			return apiMembers[i].Name < apiMembers[j].Name
 		})
 
+		// Generate a simple cluster ID based on the first node's ID
+		// TODO: Consider using a more sophisticated cluster ID generation
+		var clusterID string
+		if len(apiMembers) > 0 {
+			// Use first 8 characters of the alphabetically first node ID
+			sort.Slice(apiMembers, func(i, j int) bool {
+				return apiMembers[i].ID < apiMembers[j].ID
+			})
+			if len(apiMembers[0].ID) >= 8 {
+				clusterID = apiMembers[0].ID[:8]
+			} else {
+				clusterID = apiMembers[0].ID
+			}
+			// Sort back by name for display
+			sort.Slice(apiMembers, func(i, j int) bool {
+				return apiMembers[i].Name < apiMembers[j].Name
+			})
+		}
+
 		info := ClusterInfo{
-			Version: version,
+			Version:   version,
+			StartTime: startTime,
 			Status: ClusterStatus{
 				TotalNodes:    len(members),
 				NodesByStatus: statusCount,
 			},
-			Members: apiMembers,
-			Uptime:  time.Since(startTime),
+			Members:    apiMembers,
+			Uptime:     time.Since(startTime),
+			RaftLeader: raftLeader,
+			ClusterID:  clusterID,
 		}
 
 		c.JSON(http.StatusOK, gin.H{

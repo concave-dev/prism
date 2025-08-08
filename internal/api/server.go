@@ -44,10 +44,10 @@ func (s *Server) Start() error {
 	logging.Info("Starting HTTP API server on %s:%d", s.bindAddr, s.bindPort)
 
 	// Create Gin router
-    router := gin.New()
-    // TODO: make Gin internal log level configurable via API config
-    gin.DefaultWriter = logging.NewLevelWriter("INFO", "gin")
-    gin.DefaultErrorWriter = logging.NewLevelWriter("ERROR", "gin")
+	router := gin.New()
+	// TODO: make Gin internal log level configurable via API config
+	gin.DefaultWriter = logging.NewLevelWriter("INFO", "gin")
+	gin.DefaultErrorWriter = logging.NewLevelWriter("ERROR", "gin")
 
 	// Add middleware
 	router.Use(s.loggingMiddleware())
@@ -142,7 +142,7 @@ func (s *Server) handleClusterInfo(c *gin.Context) {
 
 // getHandlerClusterInfo is a cluster info endpoint handler factory
 func (s *Server) getHandlerClusterInfo() gin.HandlerFunc {
-	return handlers.HandleClusterInfo(s.serfManager, version, startTime)
+	return handlers.HandleClusterInfo(s.serfManager, s.raftManager, version, startTime)
 }
 
 // handleNodes delegates to handlers.HandleNodes

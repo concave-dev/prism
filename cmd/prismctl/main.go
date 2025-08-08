@@ -47,18 +47,18 @@ AI-generated code in sandboxes, manage workflows, and inspect cluster state.`,
 	Example: `  # List cluster members
   prismctl members
 
-  # Show cluster status
-  prismctl status
+  # Show cluster information
+  prismctl cluster info
 
   # Connect to remote API server
   prismctl --api=192.168.1.100:8008 members
   
   # Output in JSON format
   prismctl --output=json members
-  prismctl -o json status
+  prismctl -o json cluster info
   
   # Show verbose output
-  prismctl --verbose members`,
+  prismctl --verbose cluster info`,
 }
 
 // Members command
@@ -80,23 +80,26 @@ known nodes including their status and last seen times.`,
 	RunE: handleMembers,
 }
 
-// Status command
-var statusCmd = &cobra.Command{
-	Use:   "status",
-	Short: "Show cluster status information",
-	Long: `Show a summary of cluster status including node counts by status
-and status.
+// Cluster info command
+var clusterInfoCmd = &cobra.Command{
+	Use:   "cluster info",
+	Short: "Show comprehensive cluster information",
+	Long: `Show comprehensive cluster information including member details,
+uptime, version, and cluster health status.
 
-This provides a high-level overview of cluster health and composition.`,
-	Example: `  # Show cluster status
-  prismctl status
+This provides a complete overview of cluster state, composition, and health.`,
+	Example: `  # Show cluster information
+  prismctl cluster info
 
-  # Show status from specific API server
-  prismctl --api=192.168.1.100:8008 status
+  # Show cluster info from specific API server
+  prismctl --api=192.168.1.100:8008 cluster info
+  
+  # Output in JSON format
+  prismctl -o json cluster info
   
   # Show verbose output during connection
-  prismctl --verbose status`,
-	RunE: handleStatus,
+  prismctl --verbose cluster info`,
+	RunE: handleClusterInfo,
 }
 
 // Resources command
@@ -143,7 +146,7 @@ func init() {
 
 	// Add subcommands
 	rootCmd.AddCommand(membersCmd)
-	rootCmd.AddCommand(statusCmd)
+	rootCmd.AddCommand(clusterInfoCmd)
 	rootCmd.AddCommand(resourcesCmd)
 }
 
@@ -216,6 +219,16 @@ type ClusterMember struct {
 type ClusterStatus struct {
 	TotalNodes    int            `json:"totalNodes"`
 	NodesByStatus map[string]int `json:"nodesByStatus"`
+}
+
+type ClusterInfo struct {
+	Version    string          `json:"version"`
+	Status     ClusterStatus   `json:"status"`
+	Members    []ClusterMember `json:"members"`
+	Uptime     time.Duration   `json:"uptime"`
+	StartTime  time.Time       `json:"startTime"`
+	RaftLeader string          `json:"raftLeader,omitempty"`
+	ClusterID  string          `json:"clusterId,omitempty"`
 }
 
 type NodeResources struct {
@@ -372,13 +385,13 @@ func (api *PrismAPIClient) GetMembers() ([]ClusterMember, error) {
 	return members, nil
 }
 
-// GetStatus fetches cluster status from the API
-func (api *PrismAPIClient) GetStatus() (*ClusterStatus, error) {
+// GetClusterInfo fetches comprehensive cluster information from the API
+func (api *PrismAPIClient) GetClusterInfo() (*ClusterInfo, error) {
 	var response APIResponse
 
 	resp, err := api.client.R().
 		SetResult(&response).
-		Get("/cluster/status")
+		Get("/cluster/info")
 
 	if err != nil {
 		logging.Error("Failed to connect to API server: %v", err)
@@ -391,15 +404,54 @@ func (api *PrismAPIClient) GetStatus() (*ClusterStatus, error) {
 		return nil, fmt.Errorf("API request failed")
 	}
 
-	// Parse status from the response data
-	if statusData, ok := response.Data.(map[string]interface{}); ok {
-		return &ClusterStatus{
+	// Parse cluster info from the response data
+	if infoData, ok := response.Data.(map[string]interface{}); ok {
+		// Parse status
+		statusData := infoData["status"].(map[string]interface{})
+		status := ClusterStatus{
 			TotalNodes:    getInt(statusData, "totalNodes"),
 			NodesByStatus: getIntMap(statusData, "nodesByStatus"),
+		}
+
+		// Parse members
+		var members []ClusterMember
+		if membersData, ok := infoData["members"].([]interface{}); ok {
+			for _, memberData := range membersData {
+				if memberMap, ok := memberData.(map[string]interface{}); ok {
+					member := ClusterMember{
+						ID:         getString(memberMap, "id"),
+						Name:       getString(memberMap, "name"),
+						Address:    getString(memberMap, "address"),
+						Status:     getString(memberMap, "status"),
+						Tags:       getStringMap(memberMap, "tags"),
+						LastSeen:   getTime(memberMap, "lastSeen"),
+						SerfStatus: getString(memberMap, "serfStatus"),
+						RaftStatus: getString(memberMap, "raftStatus"),
+					}
+					members = append(members, member)
+				}
+			}
+		}
+
+		// Parse uptime
+		uptimeNs := int64(getFloat(infoData, "uptime"))
+		uptime := time.Duration(uptimeNs)
+
+		// Parse start time
+		startTime := getTime(infoData, "startTime")
+
+		return &ClusterInfo{
+			Version:    getString(infoData, "version"),
+			Status:     status,
+			Members:    members,
+			Uptime:     uptime,
+			StartTime:  startTime,
+			RaftLeader: getString(infoData, "raftLeader"),
+			ClusterID:  getString(infoData, "clusterId"),
 		}, nil
 	}
 
-	return nil, fmt.Errorf("unexpected response format for status")
+	return nil, fmt.Errorf("unexpected response format for cluster info")
 }
 
 // GetClusterResources fetches cluster resources from the API
@@ -697,21 +749,21 @@ func handleMembers(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// handleStatus handles the status subcommand
-func handleStatus(cmd *cobra.Command, args []string) error {
+// handleClusterInfo handles the cluster info subcommand
+func handleClusterInfo(cmd *cobra.Command, args []string) error {
 	setupLogging()
 
-	logging.Info("Fetching cluster status from API server: %s", config.APIAddr)
+	logging.Info("Fetching cluster information from API server: %s", config.APIAddr)
 
-	// Create API client and get status
+	// Create API client and get cluster info
 	apiClient := createAPIClient()
-	status, err := apiClient.GetStatus()
+	info, err := apiClient.GetClusterInfo()
 	if err != nil {
 		return err
 	}
 
-	displayStatusFromAPI(*status)
-	logging.Success("Successfully retrieved cluster status (%d total nodes)", status.TotalNodes)
+	displayClusterInfoFromAPI(*info)
+	logging.Success("Successfully retrieved cluster information (%d total nodes)", info.Status.TotalNodes)
 	return nil
 }
 
@@ -829,26 +881,64 @@ func displayMembersFromAPI(members []ClusterMember) {
 	}
 }
 
-// displayStatusFromAPI displays cluster status from API response
-func displayStatusFromAPI(status ClusterStatus) {
+// displayClusterInfoFromAPI displays comprehensive cluster information from API response
+func displayClusterInfoFromAPI(info ClusterInfo) {
 	if config.Output == "json" {
 		// JSON output
 		encoder := json.NewEncoder(os.Stdout)
 		encoder.SetIndent("", "  ")
-		if err := encoder.Encode(status); err != nil {
+		if err := encoder.Encode(info); err != nil {
 			logging.Error("Failed to encode JSON: %v", err)
 			fmt.Println("Error encoding JSON output")
 		}
 	} else {
 		// Table output
-		fmt.Printf("Cluster Status:\n")
-		fmt.Printf("  Total Nodes: %d\n\n", status.TotalNodes)
+		fmt.Printf("Cluster Information:\n")
+		fmt.Printf("  Version:     %s\n", info.Version)
+		if info.ClusterID != "" {
+			fmt.Printf("  Cluster ID:  %s\n", info.ClusterID)
+		}
+		fmt.Printf("  Uptime:      %s\n", formatDuration(info.Uptime))
+		if !info.StartTime.IsZero() {
+			fmt.Printf("  Started:     %s\n", info.StartTime.Format(time.RFC3339))
+		}
+		if info.RaftLeader != "" {
+			fmt.Printf("  Raft Leader: %s\n", info.RaftLeader)
+		}
+		fmt.Printf("  Total Nodes: %d\n\n", info.Status.TotalNodes)
 
 		fmt.Printf("Nodes by Status:\n")
-		for nodeStatus, count := range status.NodesByStatus {
+		for nodeStatus, count := range info.Status.NodesByStatus {
 			fmt.Printf("  %-12s: %d\n", nodeStatus, count)
 		}
 		fmt.Println()
+
+		// Show detailed member information in verbose mode
+		if config.Verbose && len(info.Members) > 0 {
+			fmt.Printf("Cluster Members:\n")
+			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+			defer w.Flush()
+
+			fmt.Fprintln(w, "ID\tNAME\tADDRESS\tSTATUS\tSERF\tRAFT\tLAST SEEN")
+
+			for _, member := range info.Members {
+				lastSeen := formatDuration(time.Since(member.LastSeen))
+
+				serfStatus := member.SerfStatus
+				if serfStatus == "" {
+					serfStatus = "unknown"
+				}
+
+				raftStatus := member.RaftStatus
+				if raftStatus == "" {
+					raftStatus = "unknown"
+				}
+
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+					member.ID, member.Name, member.Address, member.Status,
+					serfStatus, raftStatus, lastSeen)
+			}
+		}
 	}
 }
 
