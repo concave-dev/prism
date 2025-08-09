@@ -275,8 +275,13 @@ func (crw *ColorfulRaftWriter) Close() error {
 func (crw *ColorfulRaftWriter) processLogs() {
 	scanner := bufio.NewScanner(crw.reader)
 
-	// Example: 2024/01/02 15:04:05 [WARN] raft: message
-	logRegex := regexp.MustCompile(`^\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} \[(\w+)\] (.+)$`)
+	// Multiple regex patterns to handle different Raft log formats:
+	// 1. Standard Raft: 2024/01/02 15:04:05 [WARN] raft: message
+	// 2. With RFC3339 timestamp: 2025-08-10T01:01:14.224+0530 [WARN] raft: message
+	// 3. Simple timestamp: 2025/08/10 01:01:14 message (no level brackets)
+	raftLogRegex := regexp.MustCompile(`^\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} \[(\w+)\] (.+)$`)
+	rfc3339LogRegex := regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[+-]\d{4}) \[(\w+)\] (.+)$`)
+	simpleLogRegex := regexp.MustCompile(`^\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} (.+)$`)
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -284,11 +289,25 @@ func (crw *ColorfulRaftWriter) processLogs() {
 			continue
 		}
 
-		matches := logRegex.FindStringSubmatch(line)
-		if len(matches) == 3 {
-			level := matches[1]
-			message := matches[2]
+		var level, message string
+		var matched bool
 
+		// Try standard Raft format first
+		if matches := raftLogRegex.FindStringSubmatch(line); len(matches) == 3 {
+			level = matches[1]
+			message = matches[2]
+			matched = true
+		} else if matches := rfc3339LogRegex.FindStringSubmatch(line); len(matches) == 3 {
+			level = matches[1]
+			message = matches[2]
+			matched = true
+		} else if matches := simpleLogRegex.FindStringSubmatch(line); len(matches) == 2 {
+			level = "INFO" // Default level for simple timestamp format
+			message = matches[1]
+			matched = true
+		}
+
+		if matched {
 			// Avoid redundant component prefixes since we add our own "raft:" label
 			if strings.HasPrefix(strings.ToLower(message), "raft: ") {
 				message = strings.TrimSpace(message[len("raft: "):])
@@ -307,6 +326,7 @@ func (crw *ColorfulRaftWriter) processLogs() {
 				Info("raft[%s]: %s", level, message)
 			}
 		} else {
+			// If we can't parse any timestamp format, log as-is
 			Info("raft: %s", line)
 		}
 	}
