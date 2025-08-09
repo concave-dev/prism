@@ -2,11 +2,13 @@ package raft
 
 import (
 	"io"
+	"net"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/hashicorp/raft"
+	"github.com/hashicorp/serf/serf"
 )
 
 // TestNewRaftManager_ValidConfig tests NewRaftManager creation with valid config
@@ -459,6 +461,267 @@ func TestConcurrentFSMAccess(t *testing.T) {
 	}
 
 	// Test should complete without data races or panics
+}
+
+// TestRaftManager_BuildRaftConfig tests buildRaftConfig method
+func TestRaftManager_BuildRaftConfig(t *testing.T) {
+	config := &Config{
+		BindAddr:           "0.0.0.0",
+		BindPort:           8080,
+		NodeID:             "test-node",
+		DataDir:            "/tmp/raft-test",
+		HeartbeatTimeout:   1 * time.Second,
+		ElectionTimeout:    2 * time.Second,
+		CommitTimeout:      100 * time.Millisecond,
+		LeaderLeaseTimeout: 500 * time.Millisecond,
+		LogLevel:           "INFO",
+	}
+
+	manager, err := NewRaftManager(config)
+	if err != nil {
+		t.Fatalf("NewRaftManager() failed: %v", err)
+	}
+
+	// Test buildRaftConfig
+	raftConfig := manager.buildRaftConfig(io.Discard)
+
+	// Verify configuration values
+	if string(raftConfig.LocalID) != config.NodeID {
+		t.Errorf("buildRaftConfig() LocalID = %q, want %q", raftConfig.LocalID, config.NodeID)
+	}
+
+	if raftConfig.HeartbeatTimeout != config.HeartbeatTimeout {
+		t.Errorf("buildRaftConfig() HeartbeatTimeout = %v, want %v",
+			raftConfig.HeartbeatTimeout, config.HeartbeatTimeout)
+	}
+
+	if raftConfig.ElectionTimeout != config.ElectionTimeout {
+		t.Errorf("buildRaftConfig() ElectionTimeout = %v, want %v",
+			raftConfig.ElectionTimeout, config.ElectionTimeout)
+	}
+
+	if raftConfig.CommitTimeout != config.CommitTimeout {
+		t.Errorf("buildRaftConfig() CommitTimeout = %v, want %v",
+			raftConfig.CommitTimeout, config.CommitTimeout)
+	}
+
+	if raftConfig.LeaderLeaseTimeout != config.LeaderLeaseTimeout {
+		t.Errorf("buildRaftConfig() LeaderLeaseTimeout = %v, want %v",
+			raftConfig.LeaderLeaseTimeout, config.LeaderLeaseTimeout)
+	}
+
+	if raftConfig.LogOutput != io.Discard {
+		t.Errorf("buildRaftConfig() LogOutput should be set to provided writer")
+	}
+}
+
+// TestRaftManager_HandleMemberEvent tests handleMemberEvent processing
+func TestRaftManager_HandleMemberEvent(t *testing.T) {
+	config := &Config{
+		BindAddr:           "0.0.0.0",
+		BindPort:           8080,
+		NodeID:             "test-node",
+		NodeName:           "test-node-name",
+		DataDir:            "/tmp/raft-test",
+		HeartbeatTimeout:   1 * time.Second,
+		ElectionTimeout:    2 * time.Second,
+		CommitTimeout:      100 * time.Millisecond,
+		LeaderLeaseTimeout: 500 * time.Millisecond,
+		LogLevel:           "INFO",
+	}
+
+	manager, err := NewRaftManager(config)
+	if err != nil {
+		t.Fatalf("NewRaftManager() failed: %v", err)
+	}
+
+	// Mock member with raft_port tag
+	memberWithPort := serf.Member{
+		Name: "peer-node",
+		Addr: net.ParseIP("192.168.1.100"),
+		Tags: map[string]string{
+			"raft_port": "8081",
+		},
+	}
+
+	// Mock member without raft_port tag
+	memberWithoutPort := serf.Member{
+		Name: "peer-node-no-port",
+		Addr: net.ParseIP("192.168.1.101"),
+		Tags: map[string]string{},
+	}
+
+	// Mock member with invalid raft_port
+	memberInvalidPort := serf.Member{
+		Name: "peer-node-invalid",
+		Addr: net.ParseIP("192.168.1.102"),
+		Tags: map[string]string{
+			"raft_port": "invalid",
+		},
+	}
+
+	tests := []struct {
+		name      string
+		eventType serf.EventType
+		members   []serf.Member
+	}{
+		{
+			name:      "member join with valid port",
+			eventType: serf.EventMemberJoin,
+			members:   []serf.Member{memberWithPort},
+		},
+		{
+			name:      "member join without port tag",
+			eventType: serf.EventMemberJoin,
+			members:   []serf.Member{memberWithoutPort},
+		},
+		{
+			name:      "member join with invalid port",
+			eventType: serf.EventMemberJoin,
+			members:   []serf.Member{memberInvalidPort},
+		},
+		{
+			name:      "member leave",
+			eventType: serf.EventMemberLeave,
+			members:   []serf.Member{memberWithPort},
+		},
+		{
+			name:      "member failed",
+			eventType: serf.EventMemberFailed,
+			members:   []serf.Member{memberWithPort},
+		},
+		{
+			name:      "multiple members",
+			eventType: serf.EventMemberJoin,
+			members:   []serf.Member{memberWithPort, memberWithoutPort},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			event := serf.MemberEvent{
+				Type:    tt.eventType,
+				Members: tt.members,
+			}
+
+			// This should not panic
+			manager.handleMemberEvent(event)
+		})
+	}
+}
+
+// TestRaftManager_HandleMemberJoin tests handleMemberJoin logic
+func TestRaftManager_HandleMemberJoin(t *testing.T) {
+	config := &Config{
+		BindAddr:           "0.0.0.0",
+		BindPort:           8080,
+		NodeID:             "test-node",
+		NodeName:           "test-node-name",
+		DataDir:            "/tmp/raft-test",
+		HeartbeatTimeout:   1 * time.Second,
+		ElectionTimeout:    2 * time.Second,
+		CommitTimeout:      100 * time.Millisecond,
+		LeaderLeaseTimeout: 500 * time.Millisecond,
+		LogLevel:           "INFO",
+	}
+
+	manager, err := NewRaftManager(config)
+	if err != nil {
+		t.Fatalf("NewRaftManager() failed: %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		member serf.Member
+	}{
+		{
+			name: "skip self",
+			member: serf.Member{
+				Name: config.NodeName, // Same as our node name
+				Addr: net.ParseIP("192.168.1.100"),
+				Tags: map[string]string{"raft_port": "8081"},
+			},
+		},
+		{
+			name: "member without raft_port tag",
+			member: serf.Member{
+				Name: "peer-node",
+				Addr: net.ParseIP("192.168.1.100"),
+				Tags: map[string]string{}, // No raft_port
+			},
+		},
+		{
+			name: "member with invalid raft_port",
+			member: serf.Member{
+				Name: "peer-node",
+				Addr: net.ParseIP("192.168.1.100"),
+				Tags: map[string]string{"raft_port": "not-a-number"},
+			},
+		},
+		{
+			name: "valid member",
+			member: serf.Member{
+				Name: "peer-node",
+				Addr: net.ParseIP("192.168.1.100"),
+				Tags: map[string]string{"raft_port": "8081"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// This should not panic and should handle all edge cases gracefully
+			manager.handleMemberJoin(tt.member)
+		})
+	}
+}
+
+// TestRaftManager_HandleMemberLeave tests handleMemberLeave logic
+func TestRaftManager_HandleMemberLeave(t *testing.T) {
+	config := &Config{
+		BindAddr:           "0.0.0.0",
+		BindPort:           8080,
+		NodeID:             "test-node",
+		NodeName:           "test-node-name",
+		DataDir:            "/tmp/raft-test",
+		HeartbeatTimeout:   1 * time.Second,
+		ElectionTimeout:    2 * time.Second,
+		CommitTimeout:      100 * time.Millisecond,
+		LeaderLeaseTimeout: 500 * time.Millisecond,
+		LogLevel:           "INFO",
+	}
+
+	manager, err := NewRaftManager(config)
+	if err != nil {
+		t.Fatalf("NewRaftManager() failed: %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		member serf.Member
+	}{
+		{
+			name: "skip self",
+			member: serf.Member{
+				Name: config.NodeName, // Same as our node name
+				Addr: net.ParseIP("192.168.1.100"),
+			},
+		},
+		{
+			name: "peer member",
+			member: serf.Member{
+				Name: "peer-node",
+				Addr: net.ParseIP("192.168.1.100"),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// This should not panic
+			manager.handleMemberLeave(tt.member)
+		})
+	}
 }
 
 // Mock implementations for testing

@@ -378,7 +378,7 @@ func TestConfigValidate_PortBoundaries(t *testing.T) {
 func TestTimeoutConsistency(t *testing.T) {
 	// Test that default timeouts follow Raft best practices
 	if DefaultElectionTimeout <= DefaultHeartbeatTimeout {
-		t.Errorf("DefaultElectionTimeout (%v) should be greater than DefaultHeartbeatTimeout (%v)", 
+		t.Errorf("DefaultElectionTimeout (%v) should be greater than DefaultHeartbeatTimeout (%v)",
 			DefaultElectionTimeout, DefaultHeartbeatTimeout)
 	}
 
