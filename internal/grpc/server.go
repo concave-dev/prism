@@ -47,6 +47,11 @@ func (s *Server) Start() error {
 
 	logging.Info("Starting gRPC server on %s:%d", s.config.BindAddr, s.config.BindPort)
 
+	// Configure logging level only if not already configured by CLI tools
+	if !logging.IsConfiguredByCLI() {
+		logging.SetLevel(s.config.LogLevel)
+	}
+
 	// Create network listener
 	addr := fmt.Sprintf("%s:%d", s.config.BindAddr, s.config.BindPort)
 	listener, err := net.Listen("tcp", addr)

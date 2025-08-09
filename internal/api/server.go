@@ -45,9 +45,13 @@ func (s *Server) Start() error {
 
 	// Create Gin router
 	router := gin.New()
-	// TODO: make Gin internal log level configurable via API config
-	gin.DefaultWriter = logging.NewLevelWriter("INFO", "gin")
-	gin.DefaultErrorWriter = logging.NewLevelWriter("ERROR", "gin")
+
+	// Configure Gin logging only if not already configured by CLI tools
+	if !logging.IsConfiguredByCLI() {
+		// TODO: make Gin internal log level configurable via API config
+		gin.DefaultWriter = logging.NewLevelWriter("INFO", "gin")
+		gin.DefaultErrorWriter = logging.NewLevelWriter("ERROR", "gin")
+	}
 
 	// Add middleware
 	router.Use(s.loggingMiddleware())
