@@ -30,6 +30,7 @@ type RaftManager struct {
 	snapshots   raft.SnapshotStore     // File-based snapshot storage
 	mu          sync.RWMutex           // Mutex for thread-safe operations
 	shutdown    chan struct{}          // Channel to signal shutdown
+	resolvedIP  string                 // Cached resolved IP for consistency across bootstrap and transport
 }
 
 // NewRaftManager creates a new Raft manager with the given configuration
@@ -113,20 +114,8 @@ func (m *RaftManager) Start() error {
 	if m.config.Bootstrap {
 		logging.Info("Bootstrapping new Raft cluster")
 
-		// Use the same address resolution logic as setupTransport for consistency
-		bindAddr := m.config.BindAddr
-		if bindAddr == "0.0.0.0" {
-			// Get the local IP address that can be used by other nodes
-			conn, err := net.Dial("udp", "8.8.8.8:80")
-			if err != nil {
-				// Fallback
-				bindAddr = "127.0.0.1"
-			} else {
-				localAddr := conn.LocalAddr().(*net.UDPAddr)
-				bindAddr = localAddr.IP.String()
-				conn.Close()
-			}
-		}
+		// Use centralized IP resolution to ensure consistency with transport setup
+		bindAddr := m.resolveBindAddress()
 
 		// Create initial cluster configuration with this node only
 		configuration := raft.Configuration{
@@ -193,6 +182,34 @@ func (m *RaftManager) Stop() error {
 
 	logging.Info("Raft manager stopped")
 	return nil
+}
+
+// resolveBindAddress resolves the bind address to an actual IP if it's 0.0.0.0
+// Caches the resolved IP to ensure consistency between bootstrap and transport setup
+func (m *RaftManager) resolveBindAddress() string {
+	// If we already resolved the IP, return the cached value for consistency
+	if m.resolvedIP != "" {
+		return m.resolvedIP
+	}
+
+	bindAddr := m.config.BindAddr
+	if bindAddr == "0.0.0.0" {
+		// Get the local IP address that can be used by other nodes
+		// Use UDP dial to Google DNS to let OS pick the right interface
+		conn, err := net.Dial("udp", "8.8.8.8:80")
+		if err != nil {
+			// Fallback to localhost if we can't determine external IP
+			bindAddr = "127.0.0.1"
+		} else {
+			localAddr := conn.LocalAddr().(*net.UDPAddr)
+			bindAddr = localAddr.IP.String()
+			conn.Close()
+		}
+	}
+
+	// Cache the resolved IP for consistency across all uses
+	m.resolvedIP = bindAddr
+	return bindAddr
 }
 
 // IsLeader returns true if this node is the Raft leader
@@ -416,21 +433,8 @@ func (m *RaftManager) handleMemberLeave(member serf.Member) {
 // setupTransport configures the network transport for Raft
 func (m *RaftManager) setupTransport(logWriter io.Writer) error {
 	// For Raft transport, we need an advertisable address, not 0.0.0.0
-	// If bind address is 0.0.0.0, we need to get the actual local IP
-	bindAddr := m.config.BindAddr
-	if bindAddr == "0.0.0.0" {
-		// Get the local IP address that can be used by other nodes
-		// Outsource OS to pick the right IP that connects to the internet
-		conn, err := net.Dial("udp", "8.8.8.8:80")
-		if err != nil {
-			// Fallback
-			bindAddr = "127.0.0.1"
-		} else {
-			localAddr := conn.LocalAddr().(*net.UDPAddr)
-			bindAddr = localAddr.IP.String()
-			conn.Close()
-		}
-	}
+	// Use centralized IP resolution to ensure consistency with bootstrap
+	bindAddr := m.resolveBindAddress()
 
 	// Create the advertisable address for Raft
 	raftAddr := fmt.Sprintf("%s:%d", bindAddr, m.config.BindPort)
