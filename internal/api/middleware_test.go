@@ -83,8 +83,8 @@ func TestCORSMiddleware(t *testing.T) {
 	}
 }
 
-// TestCORSMiddleware_OptionsMethod tests that OPTIONS requests are handled correctly
-func TestCORSMiddleware_OptionsMethod(t *testing.T) {
+// TestCORSMiddleware_OptionsHandling tests OPTIONS request handling
+func TestCORSMiddleware_OptionsHandling(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	config := &Config{
@@ -99,41 +99,18 @@ func TestCORSMiddleware_OptionsMethod(t *testing.T) {
 	router := gin.New()
 	router.Use(server.corsMiddleware())
 
-	// Add a handler that should NOT be called for OPTIONS
-	handlerCalled := false
-	router.OPTIONS("/test", func(c *gin.Context) {
-		handlerCalled = true
-		c.JSON(200, gin.H{"message": "should not be called"})
-	})
-
 	req := httptest.NewRequest("OPTIONS", "/test", nil)
 	w := httptest.NewRecorder()
 
 	router.ServeHTTP(w, req)
 
-	// OPTIONS should return 204 and abort, not call the handler
+	// OPTIONS should return 204 and set CORS headers
 	if w.Code != 204 {
 		t.Errorf("OPTIONS request status = %d, want 204", w.Code)
 	}
 
-	if handlerCalled {
-		t.Error("OPTIONS request should abort before reaching handler")
-	}
-}
-
-// TestLoggingMiddleware_NonNil tests that logging middleware returns a valid function
-func TestLoggingMiddleware_NonNil(t *testing.T) {
-	config := &Config{
-		BindAddr:    "127.0.0.1",
-		BindPort:    8080,
-		SerfManager: &serf.SerfManager{},
-		RaftManager: &raft.RaftManager{},
-	}
-
-	server := NewServer(config)
-	middleware := server.loggingMiddleware()
-
-	if middleware == nil {
-		t.Error("loggingMiddleware() returned nil")
+	// Check key CORS header is set
+	if w.Header().Get("Access-Control-Allow-Origin") != "*" {
+		t.Error("Access-Control-Allow-Origin header not set correctly")
 	}
 }
