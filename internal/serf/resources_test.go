@@ -45,13 +45,7 @@ func TestSerfManager_GatherResources(t *testing.T) {
 		t.Errorf("GatherResources().MemoryTotal = %d, should be positive", resources.MemoryTotal)
 	}
 
-	if resources.MemoryUsed < 0 {
-		t.Errorf("GatherResources().MemoryUsed = %d, should be non-negative", resources.MemoryUsed)
-	}
-
-	if resources.MemoryAvailable < 0 {
-		t.Errorf("GatherResources().MemoryAvailable = %d, should be non-negative", resources.MemoryAvailable)
-	}
+	// MemoryUsed and MemoryAvailable are uint64, so they're always non-negative
 
 	// Validate memory calculations
 	expectedTotal := resources.MemoryUsed + resources.MemoryAvailable
@@ -71,9 +65,7 @@ func TestSerfManager_GatherResources(t *testing.T) {
 		t.Errorf("GatherResources().GoRoutines = %d, should be positive", resources.GoRoutines)
 	}
 
-	if resources.GoMemAlloc < 0 {
-		t.Errorf("GatherResources().GoMemAlloc = %d, should be non-negative", resources.GoMemAlloc)
-	}
+	// GoMemAlloc is uint64, so it's always non-negative
 
 	// Validate capacity fields
 	if resources.MaxJobs < 0 {
