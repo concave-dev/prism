@@ -20,7 +20,15 @@ Meanwhile, [the real bottleneck in software development](https://ordep.dev/posts
 
 The goal is simple: **compress the time from idea to deployed, observable, trustworthy agent from weeks to minutes**. In a rapidly evolving field, survival depends on adaptation speed.
 
-## Design Philosophy
+This aligns with [Concave's mission](https://concave.dev/) to build unified infrastructure for the emerging "Internet of Agents"—where current infrastructure designed for predictable workflows fails to support autonomous agents that need native primitives, security, and observability.
+
+## Technical Design Philosophy
+
+**Space-Time Fabric Architecture:** Prism operates as a distributed space-time fabric where agents, tools, and workflows exist as first-class entities that can be deployed, scheduled, and coordinated across the cluster. The fabric provides the foundational layer for all agentic operations while maintaining modularity.
+
+**Modular Infrastructure Services:** Core services like memory (RAG), observability, secrets, and configuration are designed as pluggable modules that attach to the fabric. This allows incremental adoption and customization while maintaining system coherence.
+
+**Dual-Layer Design (CAP Theorem):**
 
 **Control Plane (CP):** Prioritizes Consistency + Partition tolerance. Raft consensus ensures no split-brain decisions but sacrifices availability during network partitions.
 
