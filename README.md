@@ -5,6 +5,21 @@
 
 Distributed runtime platform for AI agents and workflows.
 
+## Philosophy: Accelerating AI Development Cycles
+
+The AI agent landscape is evolving rapidly, but current tooling creates slow feedback loops that hinder adaptation. As noted in [Adapt Fast In The AI Era](https://matmul.net/$/adapt-fast.html), the ecosystem is fragmented with countless frameworks, each requiring different deployment strategies and lacking standardized inter-agent communication.
+
+Meanwhile, [the real bottleneck in software development](https://ordep.dev/posts/writing-code-was-never-the-bottleneck) isn't writing code—it's understanding, testing, and trusting it. LLMs can generate code faster than ever, but the human overhead of coordination, review, and integration remains.
+
+**Prism addresses both problems:**
+
+- **Unified Runtime**: Deploy agents written in any language/framework through standardized primitives
+- **Fast Iteration**: Sandboxed execution with instant feedback eliminates deployment friction  
+- **Built-in Observability**: Understanding and trusting agent behavior through comprehensive monitoring
+- **Agent Mesh**: Standardized inter-agent communication reduces integration complexity
+
+The goal is simple: **compress the time from idea to deployed, observable, trustworthy agent from weeks to minutes**. In a rapidly evolving field, survival depends on adaptation speed.
+
 ## Design Philosophy
 
 **Control Plane (CP):** Prioritizes Consistency + Partition tolerance. Raft consensus ensures no split-brain decisions but sacrifices availability during network partitions.
