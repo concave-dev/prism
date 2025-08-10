@@ -624,6 +624,8 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 
 	// Create and start Raft manager immediately after port discovery
 	raftConfig := buildRaftConfig()
+	// Use the Serf node_id as Raft ServerID for consistency
+	raftConfig.NodeID = manager.NodeID
 	raftManager, err = raft.NewRaftManager(raftConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create raft manager: %w", err)
