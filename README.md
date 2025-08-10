@@ -105,14 +105,17 @@ Use the CLI:
 - [ ] Global Configuration (dynamic cluster-wide configuration management)
 - [ ] Authentication & Authorization (fine-grained access control)
 
-**Foundation (In Progress):**
-- [ ] gRPC Server (inter-node communication layer - foundation in place)
-- [ ] Enhanced Raft Usage (expanding beyond membership to workload state)
-- [ ] Security Layer (TLS, authentication, authorization - TODO items present)
-
 ## Known Issues
 
+- **Raft peer lifecycle vs Serf membership:** Peers are added/removed by the Raft leader in response to Serf events. If this node is not the leader or events are dropped, stale peers can remain after a node leaves/fails until the leader reconciles.
+- **Serf-based resource queries:** Cluster resource aggregation currently uses Serf `get-resources` distributed queries. Latency grows with cluster size and responses can be partial under timeouts; this is not a strongly consistent snapshot.
+- **Resource aggregation delays on failures:** Aggregation counts all known members; failed nodes are included until reaped, so calls may wait for timeout before returning.
+- **Security (no TLS/Auth):** HTTP API and gRPC are plaintext with no authentication/authorization; Serf gossip is unencrypted (no keyring configured).
+- **Metrics completeness:** CPU usage, load averages, and job accounting are placeholders; reported metrics are not yet suitable for scheduling decisions.
+- **Event backpressure risk:** External event forwarding can drop events when `ConsumerEventCh` is saturated, which may delay Raft peer reconciliation on non-leader nodes.
+- **Serf reap delay:** Reaping of dead members is time-based. Large `DeadNodeReclaimTime` can delay full cleanup and UI/CLI visibility.
+- **gRPC services TBD:** gRPC server runs but no services are registered yet; future resource APIs will move here.
+- **Tag drift risk:** Raft/gRPC peer discovery relies on Serf tags (`raft_port`, `grpc_port`). Misconfigured/missing tags prevent peer wiring and may require manual correction.
+- **Data at rest:** Raft logs/snapshots and local state are stored unencrypted by default in `./data`.
 - **Split Brain Risk:** Network partitions can cause Raft leadership conflicts. Use odd-numbered clusters (3+) for proper quorum.
 - **Network Connectivity:** Nodes behind NAT or firewalls may fail to join. Ensure gossip ports are accessible between all nodes.
-- **Resource Query Timeouts:** Resource collection via Serf queries may timeout in slow networks or large clusters (>50 nodes).
-- **Limited Production Readiness:** Missing TLS, auth, and robust error recovery needed for production use.
