@@ -157,7 +157,7 @@ func (s *Server) handleNodeByID(c *gin.Context) {
 
 // getHandlerNodeByID is a node by ID endpoint handler factory
 func (s *Server) getHandlerNodeByID() gin.HandlerFunc {
-	return handlers.HandleNodeByID(s.serfManager)
+	return handlers.HandleNodeByID(s.serfManager, s.raftManager)
 }
 
 // handleClusterResources delegates to handlers.HandleClusterResources

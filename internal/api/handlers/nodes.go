@@ -16,7 +16,7 @@ func HandleNodes(serfManager *serf.SerfManager, raftManager *raft.RaftManager) g
 }
 
 // HandleNodeByID returns a specific node by ID
-func HandleNodeByID(serfManager *serf.SerfManager) gin.HandlerFunc {
+func HandleNodeByID(serfManager *serf.SerfManager, raftManager *raft.RaftManager) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		nodeID := c.Param("id")
 
@@ -32,13 +32,43 @@ func HandleNodeByID(serfManager *serf.SerfManager) gin.HandlerFunc {
 			return
 		}
 
+		// Get Raft peer information for connection status
+		var raftPeers []string
+		var raftLeader string
+		if raftManager != nil {
+			var err error
+			raftPeers, err = raftManager.GetPeers()
+			if err != nil {
+				// If we can't get Raft peers, log but continue (show all as disconnected)
+				raftPeers = []string{}
+			}
+
+			// Get Raft leader
+			raftLeader = raftManager.Leader()
+		} else {
+			// Raft manager is nil (not running), show all as disconnected
+			raftPeers = []string{}
+		}
+
+		// Determine Serf status using consistent string values (alive/failed/dead)
+		serfStatus := mapSerfStatus(member.Status.String())
+
+		// Determine Raft status using new three-state system
+		raftStatus := string(getRaftPeerStatus(member, raftPeers))
+
+		// Determine if this member is the current Raft leader
+		isLeader := (raftLeader != "" && (raftLeader == member.ID || raftLeader == member.Name))
+
 		apiMember := ClusterMember{
-			ID:       member.ID,
-			Name:     member.Name,
-			Address:  fmt.Sprintf("%s:%d", member.Addr.String(), member.Port),
-			Status:   member.Status.String(),
-			Tags:     member.Tags,
-			LastSeen: member.LastSeen,
+			ID:         member.ID,
+			Name:       member.Name,
+			Address:    fmt.Sprintf("%s:%d", member.Addr.String(), member.Port),
+			Status:     member.Status.String(),
+			Tags:       member.Tags,
+			LastSeen:   member.LastSeen,
+			SerfStatus: serfStatus,
+			RaftStatus: raftStatus,
+			IsLeader:   isLeader,
 		}
 
 		c.JSON(http.StatusOK, gin.H{

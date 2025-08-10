@@ -302,6 +302,7 @@ type ClusterMember struct {
 	// Connection status using consistent string values matching Serf pattern
 	SerfStatus string `json:"serfStatus"` // alive, failed, left
 	RaftStatus string `json:"raftStatus"` // alive, failed, left
+	IsLeader   bool   `json:"isLeader"`   // true if this node is the current Raft leader
 }
 
 type ClusterStatus struct {
@@ -464,6 +465,7 @@ func (api *PrismAPIClient) GetMembers() ([]ClusterMember, error) {
 					LastSeen:   getTime(memberMap, "lastSeen"),
 					SerfStatus: getString(memberMap, "serfStatus"),
 					RaftStatus: getString(memberMap, "raftStatus"),
+					IsLeader:   getBool(memberMap, "isLeader"),
 				}
 				members = append(members, member)
 			}
@@ -515,6 +517,7 @@ func (api *PrismAPIClient) GetClusterInfo() (*ClusterInfo, error) {
 						LastSeen:   getTime(memberMap, "lastSeen"),
 						SerfStatus: getString(memberMap, "serfStatus"),
 						RaftStatus: getString(memberMap, "raftStatus"),
+						IsLeader:   getBool(memberMap, "isLeader"),
 					}
 					members = append(members, member)
 				}
@@ -801,6 +804,14 @@ func getUint32(m map[string]interface{}, key string) uint32 {
 	return 0
 }
 
+// getBool safely extracts a bool value from interface{} maps
+func getBool(m map[string]interface{}, key string) bool {
+	if val, ok := m[key].(bool); ok {
+		return val
+	}
+	return false
+}
+
 // setupLogging sets up logging based on verbose flag and log level
 func setupLogging() {
 	if config.Verbose {
@@ -1002,12 +1013,27 @@ func handleNodeInfo(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	displayNodeResourceFromAPI(*resource)
+	// Get cluster members to determine if this node is the Raft leader
+	members, err := apiClient.GetMembers()
+	if err != nil {
+		return err
+	}
+
+	// Find this node in the members list to get leader status
+	var isLeader bool
+	for _, member := range members {
+		if member.ID == resource.NodeID || member.Name == resource.NodeName {
+			isLeader = member.IsLeader
+			break
+		}
+	}
+
+	displayNodeResourceFromAPI(*resource, isLeader)
 	logging.Success("Successfully retrieved information for node '%s'", resource.NodeName)
 	return nil
 }
 
-// displayMembersFromAPI displays cluster nodes from API response
+// displayMembersFromAPI displays cluster nodes from API response, annotating the Raft leader
 func displayMembersFromAPI(members []ClusterMember) {
 	if len(members) == 0 {
 		if config.Output == "json" {
@@ -1038,7 +1064,7 @@ func displayMembersFromAPI(members []ClusterMember) {
 
 		// Header - show SERF and RAFT columns only in verbose mode
 		if config.Verbose {
-			fmt.Fprintln(w, "ID\tNAME\tADDRESS\tSTATUS\tSERF\tRAFT\tLAST SEEN")
+			fmt.Fprintln(w, "ID\tNAME\tADDRESS\tSTATUS\tSERF\tRAFT\tLAST SEEN\tLEADER")
 		} else {
 			fmt.Fprintln(w, "ID\tNAME\tADDRESS\tSTATUS\tLAST SEEN")
 		}
@@ -1046,6 +1072,12 @@ func displayMembersFromAPI(members []ClusterMember) {
 		// Display each member
 		for _, member := range members {
 			lastSeen := formatDuration(time.Since(member.LastSeen))
+			name := member.Name
+			leader := "false"
+			if member.IsLeader {
+				name = name + "*"
+				leader = "true"
+			}
 
 			if config.Verbose {
 				// Use the new three-state status values directly
@@ -1066,12 +1098,12 @@ func displayMembersFromAPI(members []ClusterMember) {
 					serfDisplay = "dead"
 				}
 
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-					member.ID, member.Name, member.Address, member.Status,
-					serfDisplay, raftStatus, lastSeen)
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+					member.ID, name, member.Address, member.Status,
+					serfDisplay, raftStatus, lastSeen, leader)
 			} else {
 				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-					member.ID, member.Name, member.Address, member.Status, lastSeen)
+					member.ID, name, member.Address, member.Status, lastSeen)
 			}
 		}
 	}
@@ -1191,7 +1223,9 @@ func displayClusterResourcesFromAPI(resources []NodeResources) {
 }
 
 // displayNodeResourceFromAPI displays detailed information for a single node
-func displayNodeResourceFromAPI(resource NodeResources) {
+// displayNodeResourceFromAPI displays detailed information for a single node
+// isLeader indicates whether this node is the current Raft leader
+func displayNodeResourceFromAPI(resource NodeResources, isLeader bool) {
 	if config.Output == "json" {
 		// JSON output
 		encoder := json.NewEncoder(os.Stdout)
@@ -1202,7 +1236,12 @@ func displayNodeResourceFromAPI(resource NodeResources) {
 		}
 	} else {
 		// Table output
-		fmt.Printf("Node: %s (%s)\n", resource.NodeName, resource.NodeID)
+		name := resource.NodeName
+		if isLeader {
+			name = name + "*"
+		}
+		fmt.Printf("Node: %s (%s)\n", name, resource.NodeID)
+		fmt.Printf("Leader: %t\n", isLeader)
 		fmt.Printf("Timestamp: %s\n", resource.Timestamp.Format(time.RFC3339))
 		fmt.Println()
 

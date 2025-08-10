@@ -40,6 +40,7 @@ type ClusterMember struct {
 	// Connection status using consistent string values matching Serf pattern
 	SerfStatus string `json:"serfStatus"` // alive, failed, dead
 	RaftStatus string `json:"raftStatus"` // alive, failed, dead
+	IsLeader   bool   `json:"isLeader"`   // true if this node is the current Raft leader
 }
 
 // Represents cluster status in API responses
@@ -80,6 +81,7 @@ func HandleMembers(serfManager *serf.SerfManager, raftManager *raft.RaftManager)
 
 		// Get Raft peer information for connection status
 		var raftPeers []string
+		var raftLeader string
 		if raftManager != nil {
 			var err error
 			raftPeers, err = raftManager.GetPeers()
@@ -88,6 +90,8 @@ func HandleMembers(serfManager *serf.SerfManager, raftManager *raft.RaftManager)
 				raftPeers = []string{}
 			}
 
+			// Get Raft leader
+			raftLeader = raftManager.Leader()
 		} else {
 			// Raft manager is nil (not running), show all as disconnected
 			raftPeers = []string{}
@@ -102,6 +106,9 @@ func HandleMembers(serfManager *serf.SerfManager, raftManager *raft.RaftManager)
 			// Determine Raft status using new three-state system
 			raftStatus := string(getRaftPeerStatus(member, raftPeers))
 
+			// Determine if this member is the current Raft leader
+			isLeader := (raftLeader != "" && (raftLeader == member.ID || raftLeader == member.Name))
+
 			apiMember := ClusterMember{
 				ID:         member.ID,
 				Name:       member.Name,
@@ -111,6 +118,7 @@ func HandleMembers(serfManager *serf.SerfManager, raftManager *raft.RaftManager)
 				LastSeen:   member.LastSeen,
 				SerfStatus: serfStatus,
 				RaftStatus: raftStatus,
+				IsLeader:   isLeader,
 			}
 			apiMembers = append(apiMembers, apiMember)
 		}
@@ -162,6 +170,9 @@ func HandleClusterInfo(serfManager *serf.SerfManager, raftManager *raft.RaftMana
 			// Determine Raft status using new three-state system
 			raftStatus := string(getRaftPeerStatus(member, raftPeers))
 
+			// Determine if this member is the current Raft leader
+			isLeader := (raftLeader != "" && (raftLeader == member.ID || raftLeader == member.Name))
+
 			apiMember := ClusterMember{
 				ID:         member.ID,
 				Name:       member.Name,
@@ -171,6 +182,7 @@ func HandleClusterInfo(serfManager *serf.SerfManager, raftManager *raft.RaftMana
 				LastSeen:   member.LastSeen,
 				SerfStatus: serfStatus,
 				RaftStatus: raftStatus,
+				IsLeader:   isLeader,
 			}
 			apiMembers = append(apiMembers, apiMember)
 
