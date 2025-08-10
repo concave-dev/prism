@@ -181,3 +181,14 @@ func (s *Server) handleNodeResources(c *gin.Context) {
 func (s *Server) getHandlerNodeResources() gin.HandlerFunc {
 	return handlers.HandleNodeResources(s.serfManager)
 }
+
+// handleRaftPeers delegates to handlers.HandleRaftPeers
+func (s *Server) handleRaftPeers(c *gin.Context) {
+	handler := s.getHandlerRaftPeers()
+	handler(c)
+}
+
+// getHandlerRaftPeers is a raft peers endpoint handler factory
+func (s *Server) getHandlerRaftPeers() gin.HandlerFunc {
+	return handlers.HandleRaftPeers(s.serfManager, s.raftManager)
+}

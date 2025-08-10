@@ -82,6 +82,30 @@ AI-generated code in sandboxes, manage workflows, and inspect cluster state.`,
   prismctl --verbose node ls`,
 }
 
+// Peer command group
+var peerCmd = &cobra.Command{
+	Use:   "peer",
+	Short: "Inspect and manage Raft consensus peers",
+	Long:  "Commands for managing and inspecting Raft consensus peers in the cluster.",
+}
+
+// Peer list command
+var peerLsCmd = &cobra.Command{
+	Use:   "ls",
+	Short: "List Raft peers and connectivity",
+	Long:  "Show Raft peers from the consensus configuration and whether they are reachable.",
+	RunE:  handlePeerList,
+}
+
+// Peer info command
+var peerInfoCmd = &cobra.Command{
+	Use:   "info <peer-id>",
+	Short: "Show detailed information for a specific Raft peer",
+	Long:  "Display detailed information for a specific Raft peer by ID.",
+	Args:  cobra.ExactArgs(1),
+	RunE:  handlePeerInfo,
+}
+
 // Node command (parent command for node operations)
 var nodeCmd = &cobra.Command{
 	Use:   "node",
@@ -236,6 +260,11 @@ func init() {
 	// Add subcommands to root
 	rootCmd.AddCommand(infoCmd)
 	rootCmd.AddCommand(nodeCmd)
+
+	// Peer
+	peerCmd.AddCommand(peerLsCmd)
+	peerCmd.AddCommand(peerInfoCmd)
+	rootCmd.AddCommand(peerCmd)
 }
 
 // validateGlobalFlags validates all global flags before running any command
@@ -318,6 +347,19 @@ type ClusterInfo struct {
 	StartTime  time.Time       `json:"startTime"`
 	RaftLeader string          `json:"raftLeader,omitempty"`
 	ClusterID  string          `json:"clusterId,omitempty"`
+}
+
+// API type for raft peers response
+type RaftPeersResponse struct {
+	Leader string     `json:"leader"`
+	Peers  []RaftPeer `json:"peers"`
+}
+
+type RaftPeer struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Address   string `json:"address"`
+	Reachable bool   `json:"reachable"`
 }
 
 type NodeResources struct {
@@ -543,6 +585,47 @@ func (api *PrismAPIClient) GetClusterInfo() (*ClusterInfo, error) {
 	}
 
 	return nil, fmt.Errorf("unexpected response format for cluster info")
+}
+
+// GetRaftPeers fetches current raft peers with connectivity
+func (api *PrismAPIClient) GetRaftPeers() (*RaftPeersResponse, error) {
+	var response APIResponse
+
+	resp, err := api.client.R().
+		SetResult(&response).
+		Get("/cluster/raft/peers")
+
+	if err != nil {
+		logging.Error("Failed to connect to API server: %v", err)
+		logging.Error("Make sure a Prism daemon with API server is running at %s", api.baseURL)
+		return nil, fmt.Errorf("connection failed")
+	}
+
+	if resp.StatusCode() != 200 {
+		logging.Error("API request failed with status %d: %s", resp.StatusCode(), resp.String())
+		return nil, fmt.Errorf("API request failed")
+	}
+
+	if data, ok := response.Data.(map[string]interface{}); ok {
+		res := &RaftPeersResponse{
+			Leader: getString(data, "leader"),
+		}
+		if peers, ok := data["peers"].([]interface{}); ok {
+			for _, p := range peers {
+				if pm, ok := p.(map[string]interface{}); ok {
+					res.Peers = append(res.Peers, RaftPeer{
+						ID:        getString(pm, "id"),
+						Name:      getString(pm, "name"),
+						Address:   getString(pm, "address"),
+						Reachable: getBool(pm, "reachable"),
+					})
+				}
+			}
+		}
+		return res, nil
+	}
+
+	return nil, fmt.Errorf("unexpected response format for raft peers")
 }
 
 // GetClusterResources fetches cluster resources from the API
@@ -911,6 +994,107 @@ func runWithWatch(fn func() error) error {
 			return nil
 		}
 	}
+}
+
+// handlePeerList handles peer ls command
+func handlePeerList(cmd *cobra.Command, args []string) error {
+	setupLogging()
+
+	apiClient := createAPIClient()
+	resp, err := apiClient.GetRaftPeers()
+	if err != nil {
+		return err
+	}
+
+	if config.Output == "json" {
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(resp)
+	}
+
+	// table output
+	if len(resp.Peers) == 0 {
+		fmt.Println("No Raft peers found")
+		return nil
+	}
+
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	defer w.Flush()
+
+	// Header - show NAME and LEADER columns only in verbose mode
+	if config.Verbose {
+		fmt.Fprintln(w, "ID\tNAME\tADDRESS\tREACHABLE\tLEADER")
+	} else {
+		fmt.Fprintln(w, "ID\tADDRESS\tREACHABLE")
+	}
+
+	for _, p := range resp.Peers {
+		name := p.Name
+		leader := "false"
+		if resp.Leader == p.ID {
+			name = p.Name + "*"
+			leader = "true"
+		}
+
+		if config.Verbose {
+			fmt.Fprintf(w, "%s\t%s\t%s\t%t\t%s\n", p.ID, name, p.Address, p.Reachable, leader)
+		} else {
+			fmt.Fprintf(w, "%s\t%s\t%t\n", p.ID, p.Address, p.Reachable)
+		}
+	}
+	return nil
+}
+
+// handlePeerInfo handles peer info command
+func handlePeerInfo(cmd *cobra.Command, args []string) error {
+	setupLogging()
+
+	peerID := args[0]
+	apiClient := createAPIClient()
+	resp, err := apiClient.GetRaftPeers()
+	if err != nil {
+		return err
+	}
+
+	// Find the specific peer
+	var targetPeer *RaftPeer
+	for _, p := range resp.Peers {
+		if p.ID == peerID || strings.HasPrefix(p.ID, peerID) {
+			targetPeer = &p
+			break
+		}
+	}
+
+	if targetPeer == nil {
+		return fmt.Errorf("peer '%s' not found in Raft configuration", peerID)
+	}
+
+	if config.Output == "json" {
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(targetPeer)
+	}
+
+	// table output
+	isLeader := resp.Leader == targetPeer.ID
+	peerName := targetPeer.Name
+	if isLeader {
+		peerName = targetPeer.Name + "*"
+	}
+
+	fmt.Printf("Peer: %s (%s)\n", peerName, targetPeer.ID)
+	fmt.Printf("Address: %s\n", targetPeer.Address)
+	fmt.Printf("Reachable: %t\n", targetPeer.Reachable)
+	fmt.Printf("Leader: %t\n", isLeader)
+	if isLeader {
+		fmt.Printf("Status: Current Raft leader\n")
+	} else if targetPeer.Reachable {
+		fmt.Printf("Status: Follower (reachable)\n")
+	} else {
+		fmt.Printf("Status: Follower (unreachable)\n")
+	}
+
+	return nil
 }
 
 // handleMembers handles the node ls subcommand

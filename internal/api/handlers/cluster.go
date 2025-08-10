@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/concave-dev/prism/internal/raft"
@@ -58,6 +59,81 @@ type ClusterInfo struct {
 	StartTime  time.Time       `json:"startTime"`
 	RaftLeader string          `json:"raftLeader,omitempty"`
 	ClusterID  string          `json:"clusterId,omitempty"`
+}
+
+// RaftPeer represents a peer as known by Raft configuration
+// TODO: Enrich with role (voter/non-voter) when we add non-voting members
+type RaftPeer struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"` // Human-readable name from Serf
+	Address   string `json:"address"`
+	Reachable bool   `json:"reachable"`
+}
+
+// HandleRaftPeers returns the Raft peer configuration and basic reachability
+// This allows operators to see configured peers even when Serf membership differs
+// TODO: Add endpoint to force-remove dead peers with proper auth/guardrails
+func HandleRaftPeers(serfManager *serf.SerfManager, raftManager *raft.RaftManager) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if raftManager == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"status":  "error",
+				"message": "Raft manager not available",
+			})
+			return
+		}
+
+		// Get configured peers from Raft
+		peers, err := raftManager.GetPeers()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"status":  "error",
+				"message": fmt.Sprintf("failed to get raft peers: %v", err),
+			})
+			return
+		}
+
+		// Get Serf members to resolve names
+		var serfMembers map[string]*serf.PrismNode
+		if serfManager != nil {
+			serfMembers = serfManager.GetMembers()
+		}
+
+		// Build response with reachability checks and names
+		result := make([]RaftPeer, 0, len(peers))
+		for _, p := range peers {
+			// Format is "ID@host:port"
+			parts := strings.SplitN(p, "@", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			id := parts[0]
+			addr := parts[1]
+
+			// Find human-readable name from Serf
+			var name string
+			if serfMembers != nil {
+				if member, exists := serfMembers[id]; exists {
+					name = member.Name
+				}
+			}
+			// Show "unknown" if no name found
+			if name == "" {
+				name = "unknown"
+			}
+
+			reachable := isTCPReachable(addr)
+			result = append(result, RaftPeer{ID: id, Name: name, Address: addr, Reachable: reachable})
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"status": "success",
+			"data": gin.H{
+				"leader": raftManager.Leader(),
+				"peers":  result,
+			},
+		})
+	}
 }
 
 // mapSerfStatus normalizes Serf member status for display consistency
@@ -253,8 +329,8 @@ func getRaftPeerStatus(member *serf.PrismNode, raftPeers []string) RaftStatus {
 	}
 
 	// Build expected Raft address for this member
-	// Note: Raft peers are stored as "nodeID@address:port" where nodeID = nodeName
-	expectedRaftAddr := fmt.Sprintf("%s@%s:%d", member.Name, member.Addr.String(), raftPort)
+	// Note: Raft peers are stored as "nodeID@address:port" where nodeID = node_id
+	expectedRaftAddr := fmt.Sprintf("%s@%s:%d", member.ID, member.Addr.String(), raftPort)
 
 	// Check if this address is in the Raft peers list
 	isInConfig := false
@@ -290,5 +366,15 @@ func isRaftNodeReachable(address string, port int) bool {
 
 	// If we can connect, the node is reachable
 	// TODO: Consider implementing Raft-specific health check protocol
+	return true
+}
+
+// isTCPReachable checks reachability to an address in host:port form
+func isTCPReachable(address string) bool {
+	conn, err := net.DialTimeout("tcp", address, 2*time.Second)
+	if err != nil {
+		return false
+	}
+	_ = conn.Close()
 	return true
 }
