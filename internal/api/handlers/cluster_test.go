@@ -80,7 +80,7 @@ func TestGetRaftPeerStatus(t *testing.T) {
 			name:   "member in raft peers but unreachable",
 			member: member,
 			raftPeers: []string{
-				"test-node@192.168.1.100:8081",
+				"test-node-id@192.168.1.100:8081",
 				"other-node@192.168.1.200:8081",
 			},
 			expected: RaftFailed, // Will be failed because we can't actually connect
