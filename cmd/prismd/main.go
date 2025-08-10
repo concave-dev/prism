@@ -35,6 +35,19 @@ const (
 
 )
 
+// displayLogo prints the Prism ASCII logo with version information
+func displayLogo() {
+	fmt.Println(`██████╗ ██████╗ ██╗███████╗███╗   ███╗
+██╔══██╗██╔══██╗██║██╔════╝████╗ ████║
+██████╔╝██████╔╝██║███████╗██╔████╔██║
+██╔═══╝ ██╔══██╗██║╚════██║██║╚██╔╝██║
+██║     ██║  ██║██║███████║██║ ╚═╝ ██║
+╚═╝     ╚═╝  ╚═╝╚═╝╚══════╝╚═╝     ╚═╝`)
+	fmt.Printf("\nPrism v%s - Distributed AI Agent Runtime\n", Version)
+	fmt.Println("Kubernetes for AI agents, MCP tools and workflows")
+	fmt.Println()
+}
+
 // isAddressInUseError checks if an error is "address already in use" using proper error types
 func isAddressInUseError(err error) bool {
 	var opErr *net.OpError
@@ -98,6 +111,10 @@ serverless functions, native memory, workflows, and other AI-first primitives.`,
 
 	  # Join with multiple addresses for fault tolerance
 	  prismd --serf=0.0.0.0:4202 --join=node1:4200,node2:4200,node3:4200`,
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		// Display logo first, before any validation or logging
+		displayLogo()
+	},
 	PreRunE: validateConfig,
 	RunE:    runDaemon,
 }
@@ -419,9 +436,6 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to bind Serf (TCP) to %s: %w", testAddr, tcpErr)
 		}
 		tcpListener.Close()
-	} else {
-		// Using defaults - find available port just before starting Serf to minimize race window
-		logging.Info("Finding available Serf port starting from %d", config.SerfPort)
 	}
 
 	// Handle Raft address binding first (before creating Serf tags)
@@ -446,7 +460,6 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	} else {
 		// Using defaults - use serf IP + find port just before starting Raft
 		config.RaftAddr = config.SerfAddr
-		logging.Info("Finding available Raft port starting from %d", config.RaftPort)
 	}
 
 	// Handle gRPC address binding (before creating Serf tags)
@@ -470,7 +483,6 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	} else {
 		// Using defaults - use serf IP + find port just before starting gRPC
 		config.GRPCAddr = config.SerfAddr
-		logging.Info("Finding available gRPC port starting from %d", config.GRPCPort)
 	}
 
 	// Handle API address binding (before creating Serf tags)
@@ -493,7 +505,6 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		conn.Close()
 	} else {
 		// Using defaults - keep default loopback address, find port just before starting API
-		logging.Info("Finding available API port starting from %d", config.APIPort)
 	}
 
 	// ============================================================================
