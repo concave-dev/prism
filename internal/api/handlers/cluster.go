@@ -65,6 +65,7 @@ type ClusterInfo struct {
 // TODO: Enrich with role (voter/non-voter) when we add non-voting members
 type RaftPeer struct {
 	ID        string `json:"id"`
+	Name      string `json:"name"` // Human-readable name from Serf
 	Address   string `json:"address"`
 	Reachable bool   `json:"reachable"`
 }
@@ -72,7 +73,7 @@ type RaftPeer struct {
 // HandleRaftPeers returns the Raft peer configuration and basic reachability
 // This allows operators to see configured peers even when Serf membership differs
 // TODO: Add endpoint to force-remove dead peers with proper auth/guardrails
-func HandleRaftPeers(raftManager *raft.RaftManager) gin.HandlerFunc {
+func HandleRaftPeers(serfManager *serf.SerfManager, raftManager *raft.RaftManager) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if raftManager == nil {
 			c.JSON(http.StatusServiceUnavailable, gin.H{
@@ -92,7 +93,13 @@ func HandleRaftPeers(raftManager *raft.RaftManager) gin.HandlerFunc {
 			return
 		}
 
-		// Build response with reachability checks
+		// Get Serf members to resolve names
+		var serfMembers map[string]*serf.PrismNode
+		if serfManager != nil {
+			serfMembers = serfManager.GetMembers()
+		}
+
+		// Build response with reachability checks and names
 		result := make([]RaftPeer, 0, len(peers))
 		for _, p := range peers {
 			// Format is "ID@host:port"
@@ -103,8 +110,20 @@ func HandleRaftPeers(raftManager *raft.RaftManager) gin.HandlerFunc {
 			id := parts[0]
 			addr := parts[1]
 
+			// Find human-readable name from Serf
+			var name string
+			if serfMembers != nil {
+				if member, exists := serfMembers[id]; exists {
+					name = member.Name
+				}
+			}
+			// Show "unknown" if no name found
+			if name == "" {
+				name = "unknown"
+			}
+
 			reachable := isTCPReachable(addr)
-			result = append(result, RaftPeer{ID: id, Address: addr, Reachable: reachable})
+			result = append(result, RaftPeer{ID: id, Name: name, Address: addr, Reachable: reachable})
 		}
 
 		c.JSON(http.StatusOK, gin.H{

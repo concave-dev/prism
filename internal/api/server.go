@@ -190,5 +190,5 @@ func (s *Server) handleRaftPeers(c *gin.Context) {
 
 // getHandlerRaftPeers is a raft peers endpoint handler factory
 func (s *Server) getHandlerRaftPeers() gin.HandlerFunc {
-	return handlers.HandleRaftPeers(s.raftManager)
+	return handlers.HandleRaftPeers(s.serfManager, s.raftManager)
 }

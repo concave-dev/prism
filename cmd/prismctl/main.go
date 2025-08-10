@@ -357,6 +357,7 @@ type RaftPeersResponse struct {
 
 type RaftPeer struct {
 	ID        string `json:"id"`
+	Name      string `json:"name"`
 	Address   string `json:"address"`
 	Reachable bool   `json:"reachable"`
 }
@@ -614,6 +615,7 @@ func (api *PrismAPIClient) GetRaftPeers() (*RaftPeersResponse, error) {
 				if pm, ok := p.(map[string]interface{}); ok {
 					res.Peers = append(res.Peers, RaftPeer{
 						ID:        getString(pm, "id"),
+						Name:      getString(pm, "name"),
 						Address:   getString(pm, "address"),
 						Reachable: getBool(pm, "reachable"),
 					})
@@ -1019,25 +1021,25 @@ func handlePeerList(cmd *cobra.Command, args []string) error {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	defer w.Flush()
 
-	// Header - show LEADER column only in verbose mode
+	// Header - show NAME and LEADER columns only in verbose mode
 	if config.Verbose {
 		fmt.Fprintln(w, "ID\tNAME\tADDRESS\tREACHABLE\tLEADER")
 	} else {
-		fmt.Fprintln(w, "ID\tNAME\tADDRESS\tREACHABLE")
+		fmt.Fprintln(w, "ID\tADDRESS\tREACHABLE")
 	}
 
 	for _, p := range resp.Peers {
-		name := p.ID
+		name := p.Name
 		leader := "false"
 		if resp.Leader == p.ID {
-			name = p.ID + "*"
+			name = p.Name + "*"
 			leader = "true"
 		}
 
 		if config.Verbose {
 			fmt.Fprintf(w, "%s\t%s\t%s\t%t\t%s\n", p.ID, name, p.Address, p.Reachable, leader)
 		} else {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%t\n", p.ID, name, p.Address, p.Reachable)
+			fmt.Fprintf(w, "%s\t%s\t%t\n", p.ID, p.Address, p.Reachable)
 		}
 	}
 	return nil
@@ -1075,12 +1077,12 @@ func handlePeerInfo(cmd *cobra.Command, args []string) error {
 
 	// table output
 	isLeader := resp.Leader == targetPeer.ID
-	peerName := targetPeer.ID
+	peerName := targetPeer.Name
 	if isLeader {
-		peerName = targetPeer.ID + "*"
+		peerName = targetPeer.Name + "*"
 	}
 
-	fmt.Printf("Peer: %s\n", peerName)
+	fmt.Printf("Peer: %s (%s)\n", peerName, targetPeer.ID)
 	fmt.Printf("Address: %s\n", targetPeer.Address)
 	fmt.Printf("Reachable: %t\n", targetPeer.Reachable)
 	fmt.Printf("Leader: %t\n", isLeader)
