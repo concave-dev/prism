@@ -21,19 +21,20 @@ const (
 	RaftTimeout = 10 * time.Second
 
 	// DefaultHeartbeatTimeout is the default heartbeat timeout
-	// NOTE: This is the final timeout value used by Raft (already scaled for production use)
-	DefaultHeartbeatTimeout = 2000 * time.Millisecond // 2x base for stability
+	// Aggressive setting for fast failure detection in low-latency clusters
+	// TODO: Make configurable via CLI flags for WAN/unstable networks
+	DefaultHeartbeatTimeout = 200 * time.Millisecond
 
 	// DefaultElectionTimeout is the default election timeout
-	// NOTE: This is the final timeout value used by Raft (already scaled for production use)
-	// Must be >= HeartbeatTimeout for proper Raft operation
-	DefaultElectionTimeout = 4000 * time.Millisecond // 4x base for stability
+	// Must be >= HeartbeatTimeout. Kept at ~2.5x Heartbeat for quick elections
+	// TODO: Consider adding jitter/randomization window control if needed
+	DefaultElectionTimeout = 500 * time.Millisecond
 
 	// DefaultCommitTimeout is the default commit timeout
-	DefaultCommitTimeout = 50 * time.Millisecond
+	DefaultCommitTimeout = 25 * time.Millisecond
 
 	// DefaultLeaderLeaseTimeout is the default leader lease timeout
-	DefaultLeaderLeaseTimeout = 500 * time.Millisecond
+	DefaultLeaderLeaseTimeout = 100 * time.Millisecond
 )
 
 // Config holds configuration for the Raft manager
