@@ -28,13 +28,13 @@ go build -o bin/prismctl cmd/prismctl/main.go
 
 Start the daemon:
 ```bash
-# For local development
-./bin/prismd --serf=0.0.0.0:4200 --name=first-node
+# First node (bootstrap new cluster)
+./bin/prismd --serf=0.0.0.0:4200 --bootstrap --name=first-node
 
-# For production with remote API access
-./bin/prismd --serf=0.0.0.0:4200 --api=0.0.0.0:8008 --name=first-node
+# For production with remote API access (first node)
+./bin/prismd --serf=0.0.0.0:4200 --api=0.0.0.0:8008 --bootstrap --name=first-node
 
-# Join second node 
+# Join second node to existing cluster
 ./bin/prismd --join=192.168.1.100:4200 --serf=0.0.0.0:4201 --name=second-node
 ```
 
@@ -99,3 +99,4 @@ Use the CLI:
 - **Data at rest:** Raft logs/snapshots and local state are stored unencrypted by default in `./data`.
 - **Split Brain Risk:** Network partitions can cause Raft leadership conflicts. Use odd-numbered clusters (3+) for proper quorum.
 - **Network Connectivity:** Nodes behind NAT or firewalls may fail to join. Ensure gossip ports are accessible between all nodes.
+- **Bootstrap Race Conditions:** The current `--bootstrap` flag creates single-node clusters that become leader immediately, risking split-brain scenarios if multiple nodes bootstrap. **Recommendation:** Use `--bootstrap-expect=N` approach (like Nomad) where nodes wait for expected quorum before starting cluster formation.

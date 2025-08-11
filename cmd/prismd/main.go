@@ -100,14 +100,14 @@ Think Kubernetes for AI agents - with isolated VMs, sandboxed execution,
 serverless functions, native memory, workflows, and other AI-first primitives.`,
 	Version:      Version,
 	SilenceUsage: true, // Don't show usage on errors
-	Example: `  	  # Start first node in cluster
-	  prismd --serf=` + DefaultSerf + `
+	Example: `  	  # Start first node in cluster (bootstrap)
+	  prismd --serf=` + DefaultSerf + ` --bootstrap
 
 	  # Start second node and join existing cluster  
 	  prismd --serf=0.0.0.0:4201 --join=127.0.0.1:4200 --name=second-node
 
-	  # Start with API accessible from external hosts
-	  prismd --serf=` + DefaultSerf + ` --api=` + DefaultAPI + `
+	  # Start with API accessible from external hosts (first node)
+	  prismd --serf=` + DefaultSerf + ` --api=` + DefaultAPI + ` --bootstrap
 
 	  # Join with multiple addresses for fault tolerance
 	  prismd --serf=0.0.0.0:4202 --join=node1:4200,node2:4200,node3:4200`,
@@ -125,7 +125,8 @@ func init() {
 		"Address and port for Serf cluster membership (e.g., 0.0.0.0:4200)")
 	rootCmd.Flags().StringSliceVar(&config.JoinAddrs, "join", nil,
 		"Comma-separated list of cluster addresses to join (e.g., node1:4200,node2:4200)\n"+
-			"Multiple addresses provide fault tolerance - if first node is down, tries next one")
+			"Multiple addresses provide fault tolerance - if first node is down, tries next one\n"+
+			"Mutually exclusive with --bootstrap (use for subsequent nodes, not first node)")
 	rootCmd.Flags().BoolVar(&config.StrictJoin, "strict-join", false,
 		"Exit daemon if cluster join fails (default: continue in isolation)\n"+
 			"Useful for production deployments with orchestrators like systemd/K8s")
@@ -136,8 +137,16 @@ func init() {
 			"If not specified, defaults to "+DefaultRaft)
 	rootCmd.Flags().StringVar(&config.DataDir, "data-dir", "./data",
 		"Directory for persistent data storage (logs, snapshots)")
+
+	// TODO: Replace --bootstrap with --bootstrap-expect for safer cluster formation
+	// The current --bootstrap flag has race condition risks during cluster startup:
+	// - Single node becomes leader immediately (no fault tolerance)
+	// - Multiple nodes can accidentally bootstrap separate clusters
+	// - Requires careful manual coordination
+	// See: https://developer.hashicorp.com/nomad/docs/configuration/server
 	rootCmd.Flags().BoolVar(&config.Bootstrap, "bootstrap", false,
-		"Bootstrap a new Raft cluster (only use on the first node)")
+		"Bootstrap a new Raft cluster (only use on the first node, mutually exclusive with --join)\n"+
+			"WARNING: Prefer --bootstrap-expect for production")
 
 	// gRPC flags
 	rootCmd.Flags().StringVar(&config.GRPCAddr, "grpc", DefaultGRPC,
@@ -337,6 +346,22 @@ func validateConfig(cmd *cobra.Command, args []string) error {
 		if err := validate.ValidateAddressList(config.JoinAddrs); err != nil {
 			return fmt.Errorf("invalid join addresses: %w", err)
 		}
+	}
+
+	// Validate bootstrap and join flags are mutually exclusive
+	// Bootstrap is for creating a new cluster (first node only)
+	// Join is for connecting to an existing cluster (subsequent nodes)
+	//
+	// NOTE: This prevents the worst-case scenario of conflicting cluster operations,
+	// but the --bootstrap flag still has inherent race condition risks:
+	// 1. Single-node clusters have no fault tolerance during startup
+	// 2. Multiple nodes can accidentally create separate clusters
+	// 3. Requires careful manual coordination
+	//
+	// TODO: Implement --bootstrap-expect for safer production deployments
+	// This would allow nodes to wait for expected quorum before starting the cluster
+	if config.Bootstrap && len(config.JoinAddrs) > 0 {
+		return fmt.Errorf("cannot use --bootstrap and --join together: bootstrap creates a new cluster, join connects to existing cluster")
 	}
 
 	return nil
