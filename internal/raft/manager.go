@@ -425,12 +425,13 @@ func (m *RaftManager) handleMemberJoin(member serf.Member) {
 	logging.Info("Serf member %s (%s) joined, attempting to add as Raft peer at %s", member.Name, nodeID, raftAddr)
 
 	// Add as Raft peer using node_id (only leader can do this)
+	if !m.IsLeader() {
+		logging.Debug("Not Raft leader, cannot add peer %s (this is normal)", nodeID)
+		return
+	}
+
 	if err := m.AddPeer(nodeID, raftAddr); err != nil {
-		if err.Error() == fmt.Sprintf("not leader, cannot add peer %s", nodeID) {
-			logging.Debug("Not Raft leader, cannot add peer %s (this is normal)", nodeID)
-		} else {
-			logging.Error("Failed to add Raft peer %s: %v", nodeID, err)
-		}
+		logging.Error("Failed to add Raft peer %s: %v", nodeID, err)
 	}
 }
 
@@ -451,12 +452,13 @@ func (m *RaftManager) handleMemberLeave(member serf.Member) {
 	logging.Info("Serf member %s (%s) left, attempting to remove from Raft cluster", member.Name, nodeID)
 
 	// Remove from Raft cluster using node_id (only leader can do this)
+	if !m.IsLeader() {
+		logging.Debug("Not Raft leader, cannot remove peer %s (this is normal)", nodeID)
+		return
+	}
+
 	if err := m.RemovePeer(nodeID); err != nil {
-		if err.Error() == fmt.Sprintf("not leader, cannot remove peer %s", nodeID) {
-			logging.Debug("Not Raft leader, cannot remove peer %s (this is normal)", nodeID)
-		} else {
-			logging.Error("Failed to remove Raft peer %s: %v", nodeID, err)
-		}
+		logging.Error("Failed to remove Raft peer %s: %v", nodeID, err)
 	}
 }
 
