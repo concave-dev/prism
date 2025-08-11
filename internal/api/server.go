@@ -171,7 +171,7 @@ func (s *Server) handleClusterResources(c *gin.Context) {
 
 // getHandlerClusterResources is a cluster resources endpoint handler factory
 func (s *Server) getHandlerClusterResources() gin.HandlerFunc {
-	return handlers.HandleClusterResourcesV2(s.grpcClientPool, s.serfManager)
+	return handlers.HandleClusterResources(s.grpcClientPool, s.serfManager)
 }
 
 // handleNodeResources delegates to handlers.HandleNodeResources
@@ -182,7 +182,7 @@ func (s *Server) handleNodeResources(c *gin.Context) {
 
 // getHandlerNodeResources is a node resources endpoint handler factory
 func (s *Server) getHandlerNodeResources() gin.HandlerFunc {
-	return handlers.HandleNodeResourcesV2(s.grpcClientPool, s.serfManager)
+	return handlers.HandleNodeResources(s.grpcClientPool, s.serfManager)
 }
 
 // handleRaftPeers delegates to handlers.HandleRaftPeers

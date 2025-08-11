@@ -56,91 +56,6 @@ type NodeResourcesResponse struct {
 	MemoryAvailableMB int `json:"memoryAvailableMB"`
 }
 
-// HandleClusterResources returns resources from all cluster nodes
-func HandleClusterResources(serfManager *serf.SerfManager) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		// Query resources from all nodes via Serf
-		resourceMap, err := serfManager.QueryResources()
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"status":  "error",
-				"message": fmt.Sprintf("Failed to query cluster resources: %v", err),
-			})
-			return
-		}
-
-		// Convert to API response format
-		var resources []NodeResourcesResponse
-		for _, nodeRes := range resourceMap {
-			apiRes := convertToAPIResponse(nodeRes)
-			resources = append(resources, apiRes)
-		}
-
-		// Sort by node name for consistent output
-		sort.Slice(resources, func(i, j int) bool {
-			return resources[i].NodeName < resources[j].NodeName
-		})
-
-		c.JSON(http.StatusOK, gin.H{
-			"status": "success",
-			"data":   resources,
-			"count":  len(resources),
-		})
-	}
-}
-
-// HandleNodeResources returns resources from a specific node
-func HandleNodeResources(serfManager *serf.SerfManager) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		nodeID := c.Param("id")
-		if nodeID == "" {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"status":  "error",
-				"message": "Node ID is required",
-			})
-			return
-		}
-
-		// Check if node exists first (same logic as QueryResourcesFromNode)
-		_, exists := serfManager.GetMember(nodeID)
-		if !exists {
-			// Try to find by node name if exact ID doesn't work
-			for _, member := range serfManager.GetMembers() {
-				if member.Name == nodeID {
-					exists = true
-					break
-				}
-			}
-		}
-
-		if !exists {
-			c.JSON(http.StatusNotFound, gin.H{
-				"status":  "error",
-				"message": fmt.Sprintf("Node '%s' not found in cluster", nodeID),
-			})
-			return
-		}
-
-		// Query resources from specific node via Serf
-		nodeRes, err := serfManager.QueryResourcesFromNode(nodeID)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"status":  "error",
-				"message": fmt.Sprintf("Failed to query node resources: %v", err),
-			})
-			return
-		}
-
-		// Convert to API response format
-		apiRes := convertToAPIResponse(nodeRes)
-
-		c.JSON(http.StatusOK, gin.H{
-			"status": "success",
-			"data":   apiRes,
-		})
-	}
-}
-
 // convertToAPIResponse converts resources.NodeResources to API response format
 func convertToAPIResponse(nodeRes *resources.NodeResources) NodeResourcesResponse {
 	return NodeResourcesResponse{
@@ -199,8 +114,8 @@ func formatDuration(d time.Duration) string {
 	}
 }
 
-// HandleClusterResourcesV2 returns resources from all cluster nodes using gRPC with serf fallback
-func HandleClusterResourcesV2(clientPool *grpc.ClientPool, serfManager *serf.SerfManager) gin.HandlerFunc {
+// HandleClusterResources returns resources from all cluster nodes using gRPC with serf fallback
+func HandleClusterResources(clientPool *grpc.ClientPool, serfManager *serf.SerfManager) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Try gRPC first for faster communication
 		grpcResources := clientPool.GetResourcesFromAllNodes()
@@ -264,8 +179,8 @@ func HandleClusterResourcesV2(clientPool *grpc.ClientPool, serfManager *serf.Ser
 	}
 }
 
-// HandleNodeResourcesV2 returns resources from a specific node using gRPC with serf fallback
-func HandleNodeResourcesV2(clientPool *grpc.ClientPool, serfManager *serf.SerfManager) gin.HandlerFunc {
+// HandleNodeResources returns resources from a specific node using gRPC with serf fallback
+func HandleNodeResources(clientPool *grpc.ClientPool, serfManager *serf.SerfManager) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		nodeID := c.Param("id")
 		if nodeID == "" {
