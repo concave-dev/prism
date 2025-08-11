@@ -513,6 +513,10 @@ func (m *RaftManager) buildRaftConfig(logWriter io.Writer) *raft.Config {
 	config.CommitTimeout = m.config.CommitTimeout
 	config.LeaderLeaseTimeout = m.config.LeaderLeaseTimeout
 
+	// Ensure PreVote is enabled (default in recent raft versions). Explicit for clarity.
+	// PreVote reduces unnecessary elections with aggressive timeouts.
+	config.PreVoteDisabled = false
+
 	// Route Raft internal logging through the provided writer (colorful or discarded)
 	config.LogOutput = logWriter
 
