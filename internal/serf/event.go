@@ -2,6 +2,7 @@
 package serf
 
 import (
+	"maps"
 	"time"
 
 	"github.com/concave-dev/prism/internal/logging"
@@ -175,7 +176,7 @@ func (sm *SerfManager) memberFromSerf(member serf.Member) *PrismNode {
 		Addr:     member.Addr,
 		Port:     member.Port,
 		Status:   member.Status,
-		Tags:     make(map[string]string, len(member.Tags)),
+		Tags:     maps.Clone(member.Tags),
 		LastSeen: time.Now(),
 	}
 

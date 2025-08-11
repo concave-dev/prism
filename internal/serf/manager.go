@@ -55,8 +55,8 @@ type SerfManager struct {
 	// external consumers, preventing deadlocks and ensuring cluster membership
 	// operations continue even if external event handlers are slow or absent.
 
-	ConsumerEventCh  chan serf.Event // EXTERNAL: Optional event channel for consumers (can be slow/nil)
 	ingestEventQueue chan serf.Event // INTERNAL: Direct from Serf, always processed (never blocks)
+	ConsumerEventCh  chan serf.Event // EXTERNAL: Optional event channel for consumers (can be slow/nil)
 
 	memberLock sync.RWMutex          // Member tracking
 	members    map[string]*PrismNode // Map of Prism nodes
