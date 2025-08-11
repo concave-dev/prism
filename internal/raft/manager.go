@@ -706,7 +706,7 @@ func (m *RaftManager) reportDeadlock(deadPeers []string) {
 	logging.Error("ELECTION DEADLOCK DETECTED")
 	logging.Error("Dead peers blocking leader election: %v", deadPeers)
 	logging.Error("Manual intervention required:")
-	logging.Error("  Option 1: Use 'prismctl peer remove --force <nodeID>' to remove dead peers")
-	logging.Error("  Option 2: Restart cluster with --bootstrap-expect for safer initialization")
-	logging.Error("Cluster is locked until dead peers are removed!")
+	logging.Error("  Option 1: Restart dead nodes to restore quorum")
+	logging.Error("  Option 2: Rebuild cluster from backup with proper node count")
+	logging.Error("Cluster is locked until quorum is restored!")
 }
