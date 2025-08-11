@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/concave-dev/prism/internal/serf"
@@ -98,18 +97,29 @@ func HandleNodeResources(serfManager *serf.SerfManager) gin.HandlerFunc {
 			return
 		}
 
+		// Check if node exists first (same logic as QueryResourcesFromNode)
+		_, exists := serfManager.GetMember(nodeID)
+		if !exists {
+			// Try to find by node name if exact ID doesn't work
+			for _, member := range serfManager.GetMembers() {
+				if member.Name == nodeID {
+					exists = true
+					break
+				}
+			}
+		}
+
+		if !exists {
+			c.JSON(http.StatusNotFound, gin.H{
+				"status":  "error",
+				"message": fmt.Sprintf("Node '%s' not found in cluster", nodeID),
+			})
+			return
+		}
+
 		// Query resources from specific node via Serf
 		nodeRes, err := serfManager.QueryResourcesFromNode(nodeID)
 		if err != nil {
-			// Check if it's a "node not found" error
-			if strings.Contains(err.Error(), "not found in cluster") {
-				c.JSON(http.StatusNotFound, gin.H{
-					"status":  "error",
-					"message": fmt.Sprintf("Node '%s' not found in cluster", nodeID),
-				})
-				return
-			}
-
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"status":  "error",
 				"message": fmt.Sprintf("Failed to query node resources: %v", err),
