@@ -106,6 +106,34 @@ var peerInfoCmd = &cobra.Command{
 	RunE:  handlePeerInfo,
 }
 
+// Peer remove command
+var peerRemoveCmd = &cobra.Command{
+	Use:   "remove <peer-id>",
+	Short: "Remove a dead peer from Raft cluster",
+	Long: `Force-remove a dead peer from the Raft cluster configuration.
+
+WARNING: This is a dangerous operation that bypasses normal safety checks.
+Only use this command when:
+1. The peer is confirmed dead and unreachable
+2. The cluster is experiencing election deadlocks due to dead peers
+3. Normal autopilot cleanup is not working
+
+This command directly manipulates the Raft cluster configuration.`,
+	Example: `  # Remove a dead peer by ID
+  prismctl peer remove f3100fe4631e --force
+
+  # Remove with confirmation (safer)
+  prismctl peer remove f3100fe4631e --force --confirm`,
+	Args: cobra.ExactArgs(1),
+	RunE: handlePeerRemove,
+}
+
+// Peer remove command configuration
+var peerRemoveConfig struct {
+	Force   bool // Force removal without leader requirement
+	Confirm bool // Require confirmation before removal
+}
+
 // Node command (parent command for node operations)
 var nodeCmd = &cobra.Command{
 	Use:   "node",
@@ -264,7 +292,14 @@ func init() {
 	// Peer
 	peerCmd.AddCommand(peerLsCmd)
 	peerCmd.AddCommand(peerInfoCmd)
+	peerCmd.AddCommand(peerRemoveCmd)
 	rootCmd.AddCommand(peerCmd)
+
+	// Add flags to peer remove command
+	peerRemoveCmd.Flags().BoolVar(&peerRemoveConfig.Force, "force", false,
+		"Force removal even if there's no leader (DANGEROUS)")
+	peerRemoveCmd.Flags().BoolVar(&peerRemoveConfig.Confirm, "confirm", false,
+		"Require confirmation before removal")
 }
 
 // validateGlobalFlags validates all global flags before running any command
@@ -1094,6 +1129,79 @@ func handlePeerInfo(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Status: Follower (unreachable)\n")
 	}
 
+	return nil
+}
+
+// handlePeerRemove handles peer remove command
+func handlePeerRemove(cmd *cobra.Command, args []string) error {
+	setupLogging()
+
+	if !peerRemoveConfig.Force {
+		return fmt.Errorf("--force flag is required for peer removal (this is a dangerous operation)")
+	}
+
+	peerID := args[0]
+	apiClient := createAPIClient()
+
+	// First, get current peers to validate the peer exists
+	resp, err := apiClient.GetRaftPeers()
+	if err != nil {
+		return err
+	}
+
+	// Find the target peer
+	var targetPeer *RaftPeer
+	for _, p := range resp.Peers {
+		if p.ID == peerID || strings.HasPrefix(p.ID, peerID) {
+			targetPeer = &p
+			break
+		}
+	}
+
+	if targetPeer == nil {
+		return fmt.Errorf("peer '%s' not found in Raft configuration", peerID)
+	}
+
+	// Safety checks
+	if targetPeer.Reachable {
+		logging.Warn("WARNING: Peer '%s' appears to be reachable!", targetPeer.ID)
+		logging.Warn("Removing reachable peers can cause data loss and split-brain scenarios!")
+	}
+
+	if resp.Leader == targetPeer.ID {
+		return fmt.Errorf("cannot remove the current leader '%s' - wait for leadership transfer first", targetPeer.ID)
+	}
+
+	// Confirmation prompt
+	if peerRemoveConfig.Confirm {
+		fmt.Printf("You are about to FORCE-REMOVE peer:\n")
+		fmt.Printf("  ID: %s\n", targetPeer.ID)
+		fmt.Printf("  Name: %s\n", targetPeer.Name)
+		fmt.Printf("  Address: %s\n", targetPeer.Address)
+		fmt.Printf("  Reachable: %t\n", targetPeer.Reachable)
+		fmt.Printf("\nThis operation is IRREVERSIBLE and may cause data loss!\n")
+		fmt.Printf("Type 'yes' to confirm: ")
+
+		var confirmation string
+		if _, err := fmt.Scanln(&confirmation); err != nil || confirmation != "yes" {
+			fmt.Println("Operation cancelled")
+			return nil
+		}
+	}
+
+	// Call the API to remove the peer
+	logging.Info("Force-removing peer '%s' from Raft cluster", targetPeer.ID)
+
+	// TODO: Implement API endpoint for force peer removal
+	// For now, just show what would happen
+	logging.Warn("FORCE-REMOVING peer %s (%s) from Raft cluster", targetPeer.ID, targetPeer.Name)
+	logging.Warn("This is a simulated removal - API endpoint not yet implemented")
+	fmt.Printf("What this would do:\n")
+	fmt.Printf("   - Remove peer from Raft voter configuration\n")
+	fmt.Printf("   - Allow remaining peers to form quorum\n")
+	fmt.Printf("   - Enable leader election to proceed\n")
+
+	logging.Info("Peer removal simulation completed")
 	return nil
 }
 

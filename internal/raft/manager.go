@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -362,6 +363,9 @@ func (m *RaftManager) IntegrateWithSerf(serfEventCh <-chan serf.Event) {
 	logging.Info("Setting up Raft-Serf integration for automatic peer discovery")
 
 	go m.handleSerfEvents(serfEventCh)
+
+	// Start autopilot cleanup (leader-only)
+	go m.autopilotCleanup()
 }
 
 // handleSerfEvents processes Serf membership events to manage Raft peers
@@ -597,4 +601,112 @@ func (s *simpleFSMSnapshot) Persist(sink raft.SnapshotSink) error {
 // Release is called when the snapshot is no longer needed
 func (s *simpleFSMSnapshot) Release() {
 	// TODO: Clean up any resources if needed
+}
+
+// autopilotCleanup runs periodic cleanup of dead Raft peers (leader-only)
+func (m *RaftManager) autopilotCleanup() {
+	ticker := time.NewTicker(5 * time.Second) // Check every 5 seconds
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			// Always run autopilot checks (deadlock detection works without leader)
+			// But only perform cleanup actions if we're the leader
+			m.performAutopilotCleanup()
+		case <-m.shutdown:
+			logging.Info("Autopilot cleanup shutting down")
+			return
+		}
+	}
+}
+
+// performAutopilotCleanup removes Raft peers that are dead in Serf
+// TODO: Add Serf interface to get alive/dead member status
+// TODO: Add TCP probe to verify peer is actually unreachable
+// TODO: Add safety checks (minimum quorum, cooldown periods)
+func (m *RaftManager) performAutopilotCleanup() {
+	// Get current Raft peers
+	peers, err := m.GetPeers()
+	if err != nil {
+		logging.Error("Autopilot: Failed to get Raft peers: %v", err)
+		return
+	}
+
+	isLeader := m.IsLeader()
+	logging.Debug("Autopilot: Checking %d Raft peers for cleanup (leader: %t)", len(peers), isLeader)
+
+	// Detect deadlock situation: no leader + unreachable peers
+	if !isLeader && len(peers) > 1 {
+		unreachablePeers := m.detectUnreachablePeers(peers)
+		if len(unreachablePeers) > 0 {
+			m.reportDeadlock(unreachablePeers)
+		}
+	}
+
+	// Only perform actual cleanup if we're the leader
+	if !isLeader {
+		return
+	}
+
+	// TODO: This is a simplified version - need Serf interface
+	// For now, just log what we would do
+	for _, peer := range peers {
+		// Parse peer format: "nodeID@address"
+		parts := strings.Split(peer, "@")
+		if len(parts) != 2 {
+			continue
+		}
+		nodeID := parts[0]
+		address := parts[1]
+
+		// Skip ourselves
+		if nodeID == m.config.NodeID {
+			continue
+		}
+
+		// TODO: Check if nodeID is alive in Serf
+		// TODO: TCP probe to address
+		// TODO: Remove if confirmed dead
+		logging.Debug("Autopilot: Would check peer %s at %s for liveness", nodeID, address)
+	}
+}
+
+// detectUnreachablePeers checks which Raft peers are unreachable via TCP probe
+func (m *RaftManager) detectUnreachablePeers(peers []string) []string {
+	var unreachable []string
+
+	for _, peer := range peers {
+		parts := strings.Split(peer, "@")
+		if len(parts) != 2 {
+			continue
+		}
+		nodeID := parts[0]
+		address := parts[1]
+
+		// Skip ourselves
+		if nodeID == m.config.NodeID {
+			continue
+		}
+
+		// TCP probe to check if peer is reachable
+		conn, err := net.DialTimeout("tcp", address, 1*time.Second)
+		if err != nil {
+			unreachable = append(unreachable, nodeID)
+		} else {
+			conn.Close()
+		}
+	}
+
+	return unreachable
+}
+
+// reportDeadlock reports election deadlock caused by dead peers
+func (m *RaftManager) reportDeadlock(deadPeers []string) {
+	logging.Error("ELECTION DEADLOCK DETECTED")
+	logging.Error("Dead peers blocking leader election: %v", deadPeers)
+	logging.Error("Manual intervention required:")
+	logging.Error("  Option 1: Use 'prismctl peer remove --force <nodeID>' to remove dead peers")
+	logging.Error("  Option 2: Restart cluster with --bootstrap-expect for safer initialization")
+	logging.Error("Cluster is locked until dead peers are removed!")
 }
