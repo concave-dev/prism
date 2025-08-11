@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/concave-dev/prism/internal/grpc/proto"
+	"github.com/concave-dev/prism/internal/resources"
 	"github.com/concave-dev/prism/internal/serf"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -29,44 +30,47 @@ func NewNodeServiceImpl(serfManager *serf.SerfManager) *NodeServiceImpl {
 // GetResources returns current resource utilization for this node
 // This replaces the serf query mechanism for faster inter-node communication
 func (n *NodeServiceImpl) GetResources(ctx context.Context, req *proto.GetResourcesRequest) (*proto.GetResourcesResponse, error) {
-	// Get current node resources using existing serf manager logic
-	// NOTE: We're reusing the resource gathering logic but bypassing serf queries
-	resources := n.serfManager.GatherLocalResources()
+	// Gather current node resources directly via resources package
+	nodeResources := resources.GatherSystemResources(
+		n.serfManager.NodeID,
+		n.serfManager.NodeName,
+		n.serfManager.GetStartTime(),
+	)
 
 	// Convert serf.NodeResources to protobuf response
 	response := &proto.GetResourcesResponse{
-		NodeId:    resources.NodeID,
-		NodeName:  resources.NodeName,
-		Timestamp: timestamppb.New(resources.Timestamp),
+		NodeId:    nodeResources.NodeID,
+		NodeName:  nodeResources.NodeName,
+		Timestamp: timestamppb.New(nodeResources.Timestamp),
 
 		// CPU Information
-		CpuCores:     int32(resources.CPUCores),
-		CpuUsage:     resources.CPUUsage,
-		CpuAvailable: resources.CPUAvailable,
+		CpuCores:     int32(nodeResources.CPUCores),
+		CpuUsage:     nodeResources.CPUUsage,
+		CpuAvailable: nodeResources.CPUAvailable,
 
 		// Memory Information (in bytes)
-		MemoryTotal:     resources.MemoryTotal,
-		MemoryUsed:      resources.MemoryUsed,
-		MemoryAvailable: resources.MemoryAvailable,
-		MemoryUsage:     resources.MemoryUsage,
+		MemoryTotal:     nodeResources.MemoryTotal,
+		MemoryUsed:      nodeResources.MemoryUsed,
+		MemoryAvailable: nodeResources.MemoryAvailable,
+		MemoryUsage:     nodeResources.MemoryUsage,
 
 		// Go Runtime Information
-		GoRoutines: int32(resources.GoRoutines),
-		GoMemAlloc: resources.GoMemAlloc,
-		GoMemSys:   resources.GoMemSys,
-		GoGcCycles: resources.GoGCCycles,
-		GoGcPause:  resources.GoGCPause,
+		GoRoutines: int32(nodeResources.GoRoutines),
+		GoMemAlloc: nodeResources.GoMemAlloc,
+		GoMemSys:   nodeResources.GoMemSys,
+		GoGcCycles: nodeResources.GoGCCycles,
+		GoGcPause:  nodeResources.GoGCPause,
 
 		// Node Status
-		UptimeSeconds: int64(resources.Uptime.Seconds()),
-		Load1:         resources.Load1,
-		Load5:         resources.Load5,
-		Load15:        resources.Load15,
+		UptimeSeconds: int64(nodeResources.Uptime.Seconds()),
+		Load1:         nodeResources.Load1,
+		Load5:         nodeResources.Load5,
+		Load15:        nodeResources.Load15,
 
 		// Capacity Limits
-		MaxJobs:        int32(resources.MaxJobs),
-		CurrentJobs:    int32(resources.CurrentJobs),
-		AvailableSlots: int32(resources.AvailableSlots),
+		MaxJobs:        int32(nodeResources.MaxJobs),
+		CurrentJobs:    int32(nodeResources.CurrentJobs),
+		AvailableSlots: int32(nodeResources.AvailableSlots),
 	}
 
 	return response, nil

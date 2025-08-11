@@ -335,6 +335,12 @@ func (sm *SerfManager) GetLocalMember() *PrismNode {
 	return member
 }
 
+// GetStartTime returns the time when the SerfManager (and node) started.
+// This is used by components that need node uptime without depending on Serf internals.
+func (sm *SerfManager) GetStartTime() time.Time {
+	return sm.startTime
+}
+
 // buildNodeTags constructs the tags map for this node
 func (sm *SerfManager) buildNodeTags() map[string]string {
 	// Pre-allocate map capacity: user tags + 1 system tag (node_id)

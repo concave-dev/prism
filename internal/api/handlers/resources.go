@@ -129,17 +129,10 @@ func HandleClusterResources(clientPool *grpc.ClientPool, serfManager *serf.SerfM
 			resources = append(resources, apiRes)
 		}
 
-		// Add local node resources (since gRPC client pool skips self)
-		// Use gRPC call to local node for consistency
+		// Add local node resources via gRPC for consistency
 		localGrpcRes := clientPool.GetResourcesFromLocalNode()
 		if localGrpcRes != nil {
 			localApiRes := convertFromGRPCResponse(localGrpcRes)
-			resources = append(resources, localApiRes)
-		} else {
-			// Fallback to direct resource gathering if gRPC fails
-			logging.Warn("Local gRPC call failed, falling back to direct resource gathering")
-			localResources := serfManager.GatherLocalResources()
-			localApiRes := convertToAPIResponse(localResources)
 			resources = append(resources, localApiRes)
 		}
 
@@ -211,19 +204,17 @@ func HandleNodeResources(clientPool *grpc.ClientPool, serfManager *serf.SerfMana
 			return
 		}
 
-		// If requesting local node, use local resources directly
+		// Try gRPC first, including for local node
+		var grpcRes *proto.GetResourcesResponse
+		var err error
 		if nodeID == serfManager.NodeID {
-			localResources := serfManager.GatherLocalResources()
-			apiRes := convertToAPIResponse(localResources)
-			c.JSON(http.StatusOK, gin.H{
-				"status": "success",
-				"data":   apiRes,
-			})
-			return
+			grpcRes = clientPool.GetResourcesFromLocalNode()
+			if grpcRes == nil {
+				err = fmt.Errorf("local gRPC call failed")
+			}
+		} else {
+			grpcRes, err = clientPool.GetResourcesFromNode(nodeID)
 		}
-
-		// Try gRPC first
-		grpcRes, err := clientPool.GetResourcesFromNode(nodeID)
 		if err != nil {
 			logging.Warn("gRPC query failed for node %s, falling back to serf: %v", nodeID, err)
 
