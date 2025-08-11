@@ -23,6 +23,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"sync"
 	"time"
@@ -323,10 +324,7 @@ func (sm *SerfManager) copyPrismNode(node *PrismNode) *PrismNode {
 	nodeCopy := *node
 
 	// Deep copy reference types to prevent external corruption
-	nodeCopy.Tags = make(map[string]string, len(node.Tags))
-	for k, v := range node.Tags {
-		nodeCopy.Tags[k] = v
-	}
+	nodeCopy.Tags = maps.Clone(node.Tags)
 
 	return &nodeCopy
 }
@@ -487,12 +485,10 @@ func (sm *SerfManager) buildNodeTags() map[string]string {
 	tags := make(map[string]string, len(sm.config.Tags)+1)
 
 	// Copy custom tags
-	for k, v := range sm.config.Tags {
-		tags[k] = v
-	}
+	maps.Copy(tags, sm.config.Tags)
 
 	// Add system tags (+1 capacity is for this)
-	tags["node_id"] = sm.NodeID // +1: random hex node identifier
+	tags["node_id"] = sm.NodeID // random hex node identifier
 
 	return tags
 }

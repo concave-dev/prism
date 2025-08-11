@@ -180,11 +180,6 @@ func (sm *SerfManager) memberFromSerf(member serf.Member) *PrismNode {
 		LastSeen: time.Now(),
 	}
 
-	// Copy tags
-	for k, v := range member.Tags {
-		node.Tags[k] = v
-	}
-
 	return node
 }
 
