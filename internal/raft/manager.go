@@ -155,6 +155,18 @@ func (m *RaftManager) Stop() error {
 	// Signal shutdown
 	close(m.shutdown)
 
+	// If we're the leader, transfer leadership before shutting down
+	if m.raft != nil && m.IsLeader() {
+		logging.Info("Transferring leadership before shutdown")
+		future := m.raft.LeadershipTransfer()
+		if err := future.Error(); err != nil {
+			logging.Warn("Leadership transfer failed: %v", err)
+			// Continue with shutdown even if transfer fails
+		} else {
+			logging.Success("Leadership transferred successfully")
+		}
+	}
+
 	// Shutdown Raft
 	if m.raft != nil {
 		future := m.raft.Shutdown()
