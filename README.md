@@ -5,34 +5,17 @@
 
 Distributed runtime platform for AI agents and workflows.
 
-## Philosophy: Accelerating AI Development Cycles
+## Overview
 
-The AI agent landscape is evolving rapidly, but current tooling creates slow feedback loops that hinder adaptation. As noted in [Adapt Fast In The AI Era](https://matmul.net/$/adapt-fast.html), the ecosystem is fragmented with countless frameworks, each requiring different deployment strategies and lacking standardized inter-agent communication.
+Distributed runtime for AI agents with sandboxed execution, cluster management, and built-in observability.
 
-Meanwhile, [the real bottleneck in software development](https://ordep.dev/posts/writing-code-was-never-the-bottleneck) isn't writing code—it's understanding, testing, and trusting it. LLMs can generate code faster than ever, but the human overhead of coordination, review, and integration remains.
+The AI ecosystem is fragmented with slow deployment cycles. Current infrastructure wasn't designed for autonomous agents that need rapid iteration, inter-agent communication, and built-in observability. Prism aims to compress the time from idea to deployed agent from weeks to minutes.
 
-**Prism addresses both problems:**
+This aligns with [Concave's mission](https://concave.dev/) to build unified infrastructure for the emerging "Internet of Agents." See also: [Adapt Fast In The AI Era](https://matmul.net/$/adapt-fast.html) and [writing code was never the bottleneck](https://ordep.dev/posts/writing-code-was-never-the-bottleneck).
 
-- **Unified Runtime**: Deploy agents written in any language/framework through standardized primitives
-- **Fast Iteration**: Sandboxed execution with instant feedback eliminates deployment friction  
-- **Built-in Observability**: Understanding and trusting agent behavior through comprehensive monitoring
-- **Agent Mesh**: Standardized inter-agent communication reduces integration complexity
-
-The goal is simple: **compress the time from idea to deployed, observable, trustworthy agent from weeks to minutes**. In a rapidly evolving field, survival depends on adaptation speed.
-
-This aligns with [Concave's mission](https://concave.dev/) to build unified infrastructure for the emerging "Internet of Agents"—where current infrastructure designed for predictable workflows fails to support autonomous agents that need native primitives, security, and observability.
-
-## Technical Design Philosophy
-
-**Space-Time Fabric Architecture:** Prism operates as a distributed space-time fabric where agents, tools, and workflows exist as first-class entities that can be deployed, scheduled, and coordinated across the cluster. The fabric provides the foundational layer for all agentic operations while maintaining modularity.
-
-**Modular Infrastructure Services:** Core services like memory (RAG), observability, secrets, and configuration are designed as pluggable modules that attach to the fabric. This allows incremental adoption and customization while maintaining system coherence.
-
-**Dual-Layer Design (CAP Theorem):**
-
-**Control Plane (CP):** Prioritizes Consistency + Partition tolerance. Raft consensus ensures no split-brain decisions but sacrifices availability during network partitions.
-
-**Data Plane (AP):** Prioritizes Availability + Partition tolerance. Running workloads continue execution even when control plane is unreachable.
+**Key Features:**
+- Sandboxed code execution (planned)
+- Agent primitives (planned)
 
 ## Build
 
@@ -73,14 +56,11 @@ Use the CLI:
 ./bin/prismctl --api=127.0.0.1:8008 info
 ```
 
-
-## Current Status
-
-### Implementation Status
+## Implementation Status
 
 **Core Infrastructure:**
 - [x] Cluster membership via Serf gossip protocol
-- [x] Raft consensus for leader election and state consistency  
+- [x] Raft consensus for leader election and state consistency
 - [x] HTTP REST API with endpoints for cluster/node information
 - [x] Resource monitoring and collection across nodes
 - [x] Graceful daemon startup/shutdown with auto-recovery
