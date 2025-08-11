@@ -677,6 +677,9 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	logging.Info("Integrating Raft with Serf for automatic peer discovery")
 	raftManager.IntegrateWithSerf(manager.ConsumerEventCh)
 
+	// Give Raft access to Serf member status for autopilot
+	raftManager.SetSerfManager(manager)
+
 	logging.Info("Starting gRPC server on %s:%d", config.GRPCAddr, config.GRPCPort)
 
 	// Create and start gRPC server
