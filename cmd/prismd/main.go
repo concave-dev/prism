@@ -685,7 +685,7 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	// Create and start gRPC server
 	var grpcServer *grpc.Server
 	grpcConfig := buildGRPCConfig()
-	grpcServer, err = grpc.NewServer(grpcConfig)
+	grpcServer, err = grpc.NewServer(grpcConfig, manager)
 	if err != nil {
 		return fmt.Errorf("failed to create gRPC server: %w", err)
 	}
@@ -693,6 +693,9 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	if err := grpcServer.Start(); err != nil {
 		return fmt.Errorf("failed to start gRPC server: %w", err)
 	}
+
+	// Create gRPC client pool for inter-node communication
+	grpcClientPool := grpc.NewClientPool(manager, config.GRPCPort)
 
 	logging.Info("Starting HTTP API server on %s:%d", config.APIAddr, config.APIPort)
 
@@ -704,6 +707,7 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	apiConfig.BindPort = config.APIPort
 	apiConfig.SerfManager = manager
 	apiConfig.RaftManager = raftManager
+	apiConfig.GRPCClientPool = grpcClientPool
 
 	apiServer = api.NewServer(apiConfig)
 	if err := apiServer.Start(); err != nil {
@@ -781,6 +785,11 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		if err := grpcServer.Stop(); err != nil {
 			logging.Error("Error shutting down gRPC server: %v", err)
 		}
+	}
+
+	// Cleanup gRPC client pool
+	if grpcClientPool != nil {
+		grpcClientPool.Close()
 	}
 
 	// Shutdown Raft manager
