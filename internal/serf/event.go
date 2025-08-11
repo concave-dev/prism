@@ -214,10 +214,10 @@ func (sm *SerfManager) handleResourcesQuery(query *serf.Query) {
 	logging.Debug("Processing get-resources query from %s", query.SourceNode())
 
 	// Gather current node resources
-	resources := sm.gatherResources()
+	nodeResources := sm.GatherLocalResources()
 
 	// Serialize to JSON for transmission
-	data, err := resources.ToJSON()
+	data, err := nodeResources.ToJSON()
 	if err != nil {
 		logging.Error("Failed to serialize resources: %v", err)
 		// Respond with error

@@ -3,6 +3,7 @@ package api
 import (
 	"testing"
 
+	"github.com/concave-dev/prism/internal/grpc"
 	"github.com/concave-dev/prism/internal/raft"
 	"github.com/concave-dev/prism/internal/serf"
 )
@@ -10,10 +11,11 @@ import (
 // TestConfig_Validate_Valid tests Config.Validate() with valid configuration
 func TestConfig_Validate_Valid(t *testing.T) {
 	config := &Config{
-		BindAddr:    "127.0.0.1",
-		BindPort:    8080,
-		SerfManager: &serf.SerfManager{},
-		RaftManager: &raft.RaftManager{},
+		BindAddr:       "127.0.0.1",
+		BindPort:       8080,
+		SerfManager:    &serf.SerfManager{},
+		RaftManager:    &raft.RaftManager{},
+		GRPCClientPool: &grpc.ClientPool{},
 	}
 
 	err := config.Validate()
@@ -32,30 +34,33 @@ func TestConfig_Validate_Invalid(t *testing.T) {
 		{
 			name: "empty bind address",
 			config: &Config{
-				BindAddr:    "",
-				BindPort:    8080,
-				SerfManager: &serf.SerfManager{},
-				RaftManager: &raft.RaftManager{},
+				BindAddr:       "",
+				BindPort:       8080,
+				SerfManager:    &serf.SerfManager{},
+				RaftManager:    &raft.RaftManager{},
+				GRPCClientPool: &grpc.ClientPool{},
 			},
 			expectedErr: "bind address cannot be empty",
 		},
 		{
 			name: "invalid port",
 			config: &Config{
-				BindAddr:    "127.0.0.1",
-				BindPort:    0,
-				SerfManager: &serf.SerfManager{},
-				RaftManager: &raft.RaftManager{},
+				BindAddr:       "127.0.0.1",
+				BindPort:       0,
+				SerfManager:    &serf.SerfManager{},
+				RaftManager:    &raft.RaftManager{},
+				GRPCClientPool: &grpc.ClientPool{},
 			},
 			expectedErr: "bind port must be between 1 and 65535",
 		},
 		{
 			name: "nil serf manager",
 			config: &Config{
-				BindAddr:    "127.0.0.1",
-				BindPort:    8080,
-				SerfManager: nil,
-				RaftManager: &raft.RaftManager{},
+				BindAddr:       "127.0.0.1",
+				BindPort:       8080,
+				SerfManager:    nil,
+				RaftManager:    &raft.RaftManager{},
+				GRPCClientPool: &grpc.ClientPool{},
 			},
 			expectedErr: "serf manager cannot be nil",
 		},
