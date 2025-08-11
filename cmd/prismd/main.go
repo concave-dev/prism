@@ -37,6 +37,7 @@ const (
 
 // displayLogo prints the Prism ASCII logo with version information
 func displayLogo() {
+	fmt.Println()
 	fmt.Println(`██████╗ ██████╗ ██╗███████╗███╗   ███╗
 ██╔══██╗██╔══██╗██║██╔════╝████╗ ████║
 ██████╔╝██████╔╝██║███████╗██╔████╔██║
