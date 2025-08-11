@@ -1021,11 +1021,11 @@ func handlePeerList(cmd *cobra.Command, args []string) error {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	defer w.Flush()
 
-	// Header - show NAME and LEADER columns only in verbose mode
+	// Header - show NAME column only in verbose mode, but always show LEADER
 	if config.Verbose {
 		fmt.Fprintln(w, "ID\tNAME\tADDRESS\tREACHABLE\tLEADER")
 	} else {
-		fmt.Fprintln(w, "ID\tADDRESS\tREACHABLE")
+		fmt.Fprintln(w, "ID\tADDRESS\tREACHABLE\tLEADER")
 	}
 
 	for _, p := range resp.Peers {
@@ -1039,7 +1039,7 @@ func handlePeerList(cmd *cobra.Command, args []string) error {
 		if config.Verbose {
 			fmt.Fprintf(w, "%s\t%s\t%s\t%t\t%s\n", p.ID, name, p.Address, p.Reachable, leader)
 		} else {
-			fmt.Fprintf(w, "%s\t%s\t%t\n", p.ID, p.Address, p.Reachable)
+			fmt.Fprintf(w, "%s\t%s\t%t\t%s\n", p.ID, p.Address, p.Reachable, leader)
 		}
 	}
 	return nil
