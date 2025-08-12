@@ -47,24 +47,21 @@ const (
 	DefaultDeadNodeReclaimTime = 10 * time.Minute
 )
 
-// Config holds configuration parameters for the SerfManager, which manages
-// cluster membership, failure detection, and event propagation using Serf.
+// Config holds configuration parameters for SerfManager cluster operations.
 type Config struct {
-	BindAddr            string            // Network address to bind the Serf agent to (e.g., "0.0.0.0" or specific IP)
-	BindPort            int               // Network port to bind the Serf agent to for cluster communication
-	NodeName            string            // Unique name identifier for this node in the cluster
-	Tags                map[string]string // Key-value metadata tags associated with this node (e.g., "env", "role", "region", "capabilities")
-	EventBufferSize     int               // Base buffer size for Serf event channels (ConsumerEventCh uses this; ingestEventQueue uses 2x)
-	JoinRetries         int               // Maximum number of attempts to retry joining the cluster on failure
-	JoinTimeout         time.Duration     // Maximum time to wait for a single join attempt before timing out
-	LogLevel            string            // Logging verbosity level for Serf operations (debug, info, warn, error)
-	DeadNodeReclaimTime time.Duration     // Time to wait before permanently removing dead nodes from cluster membership
+	BindAddr            string            // Network address to bind Serf agent to
+	BindPort            int               // Network port for cluster communication
+	NodeName            string            // Unique name identifier for this node
+	Tags                map[string]string // Key-value metadata tags for node capabilities/roles
+	EventBufferSize     int               // Base buffer size for event channels (ingestEventQueue uses 2x)
+	JoinRetries         int               // Maximum join attempts on failure
+	JoinTimeout         time.Duration     // Timeout for single join attempt
+	LogLevel            string            // Logging verbosity (debug, info, warn, error)
+	DeadNodeReclaimTime time.Duration     // Time before permanently removing dead nodes
 }
 
-// DefaultConfig returns a default configuration for SerfManager with sensible defaults
-// for production use. This includes standard bind settings, timeouts, buffer sizes,
-// and an empty tags map that can be populated with node-specific metadata. But the tags will
-// be built in the manager.buildNodeTags() function just before Serf is initialized.
+// DefaultConfig returns a default configuration for SerfManager with sensible
+// production defaults. Tags are built later in manager.buildNodeTags().
 func DefaultConfig() *Config {
 	return &Config{
 		BindAddr:            config.DefaultBindAddr,
@@ -78,9 +75,8 @@ func DefaultConfig() *Config {
 	}
 }
 
-// validateConfig validates all fields in the SerfManager configuration to ensure
-// they meet requirements for proper cluster operation. This includes checking network
-// settings (bind address/port), buffer sizes, node naming, and tag restrictions.
+// validateConfig validates SerfManager configuration fields including network
+// settings, buffer sizes, node naming, and tag restrictions.
 func validateConfig(config *Config) error {
 	if config.NodeName == "" {
 		return fmt.Errorf("node name cannot be empty")
@@ -110,11 +106,8 @@ func validateConfig(config *Config) error {
 }
 
 // validateTags validates that user-provided tags don't conflict with system-reserved
-// tag names that are used internally by Prism for cluster management and node identification.
-// Reserved tags are automatically set by the system and cannot be overridden by users.
-//
-// Here, we use node_id as a reserved tag name. This is set up when serf is initialized.
-// Raft and Serf use node_id for internal cluster management and node identification.
+// tag names used internally by Prism. Reserved tags like "node_id" are automatically
+// set by the system and cannot be overridden.
 func validateTags(tags map[string]string) error {
 	// Define reserved tag names that are used by the system
 	reservedTags := map[string]bool{

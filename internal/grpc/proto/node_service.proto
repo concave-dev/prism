@@ -1,98 +1,128 @@
 syntax = "proto3";
 
+// Package prism.node.v1 defines the gRPC service for inter-node communication
+// in the Prism cluster, enabling resource discovery and health monitoring.
 package prism.node.v1;
 
 option go_package = "github.com/concave-dev/prism/internal/grpc/proto";
 
 import "google/protobuf/timestamp.proto";
 
-// NodeService provides resource information and health status for cluster nodes
-// TODO: Add authentication for secure inter-node communication
+// NodeService provides resource information and health status for cluster nodes.
+// Supports the agent mesh architecture for AI workload scheduling and monitoring.
+//
+// TODO: Add authentication for secure inter-node communication using mTLS
 // TODO: Add streaming methods for real-time resource monitoring
+// TODO: Add job scheduling and placement methods for agent workloads
 service NodeService {
-  // GetResources returns current resource utilization for this node
+  // GetResources returns current resource utilization and capacity for this node.
+  // Used by scheduler nodes for AI agent workload placement decisions.
   rpc GetResources(GetResourcesRequest) returns (GetResourcesResponse);
   
-  // GetHealth returns health status for this node
+  // GetHealth returns comprehensive health status for this node.
+  // Used by the cluster for failure detection and load balancing decisions.
   rpc GetHealth(GetHealthRequest) returns (GetHealthResponse);
   
-  // TODO: Add streaming resource monitoring
+  // TODO: Add streaming resource monitoring for real-time cluster state
   // rpc StreamResources(StreamResourcesRequest) returns (stream ResourceUpdate);
+  
+  // TODO: Add job placement and lifecycle management
+  // rpc ScheduleJob(ScheduleJobRequest) returns (ScheduleJobResponse);
+  // rpc CancelJob(CancelJobRequest) returns (CancelJobResponse);
 }
 
-// GetResourcesRequest is the request message for resource queries
+// GetResourcesRequest allows selective querying of specific resource types.
 message GetResourcesRequest {
-  // Optional: specific resource types to query (empty = all)
+  // Optional: specific resource types to query (e.g., "cpu", "memory", "jobs").
+  // If empty, returns all available resource information.
   repeated string resource_types = 1;
 }
 
-// GetResourcesResponse contains node resource information
+// GetResourcesResponse contains node resource information for workload placement decisions.
 message GetResourcesResponse {
+  // Unique identifier for this node (12-character hex string)
   string node_id = 1;
+  
+  // Human-readable name for this node
   string node_name = 2;
+  
+  // Timestamp when these resource metrics were captured
   google.protobuf.Timestamp timestamp = 3;
   
   // CPU Information
-  int32 cpu_cores = 4;
-  double cpu_usage = 5;
-  double cpu_available = 6;
+  int32 cpu_cores = 4;           // Total CPU cores available
+  double cpu_usage = 5;          // Current CPU utilization percentage (0.0-100.0)
+  double cpu_available = 6;      // Available CPU capacity percentage
   
-  // Memory Information (in bytes)
-  uint64 memory_total = 7;
-  uint64 memory_used = 8;
-  uint64 memory_available = 9;
-  double memory_usage = 10;
+  // Memory Information (bytes)
+  uint64 memory_total = 7;       // Total physical memory
+  uint64 memory_used = 8;        // Currently used memory
+  uint64 memory_available = 9;   // Available memory for new allocations
+  double memory_usage = 10;      // Memory utilization percentage (0.0-100.0)
   
   // Go Runtime Information
-  int32 go_routines = 11;
-  uint64 go_mem_alloc = 12;
-  uint64 go_mem_sys = 13;
-  uint32 go_gc_cycles = 14;
-  double go_gc_pause = 15;
+  int32 go_routines = 11;        // Active goroutines in prismd process
+  uint64 go_mem_alloc = 12;      // Heap memory allocated by Go runtime (bytes)
+  uint64 go_mem_sys = 13;        // Memory obtained from OS by Go runtime (bytes)
+  uint32 go_gc_cycles = 14;      // Completed garbage collection cycles
+  double go_gc_pause = 15;       // Average GC pause time (milliseconds)
   
-  // Node Status
-  int64 uptime_seconds = 16;
-  double load1 = 17;
-  double load5 = 18;
-  double load15 = 19;
+  // Node Status and Load
+  int64 uptime_seconds = 16;     // Node uptime since prismd started
+  double load1 = 17;             // System load average (1 minute)
+  double load5 = 18;             // System load average (5 minutes)
+  double load15 = 19;            // System load average (15 minutes)
   
-  // Capacity Limits
-  int32 max_jobs = 20;
-  int32 current_jobs = 21;
-  int32 available_slots = 22;
+  // Job Capacity and Utilization
+  int32 max_jobs = 20;           // Maximum concurrent AI agent jobs
+  int32 current_jobs = 21;       // Currently running AI agent jobs
+  int32 available_slots = 22;    // Available job slots (max_jobs - current_jobs)
 }
 
-// GetHealthRequest is the request message for health checks
+// GetHealthRequest allows selective execution of specific health checks.
 message GetHealthRequest {
-  // Optional: specific health checks to perform
+  // Optional: specific health check types to perform (e.g., "disk", "network", "services").
+  // If empty, performs all available health checks.
   repeated string check_types = 1;
 }
 
-// GetHealthResponse contains node health information
+// GetHealthResponse contains node health information for failure detection and routing decisions.
 message GetHealthResponse {
+  // Unique identifier for this node (12-character hex string)
   string node_id = 1;
+  
+  // Human-readable name for this node
   string node_name = 2;
+  
+  // Timestamp when this health assessment was performed
   google.protobuf.Timestamp timestamp = 3;
   
-  // Overall health status
+  // Overall health status (most severe status from all checks)
   HealthStatus status = 4;
   
-  // Individual health checks
+  // Detailed results from individual health checks
   repeated HealthCheck checks = 5;
 }
 
-// HealthStatus represents the overall health of a node
+// HealthStatus represents the overall health state of a node for workload placement decisions.
 enum HealthStatus {
-  UNKNOWN = 0;
-  HEALTHY = 1;
-  DEGRADED = 2;
-  UNHEALTHY = 3;
+  UNKNOWN = 0;    // Unknown health state or health checks failed
+  HEALTHY = 1;    // Fully operational and ready for new workloads
+  DEGRADED = 2;   // Operational with minor issues, monitor closely
+  UNHEALTHY = 3;  // Serious issues, should not receive new workloads
 }
 
-// HealthCheck represents an individual health check result
+// HealthCheck represents the result of an individual health check operation.
 message HealthCheck {
+  // Name of the health check (e.g., "disk_space", "api_connectivity", "memory_pressure")
   string name = 1;
+  
+  // Status result of this specific health check
   HealthStatus status = 2;
+  
+  // Human-readable message with metrics, errors, or diagnostic information
   string message = 3;
+  
+  // Timestamp when this health check was executed
   google.protobuf.Timestamp timestamp = 4;
 }

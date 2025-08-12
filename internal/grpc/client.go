@@ -1,4 +1,24 @@
 // Package grpc provides gRPC client management for inter-node communication
+// in the Prism cluster. This package implements a connection pool that manages
+// persistent gRPC connections to other nodes in the cluster, enabling efficient
+// resource querying and health monitoring across the distributed system.
+//
+// The ClientPool is the core component that:
+//   - Automatically discovers node addresses via Serf cluster membership
+//   - Maintains persistent gRPC connections with automatic connection creation
+//   - Provides thread-safe access to NodeService clients for remote procedure calls
+//   - Handles connection lifecycle management and cleanup
+//
+// This forms a critical part of the agent mesh architecture where nodes need to
+// efficiently communicate for resource discovery, workload scheduling, and
+// health monitoring. The gRPC layer provides type-safe, high-performance
+// inter-node communication that scales with cluster size.
+//
+// Future enhancements will include:
+//   - mTLS authentication for secure inter-node communication
+//   - Connection health monitoring and automatic reconnection
+//   - Circuit breaker patterns for resilience against failing nodes
+//   - Load balancing and failover for high availability scenarios
 package grpc
 
 import (
@@ -15,7 +35,10 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-// ClientPool manages gRPC connections to cluster nodes
+// ClientPool manages gRPC connections to cluster nodes for efficient inter-node
+// communication. It automatically discovers nodes via Serf and maintains reusable
+// connections to avoid connection overhead on each RPC call.
+//
 // TODO: Add connection health monitoring and automatic reconnection
 // TODO: Add circuit breaker pattern for failing nodes
 // TODO: Add connection pooling for high-throughput scenarios
@@ -24,10 +47,12 @@ type ClientPool struct {
 	connections map[string]*grpc.ClientConn        // nodeID -> connection
 	clients     map[string]proto.NodeServiceClient // nodeID -> client
 	serfManager *serf.SerfManager                  // For discovering node addresses
-	grpcPort    int                                // gRPC port to connect to
+	grpcPort    int                                // Default gRPC port
 }
 
-// NewClientPool creates a new gRPC client pool
+// NewClientPool creates a new gRPC client pool with lazy connection creation.
+// Uses serfManager for node discovery and grpcPort as the default port
+// (nodes can override via "grpc_port" Serf tag).
 func NewClientPool(serfManager *serf.SerfManager, grpcPort int) *ClientPool {
 	return &ClientPool{
 		connections: make(map[string]*grpc.ClientConn),
@@ -37,8 +62,9 @@ func NewClientPool(serfManager *serf.SerfManager, grpcPort int) *ClientPool {
 	}
 }
 
-// GetClient returns a gRPC client for the specified node
-// Creates a new connection if one doesn't exist
+// GetClient returns a gRPC client for the specified node, creating a new
+// connection if one doesn't exist. Discovers node address via Serf membership
+// and supports per-node port configuration via "grpc_port" tag.
 func (cp *ClientPool) GetClient(nodeID string) (proto.NodeServiceClient, error) {
 	cp.mu.Lock()
 	defer cp.mu.Unlock()
@@ -83,7 +109,8 @@ func (cp *ClientPool) GetClient(nodeID string) (proto.NodeServiceClient, error) 
 	return client, nil
 }
 
-// GetResourcesFromNode queries resources from a specific node via gRPC
+// GetResourcesFromNode queries resource information from a specific node via gRPC.
+// Uses a 3-second timeout to prevent hanging on slow or unresponsive nodes.
 func (cp *ClientPool) GetResourcesFromNode(nodeID string) (*proto.GetResourcesResponse, error) {
 	client, err := cp.GetClient(nodeID)
 	if err != nil {
@@ -97,7 +124,8 @@ func (cp *ClientPool) GetResourcesFromNode(nodeID string) (*proto.GetResourcesRe
 	return client.GetResources(ctx, req)
 }
 
-// CloseConnection closes and removes a specific node connection
+// CloseConnection closes and removes a specific node connection from the pool.
+// Safe to call even if no connection exists for the nodeID.
 func (cp *ClientPool) CloseConnection(nodeID string) {
 	cp.mu.Lock()
 	defer cp.mu.Unlock()
@@ -110,7 +138,8 @@ func (cp *ClientPool) CloseConnection(nodeID string) {
 	}
 }
 
-// Close closes all connections in the pool
+// Close shuts down the client pool by closing all active connections and
+// clearing internal state. The pool can be reused after calling Close().
 func (cp *ClientPool) Close() {
 	cp.mu.Lock()
 	defer cp.mu.Unlock()

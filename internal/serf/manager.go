@@ -32,26 +32,22 @@ import (
 	"github.com/hashicorp/serf/serf"
 )
 
-// PrismNode represents a cluster member in the Prism distributed system, containing
-// all essential metadata and state information for a single node. This includes network
-// connectivity details, membership status, custom attributes, and health tracking data.
-//
-// PrismNode is used to track the state of remote cluster members, while the local node's
-// state and operations are managed through the SerfManager struct itself.
+// PrismNode represents a cluster member containing essential metadata and state
+// information. Used to track remote cluster members while local node state is
+// managed through SerfManager.
 type PrismNode struct {
-	ID       string            `json:"id"`       // Unique hexadecimal identifier for the node (e.g., "a1b2c3d4e5f6")
-	Name     string            `json:"name"`     // Human-readable name of the node for identification and debugging
-	Addr     net.IP            `json:"addr"`     // IP address where the node can be reached for communication
-	Port     uint16            `json:"port"`     // Network port number the node is listening on for Serf traffic
-	Status   serf.MemberStatus `json:"status"`   // Current membership status (alive, leaving, left, failed, etc.)
-	Tags     map[string]string `json:"tags"`     // Key-value metadata tags for node capabilities, roles, and attributes
-	LastSeen time.Time         `json:"lastSeen"` // Timestamp of the last successful communication with this node
+	ID       string            `json:"id"`       // Unique hex identifier (12-char, e.g., "a1b2c3d4e5f6")
+	Name     string            `json:"name"`     // Human-readable node name
+	Addr     net.IP            `json:"addr"`     // IP address for communication
+	Port     uint16            `json:"port"`     // Network port for Serf traffic
+	Status   serf.MemberStatus `json:"status"`   // Membership status (alive, leaving, left, failed)
+	Tags     map[string]string `json:"tags"`     // Metadata tags for capabilities and roles
+	LastSeen time.Time         `json:"lastSeen"` // Last successful communication timestamp
 }
 
 // SerfManager orchestrates cluster membership, failure detection, and event distribution
-// for a Prism node using Serf. It provides the core distributed systems functionality
-// including node discovery, health monitoring, gossip-based communication, and maintains
-// a consistent view of cluster topology across all members.
+// using Serf. Provides node discovery, health monitoring, and maintains consistent
+// cluster topology view across all members.
 type SerfManager struct {
 	serf      *serf.Serf // Core Serf instance
 	NodeID    string     // Unique identifier for the node
@@ -75,9 +71,8 @@ type SerfManager struct {
 	config     *Config               // Manager Configuration
 }
 
-// NewSerfManager creates and initializes a new SerfManager instance with the provided
-// configuration. It validates the configuration, generates a unique node ID, sets up
-// internal channels for event processing, and prepares the manager for cluster operations.
+// NewSerfManager creates a new SerfManager instance with the provided configuration.
+// Validates config, generates unique node ID, and sets up event processing channels.
 // The returned manager is ready to start and join a Serf cluster.
 func NewSerfManager(config *Config) (*SerfManager, error) {
 	if config == nil {
@@ -115,10 +110,9 @@ func NewSerfManager(config *Config) (*SerfManager, error) {
 	return manager, nil
 }
 
-// Start initializes and starts the SerfManager, creating the underlying Serf instance
-// and beginning cluster operations. This includes configuring Serf settings, setting up
-// event handling, building node tags, and starting the event processing goroutine.
-// Once started, the manager will actively participate in cluster membership and gossip.
+// Start initializes and starts the SerfManager, creating the Serf instance and
+// beginning cluster operations. Configures Serf settings, event handling, and
+// starts the event processing goroutine.
 func (sm *SerfManager) Start() error {
 	sm.startTime = time.Now()
 	logging.Info("Starting SerfManager for node %s", sm.NodeID)
@@ -189,22 +183,15 @@ func (sm *SerfManager) Start() error {
 }
 
 // Join connects this node to an existing cluster by attempting to contact seed nodes.
-// It provides fault tolerance by trying each address until one succeeds, preventing
-// single points of failure during cluster bootstrap and network recovery.
+// Provides fault tolerance by trying each address until one succeeds.
 //
-// SWIM CONFLICT RESOLUTION BEHAVIOR:
-// When nodes with duplicate names attempt to join, Serf's SWIM protocol automatically
-// handles conflict resolution through consensus. The behavior depends on cluster size:
+// SWIM CONFLICT RESOLUTION:
+// When nodes with duplicate names join, Serf's SWIM protocol handles conflict resolution:
+//   - Small clusters (2-3 nodes): Both nodes may experience instability
+//   - Larger clusters (4+ nodes): Minority node quits, majority remains stable
 //
-//   - Small clusters (2-3 nodes): Both nodes may experience instability or both may quit
-//   - Larger clusters (4+ nodes): Clear majority/minority consensus - the minority node
-//     quits gracefully while the existing cluster remains stable
-//
-// This is SWIM's built-in "minority in name conflict resolution" mechanism working as
-// designed. Larger clusters provide more decisive consensus and better stability.
-//
-// RECOMMENDATION: Always use odd-numbered clusters (3, 5, 7, etc.) for optimal
-// conflict resolution and to avoid split-brain scenarios during network partitions.
+// RECOMMENDATION: Use odd-numbered clusters (3, 5, 7, etc.) for optimal conflict
+// resolution and to avoid split-brain scenarios.
 func (sm *SerfManager) Join(addresses []string) error {
 	if len(addresses) == 0 {
 		return fmt.Errorf("no join addresses provided")
@@ -265,10 +252,9 @@ func (sm *SerfManager) Join(addresses []string) error {
 		sm.config.JoinRetries, lastErr)
 }
 
-// Leave gracefully removes this node from the cluster by broadcasting a leave event
-// to all cluster members. This allows other nodes to immediately mark this node as
-// "left" rather than waiting for failure detection timeouts, ensuring clean departures
-// and faster cluster state convergence.
+// Leave gracefully removes this node from the cluster by broadcasting a leave event.
+// Allows other nodes to immediately mark this node as "left" rather than waiting
+// for failure detection timeouts.
 func (sm *SerfManager) Leave() error {
 	logging.Info("Leaving cluster gracefully")
 
@@ -281,10 +267,8 @@ func (sm *SerfManager) Leave() error {
 	return nil
 }
 
-// Shutdown gracefully stops the SerfManager and cleans up all associated resources.
-// This includes stopping the Serf instance, canceling the context to terminate goroutines,
-// waiting for background operations to complete, and ensuring no resource leaks occur.
-// Should be called when the node is being terminated or restarted.
+// Shutdown gracefully stops the SerfManager and cleans up all resources.
+// Stops Serf instance, cancels context, and waits for goroutines to complete.
 func (sm *SerfManager) Shutdown() error {
 	logging.Info("Shutting down SerfManager")
 
@@ -313,9 +297,8 @@ func (sm *SerfManager) Shutdown() error {
 	return nil
 }
 
-// GetMembers returns a copy of all known cluster members with their current state.
-// Retrieval is protected by locks; the returned map and PrismNode copies are safe
-// to modify without affecting internal cluster state.
+// GetMembers returns a copy of all known cluster members. The returned map and
+// PrismNode copies are safe to modify without affecting internal state.
 func (sm *SerfManager) GetMembers() map[string]*PrismNode {
 	sm.memberLock.RLock()
 	defer sm.memberLock.RUnlock()
@@ -328,9 +311,8 @@ func (sm *SerfManager) GetMembers() map[string]*PrismNode {
 	return members
 }
 
-// GetMember retrieves a specific cluster member by unique node ID. Returns a copy
-// of the node's current state and a boolean indicating whether the node exists.
-// The returned copy is safe to modify; internal state remains protected by locks.
+// GetMember retrieves a specific cluster member by node ID. Returns a copy of
+// the node's state and whether it exists. Safe to modify returned copy.
 func (sm *SerfManager) GetMember(nodeID string) (*PrismNode, bool) {
 	sm.memberLock.RLock()
 	defer sm.memberLock.RUnlock()
@@ -344,9 +326,7 @@ func (sm *SerfManager) GetMember(nodeID string) (*PrismNode, bool) {
 }
 
 // copyPrismNode creates a deep copy of a PrismNode to prevent external modifications
-// from corrupting the internal cluster state. This ensures data isolation by shallow
-// copying value types and deep copying reference types (like the Tags map). Called by
-// getter methods that have already acquired appropriate locks for thread safety.
+// from corrupting internal state. Shallow copies values, deep copies references.
 func (sm *SerfManager) copyPrismNode(node *PrismNode) *PrismNode {
 	// Shallow copy handles all value types (ID, Name, Addr, Port, Status, LastSeen)
 	nodeCopy := *node
@@ -357,30 +337,21 @@ func (sm *SerfManager) copyPrismNode(node *PrismNode) *PrismNode {
 	return &nodeCopy
 }
 
-// GetLocalMember returns a copy of this node's own cluster membership information
-// as a PrismNode. This provides the same data structure as remote nodes, including
-// current status, network details, and metadata tags, useful for consistent API
-// responses and self-introspection.
+// GetLocalMember returns a copy of this node's own cluster membership information.
+// Provides the same data structure as remote nodes for consistent API responses.
 func (sm *SerfManager) GetLocalMember() *PrismNode {
 	member, _ := sm.GetMember(sm.NodeID)
 	return member
 }
 
-// GetStartTime returns the timestamp when this SerfManager instance was started.
-// Useful for uptime calculations, health monitoring, and cluster analytics.
-// Note: This is manager start time, not the exact moment of Serf cluster join.
+// GetStartTime returns when this SerfManager instance was started.
+// Useful for uptime calculations and health monitoring.
 func (sm *SerfManager) GetStartTime() time.Time {
 	return sm.startTime
 }
 
-// buildNodeTags constructs the complete set of node tags by merging user-provided
-// configuration tags with system-generated identifiers. The resulting tag map is
-// propagated throughout the cluster via gossip protocol, enabling other nodes to
-// discover capabilities, roles, and identify this node uniquely.
-//
-// We also add a system tag `node_id` which is a random hex identifier for the node.
-// This is used to identify the node uniquely and is used by other components to
-// identify the node.
+// buildNodeTags constructs node tags by merging user-provided configuration tags
+// with system-generated identifiers. Adds "node_id" system tag for unique identification.
 func (sm *SerfManager) buildNodeTags() map[string]string {
 	// Pre-allocate map capacity: user tags + 1 system tag (node_id)
 	// This avoids memory reallocations when adding the fixed system tags below
@@ -395,10 +366,8 @@ func (sm *SerfManager) buildNodeTags() map[string]string {
 	return tags
 }
 
-// generateNodeID creates a cryptographically secure random hexadecimal identifier
-// for cluster nodes, similar to Docker container IDs. The 12-character hex string
-// provides sufficient uniqueness for cluster identification while remaining human-readable
-// for debugging and logging purposes. Uses crypto/rand for security-grade randomness.
+// generateNodeID creates a cryptographically secure 12-character hex identifier
+// for cluster nodes, similar to Docker container IDs. Uses crypto/rand for randomness.
 func generateNodeID() (string, error) {
 	// Generate 6 bytes of random data (12 hex characters, like Docker short IDs)
 	bytes := make([]byte, 6)
