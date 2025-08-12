@@ -67,16 +67,17 @@ func NewClientPool(serfManager *serf.SerfManager, grpcPort int) *ClientPool {
 // and supports per-node port configuration via "grpc_port" tag.
 func (cp *ClientPool) GetClient(nodeID string) (proto.NodeServiceClient, error) {
 	cp.mu.Lock()
-	defer cp.mu.Unlock()
 
 	// Return existing client if available
 	if client, exists := cp.clients[nodeID]; exists {
+		cp.mu.Unlock()
 		return client, nil
 	}
 
-	// Get node information from serf
+	// Get node information from serf (protected by lock)
 	node, exists := cp.serfManager.GetMember(nodeID)
 	if !exists {
+		cp.mu.Unlock()
 		return nil, fmt.Errorf("node %s not found in cluster", nodeID)
 	}
 
@@ -88,9 +89,13 @@ func (cp *ClientPool) GetClient(nodeID string) (proto.NodeServiceClient, error) 
 		}
 	}
 
-	// Create gRPC connection
+	// Create address while still protected
 	addr := fmt.Sprintf("%s:%d", node.Addr.String(), grpcPort)
 
+	// Release lock before dial to prevent blocking other operations
+	cp.mu.Unlock()
+
+	// Create gRPC connection (outside lock - this is the blocking I/O)
 	// TODO: Add TLS support when available
 	// TODO: Add custom dial options for timeouts and keepalive
 	conn, err := grpc.NewClient(addr,
@@ -98,6 +103,17 @@ func (cp *ClientPool) GetClient(nodeID string) (proto.NodeServiceClient, error) 
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to node %s at %s: %w", nodeID, addr, err)
+	}
+
+	// Re-acquire lock to store result
+	cp.mu.Lock()
+	defer cp.mu.Unlock()
+
+	// Double-check: another goroutine might have created the client while we were dialing
+	if existingClient, exists := cp.clients[nodeID]; exists {
+		conn.Close() // Close our connection since we have an existing one
+		logging.Debug("Found existing gRPC client for node %s, using existing connection", nodeID)
+		return existingClient, nil
 	}
 
 	// Create client and store both connection and client
