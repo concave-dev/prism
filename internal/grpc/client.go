@@ -31,6 +31,7 @@ import (
 	"github.com/concave-dev/prism/internal/grpc/proto"
 	"github.com/concave-dev/prism/internal/logging"
 	"github.com/concave-dev/prism/internal/serf"
+	"golang.org/x/sync/singleflight"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -48,6 +49,7 @@ type ClientPool struct {
 	clients     map[string]proto.NodeServiceClient // nodeID -> client
 	serfManager *serf.SerfManager                  // For discovering node addresses
 	grpcPort    int                                // Default gRPC port
+	dialGroup   singleflight.Group                 // Prevents duplicate dials to same node
 }
 
 // NewClientPool creates a new gRPC client pool with lazy connection creation.
@@ -65,64 +67,90 @@ func NewClientPool(serfManager *serf.SerfManager, grpcPort int) *ClientPool {
 // GetClient returns a gRPC client for the specified node, creating a new
 // connection if one doesn't exist. Discovers node address via Serf membership
 // and supports per-node port configuration via "grpc_port" tag.
+//
+// Race Condition Fix: Uses singleflight pattern to ensure only one dial operation
+// occurs per nodeID, even with concurrent calls. This prevents:
+//   - Multiple redundant network dials to the same address
+//   - Wasted connections that get immediately closed
+//   - Resource contention during high-concurrency scenarios
 func (cp *ClientPool) GetClient(nodeID string) (proto.NodeServiceClient, error) {
-	cp.mu.Lock()
-
-	// Return existing client if available
+	// Fast path: check if client already exists with read lock
+	cp.mu.RLock()
 	if client, exists := cp.clients[nodeID]; exists {
-		cp.mu.Unlock()
+		cp.mu.RUnlock()
 		return client, nil
 	}
+	cp.mu.RUnlock()
 
-	// Get node information from serf (protected by lock)
-	node, exists := cp.serfManager.GetMember(nodeID)
-	if !exists {
-		cp.mu.Unlock()
-		return nil, fmt.Errorf("node %s not found in cluster", nodeID)
-	}
-
-	// Get the actual gRPC port from node tags (each node may have a different port)
-	grpcPort := cp.grpcPort // fallback to default
-	if portStr, exists := node.Tags["grpc_port"]; exists {
-		if parsedPort, err := strconv.Atoi(portStr); err == nil {
-			grpcPort = parsedPort
+	// Singleflight ensures only one dial per nodeID happens concurrently.
+	// All goroutines requesting the same nodeID will wait for the single
+	// dial operation to complete and receive the same result.
+	result, err, _ := cp.dialGroup.Do(nodeID, func() (interface{}, error) {
+		// Double-check inside singleflight - another goroutine might have
+		// completed the connection while we were waiting
+		cp.mu.RLock()
+		if client, exists := cp.clients[nodeID]; exists {
+			cp.mu.RUnlock()
+			return client, nil
 		}
-	}
+		cp.mu.RUnlock()
 
-	// Create address while still protected
-	addr := fmt.Sprintf("%s:%d", node.Addr.String(), grpcPort)
+		// Get node information from serf
+		cp.mu.RLock()
+		node, exists := cp.serfManager.GetMember(nodeID)
+		cp.mu.RUnlock()
 
-	// Release lock before dial to prevent blocking other operations
-	cp.mu.Unlock()
+		if !exists {
+			return nil, fmt.Errorf("node %s not found in cluster", nodeID)
+		}
 
-	// Create gRPC connection (outside lock - this is the blocking I/O)
-	// TODO: Add TLS support when available
-	// TODO: Add custom dial options for timeouts and keepalive
-	conn, err := grpc.NewClient(addr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
+		// Get the actual gRPC port from node tags (each node may have a different port)
+		grpcPort := cp.grpcPort // fallback to default
+		if portStr, exists := node.Tags["grpc_port"]; exists {
+			if parsedPort, err := strconv.Atoi(portStr); err == nil {
+				grpcPort = parsedPort
+			}
+		}
+
+		// Create address
+		addr := fmt.Sprintf("%s:%d", node.Addr.String(), grpcPort)
+
+		// Create gRPC connection (this is the expensive I/O operation that
+		// singleflight prevents from happening multiple times concurrently)
+		// TODO: Add TLS support when available
+		// TODO: Add custom dial options for timeouts and keepalive
+		conn, err := grpc.NewClient(addr,
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to connect to node %s at %s: %w", nodeID, addr, err)
+		}
+
+		// Store the connection atomically
+		cp.mu.Lock()
+		defer cp.mu.Unlock()
+
+		// Final check: ensure no other goroutine stored a client during our dial
+		if existingClient, exists := cp.clients[nodeID]; exists {
+			conn.Close() // Close our connection since an existing one was found
+			logging.Debug("Found existing gRPC client for node %s after dial, using existing", nodeID)
+			return existingClient, nil
+		}
+
+		// Create client and store both connection and client
+		client := proto.NewNodeServiceClient(conn)
+		cp.connections[nodeID] = conn
+		cp.clients[nodeID] = client
+
+		logging.Debug("Created gRPC client for node %s at %s", nodeID, addr)
+		return client, nil
+	})
+
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to node %s at %s: %w", nodeID, addr, err)
+		return nil, err
 	}
 
-	// Re-acquire lock to store result
-	cp.mu.Lock()
-	defer cp.mu.Unlock()
-
-	// Double-check: another goroutine might have created the client while we were dialing
-	if existingClient, exists := cp.clients[nodeID]; exists {
-		conn.Close() // Close our connection since we have an existing one
-		logging.Debug("Found existing gRPC client for node %s, using existing connection", nodeID)
-		return existingClient, nil
-	}
-
-	// Create client and store both connection and client
-	client := proto.NewNodeServiceClient(conn)
-	cp.connections[nodeID] = conn
-	cp.clients[nodeID] = client
-
-	logging.Debug("Created gRPC client for node %s at %s", nodeID, addr)
-	return client, nil
+	return result.(proto.NodeServiceClient), nil
 }
 
 // GetResourcesFromNode queries resource information from a specific node via gRPC.
