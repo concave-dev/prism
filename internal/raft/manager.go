@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/concave-dev/prism/internal/logging"
+	serfpkg "github.com/concave-dev/prism/internal/serf"
 	"github.com/hashicorp/raft"
 	raftboltdb "github.com/hashicorp/raft-boltdb"
 	"github.com/hashicorp/serf/serf"
@@ -32,6 +33,12 @@ type RaftManager struct {
 	mu          sync.RWMutex           // Mutex for thread-safe operations
 	shutdown    chan struct{}          // Channel to signal shutdown
 	resolvedIP  string                 // Cached resolved IP for consistency across bootstrap and transport
+	serfManager SerfInterface          // Interface for Serf member queries
+}
+
+// SerfInterface defines the methods we need from Serf manager for autopilot
+type SerfInterface interface {
+	GetMembers() map[string]*serfpkg.PrismNode
 }
 
 // NewRaftManager creates a new Raft manager with the given configuration
@@ -624,8 +631,7 @@ func (m *RaftManager) autopilotCleanup() {
 }
 
 // performAutopilotCleanup removes Raft peers that are dead in Serf
-// TODO: Add Serf interface to get alive/dead member status
-// TODO: Add TCP probe to verify peer is actually unreachable
+// Uses Serf's SWIM protocol to determine member liveness instead of TCP probes
 // TODO: Add safety checks (minimum quorum, cooldown periods)
 func (m *RaftManager) performAutopilotCleanup() {
 	// Get current Raft peers
@@ -635,14 +641,62 @@ func (m *RaftManager) performAutopilotCleanup() {
 		return
 	}
 
-	isLeader := m.IsLeader()
-	logging.Debug("Autopilot: Checking %d Raft peers for cleanup (leader: %t)", len(peers), isLeader)
+	// Check if we have Serf manager available
+	if m.serfManager == nil {
+		logging.Debug("Autopilot: No Serf manager available, skipping cleanup")
+		return
+	}
 
-	// Detect deadlock situation: no leader + unreachable peers
-	if !isLeader && len(peers) > 1 {
-		unreachablePeers := m.detectUnreachablePeers(peers)
-		if len(unreachablePeers) > 0 {
-			m.reportDeadlock(unreachablePeers)
+	// Get alive Serf members
+	serfMembers := m.serfManager.GetMembers()
+	aliveNodeIDs := make(map[string]bool)
+
+	// Build set of alive node IDs from Serf
+	for nodeID, member := range serfMembers {
+		if member.Status == serf.StatusAlive {
+			aliveNodeIDs[nodeID] = true
+		}
+	}
+
+	isLeader := m.IsLeader()
+	logging.Debug("Autopilot: Found %d alive Serf members, checking %d Raft peers (leader: %t)",
+		len(aliveNodeIDs), len(peers), isLeader)
+
+	// Find dead peers (in Raft but not alive in Serf)
+	var deadPeers []string
+	for _, peer := range peers {
+		// Parse peer format: "nodeID@address"
+		parts := strings.Split(peer, "@")
+		if len(parts) != 2 {
+			continue
+		}
+		nodeID := parts[0]
+
+		// Skip ourselves
+		if nodeID == m.config.NodeID {
+			continue
+		}
+
+		// If not in alive Serf members, mark as dead
+		if !aliveNodeIDs[nodeID] {
+			deadPeers = append(deadPeers, nodeID)
+			logging.Info("Autopilot: Detected dead peer %s (not alive in Serf)", nodeID)
+		}
+	}
+
+	// Detect election deadlock: no leader + insufficient quorum due to dead peers
+	if len(deadPeers) > 0 {
+		// Check if there's actually no leader in the cluster
+		currentLeader := m.Leader()
+		if currentLeader == "" {
+			// Calculate if we have sufficient alive peers for quorum
+			totalPeers := len(peers)
+			alivePeers := totalPeers - len(deadPeers)
+			requiredQuorum := (totalPeers / 2) + 1
+
+			if alivePeers < requiredQuorum {
+				m.reportDeadlock(deadPeers, totalPeers, alivePeers, requiredQuorum)
+			}
 		}
 	}
 
@@ -651,64 +705,33 @@ func (m *RaftManager) performAutopilotCleanup() {
 		return
 	}
 
-	// TODO: This is a simplified version - need Serf interface
-	// For now, just log what we would do
-	for _, peer := range peers {
-		// Parse peer format: "nodeID@address"
-		parts := strings.Split(peer, "@")
-		if len(parts) != 2 {
-			continue
-		}
-		nodeID := parts[0]
-		address := parts[1]
+	// Remove dead peers from Raft cluster
+	for _, nodeID := range deadPeers {
+		logging.Info("Autopilot: Removing dead peer %s from Raft cluster", nodeID)
 
-		// Skip ourselves
-		if nodeID == m.config.NodeID {
-			continue
-		}
-
-		// TODO: Check if nodeID is alive in Serf
-		// TODO: TCP probe to address
-		// TODO: Remove if confirmed dead
-		logging.Debug("Autopilot: Would check peer %s at %s for liveness", nodeID, address)
-	}
-}
-
-// detectUnreachablePeers checks which Raft peers are unreachable via TCP probe
-func (m *RaftManager) detectUnreachablePeers(peers []string) []string {
-	var unreachable []string
-
-	for _, peer := range peers {
-		parts := strings.Split(peer, "@")
-		if len(parts) != 2 {
-			continue
-		}
-		nodeID := parts[0]
-		address := parts[1]
-
-		// Skip ourselves
-		if nodeID == m.config.NodeID {
-			continue
-		}
-
-		// TCP probe to check if peer is reachable
-		conn, err := net.DialTimeout("tcp", address, 1*time.Second)
-		if err != nil {
-			unreachable = append(unreachable, nodeID)
+		// TODO: Add safety checks (minimum quorum, cooldown periods)
+		future := m.raft.RemoveServer(raft.ServerID(nodeID), 0, 0)
+		if err := future.Error(); err != nil {
+			logging.Error("Autopilot: Failed to remove dead peer %s: %v", nodeID, err)
 		} else {
-			conn.Close()
+			logging.Success("Autopilot: Successfully removed dead peer %s", nodeID)
 		}
 	}
-
-	return unreachable
 }
 
-// reportDeadlock reports election deadlock caused by dead peers
-func (m *RaftManager) reportDeadlock(deadPeers []string) {
+// reportDeadlock reports election deadlock caused by insufficient quorum
+func (m *RaftManager) reportDeadlock(deadPeers []string, totalPeers, alivePeers, requiredQuorum int) {
 	logging.Error("ELECTION DEADLOCK DETECTED")
-	logging.Error("Dead peers blocking leader election: %v", deadPeers)
+	logging.Error("No leader elected and insufficient quorum for new elections")
+	logging.Error("Cluster status: %d total peers, %d alive, %d required for quorum", totalPeers, alivePeers, requiredQuorum)
+	logging.Error("Dead peers blocking elections: %v", deadPeers)
 	logging.Error("Manual intervention required:")
 	logging.Error("  Option 1: Restart dead nodes to restore quorum")
-	logging.Error("  Option 2: Rebuild cluster from backup with proper node count")
+	logging.Error("  Option 2: Remove dead peers and rebuild cluster with remaining nodes")
 	logging.Error("Cluster is locked until quorum is restored!")
+}
+
+// SetSerfManager sets the Serf manager reference for autopilot
+func (m *RaftManager) SetSerfManager(serfMgr SerfInterface) {
+	m.serfManager = serfMgr
 }

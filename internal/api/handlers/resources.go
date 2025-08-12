@@ -7,6 +7,10 @@ import (
 	"sort"
 	"time"
 
+	"github.com/concave-dev/prism/internal/grpc"
+	"github.com/concave-dev/prism/internal/grpc/proto"
+	"github.com/concave-dev/prism/internal/logging"
+	"github.com/concave-dev/prism/internal/resources"
 	"github.com/concave-dev/prism/internal/serf"
 	"github.com/gin-gonic/gin"
 )
@@ -52,93 +56,8 @@ type NodeResourcesResponse struct {
 	MemoryAvailableMB int `json:"memoryAvailableMB"`
 }
 
-// HandleClusterResources returns resources from all cluster nodes
-func HandleClusterResources(serfManager *serf.SerfManager) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		// Query resources from all nodes via Serf
-		resourceMap, err := serfManager.QueryResources()
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"status":  "error",
-				"message": fmt.Sprintf("Failed to query cluster resources: %v", err),
-			})
-			return
-		}
-
-		// Convert to API response format
-		var resources []NodeResourcesResponse
-		for _, nodeRes := range resourceMap {
-			apiRes := convertToAPIResponse(nodeRes)
-			resources = append(resources, apiRes)
-		}
-
-		// Sort by node name for consistent output
-		sort.Slice(resources, func(i, j int) bool {
-			return resources[i].NodeName < resources[j].NodeName
-		})
-
-		c.JSON(http.StatusOK, gin.H{
-			"status": "success",
-			"data":   resources,
-			"count":  len(resources),
-		})
-	}
-}
-
-// HandleNodeResources returns resources from a specific node
-func HandleNodeResources(serfManager *serf.SerfManager) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		nodeID := c.Param("id")
-		if nodeID == "" {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"status":  "error",
-				"message": "Node ID is required",
-			})
-			return
-		}
-
-		// Check if node exists first (same logic as QueryResourcesFromNode)
-		_, exists := serfManager.GetMember(nodeID)
-		if !exists {
-			// Try to find by node name if exact ID doesn't work
-			for _, member := range serfManager.GetMembers() {
-				if member.Name == nodeID {
-					exists = true
-					break
-				}
-			}
-		}
-
-		if !exists {
-			c.JSON(http.StatusNotFound, gin.H{
-				"status":  "error",
-				"message": fmt.Sprintf("Node '%s' not found in cluster", nodeID),
-			})
-			return
-		}
-
-		// Query resources from specific node via Serf
-		nodeRes, err := serfManager.QueryResourcesFromNode(nodeID)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"status":  "error",
-				"message": fmt.Sprintf("Failed to query node resources: %v", err),
-			})
-			return
-		}
-
-		// Convert to API response format
-		apiRes := convertToAPIResponse(nodeRes)
-
-		c.JSON(http.StatusOK, gin.H{
-			"status": "success",
-			"data":   apiRes,
-		})
-	}
-}
-
-// convertToAPIResponse converts serf.NodeResources to API response format
-func convertToAPIResponse(nodeRes *serf.NodeResources) NodeResourcesResponse {
+// convertToAPIResponse converts resources.NodeResources to API response format
+func convertToAPIResponse(nodeRes *resources.NodeResources) NodeResourcesResponse {
 	return NodeResourcesResponse{
 		NodeID:    nodeRes.NodeID,
 		NodeName:  nodeRes.NodeName,
@@ -192,5 +111,168 @@ func formatDuration(d time.Duration) string {
 		days := int(d.Hours() / 24)
 		hours := int(d.Hours()) % 24
 		return fmt.Sprintf("%dd%dh", days, hours)
+	}
+}
+
+// HandleClusterResources returns resources from all cluster nodes using gRPC with serf fallback
+func HandleClusterResources(clientPool *grpc.ClientPool, serfManager *serf.SerfManager) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Try gRPC first for faster communication - this now includes all nodes (local + remote)
+		allMembers := serfManager.GetMembers()
+		var resList []NodeResourcesResponse
+
+		// Query all nodes (including local) using the unified approach
+		for nodeID := range allMembers {
+			grpcRes, err := clientPool.GetResourcesFromNode(nodeID)
+			if err != nil {
+				logging.Warn("Failed to get resources from node %s via gRPC: %v", nodeID, err)
+				continue
+			}
+
+			apiRes := convertFromGRPCResponse(grpcRes)
+			resList = append(resList, apiRes)
+		}
+
+		// If we didn't get enough nodes via gRPC, fall back to serf for missing nodes
+		expectedNodes := len(serfManager.GetMembers())
+		if len(resList) < expectedNodes {
+			logging.Warn("gRPC returned %d nodes, expected %d. Falling back to serf queries", len(resList), expectedNodes)
+
+			// Get all resources via serf as fallback
+			resourceMap, err := serfManager.QueryResources()
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"status":  "error",
+					"message": fmt.Sprintf("Failed to query cluster resources via gRPC or serf: %v", err),
+				})
+				return
+			}
+
+			// Use serf results instead
+			resList = []NodeResourcesResponse{}
+			for _, nodeRes := range resourceMap {
+				apiRes := convertToAPIResponse(nodeRes)
+				resList = append(resList, apiRes)
+			}
+		}
+
+		// Sort by node name for consistent output
+		sort.Slice(resList, func(i, j int) bool {
+			return resList[i].NodeName < resList[j].NodeName
+		})
+
+		c.JSON(http.StatusOK, gin.H{
+			"status": "success",
+			"data":   resList,
+			"count":  len(resList),
+		})
+	}
+}
+
+// HandleNodeResources returns resources from a specific node using gRPC with serf fallback
+func HandleNodeResources(clientPool *grpc.ClientPool, serfManager *serf.SerfManager) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		nodeID := c.Param("id")
+		if nodeID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"status":  "error",
+				"message": "Node ID is required",
+			})
+			return
+		}
+
+		// Check if node exists first
+		_, exists := serfManager.GetMember(nodeID)
+		if !exists {
+			// Try to find by node name if exact ID doesn't work
+			for _, member := range serfManager.GetMembers() {
+				if member.Name == nodeID {
+					nodeID = member.ID // Replace name with actual ID for gRPC calls
+					exists = true
+					break
+				}
+			}
+		}
+
+		if !exists {
+			c.JSON(http.StatusNotFound, gin.H{
+				"status":  "error",
+				"message": fmt.Sprintf("Node '%s' not found in cluster", nodeID),
+			})
+			return
+		}
+
+		// Try gRPC first - unified approach for all nodes (local and remote)
+		grpcRes, err := clientPool.GetResourcesFromNode(nodeID)
+		if err != nil {
+			logging.Warn("gRPC query failed for node %s, falling back to serf: %v", nodeID, err)
+
+			// Fall back to serf query
+			nodeRes, serfErr := serfManager.QueryResourcesFromNode(nodeID)
+			if serfErr != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"status":  "error",
+					"message": fmt.Sprintf("Failed to query node resources via gRPC or serf: %v", serfErr),
+				})
+				return
+			}
+
+			apiRes := convertToAPIResponse(nodeRes)
+			c.JSON(http.StatusOK, gin.H{
+				"status": "success",
+				"data":   apiRes,
+			})
+			return
+		}
+
+		// Convert gRPC response to API format
+		apiRes := convertFromGRPCResponse(grpcRes)
+		c.JSON(http.StatusOK, gin.H{
+			"status": "success",
+			"data":   apiRes,
+		})
+	}
+}
+
+// convertFromGRPCResponse converts a gRPC response to API response format
+func convertFromGRPCResponse(grpcRes *proto.GetResourcesResponse) NodeResourcesResponse {
+	return NodeResourcesResponse{
+		NodeID:    grpcRes.NodeId,
+		NodeName:  grpcRes.NodeName,
+		Timestamp: grpcRes.Timestamp.AsTime(),
+
+		// CPU Information
+		CPUCores:     int(grpcRes.CpuCores),
+		CPUUsage:     grpcRes.CpuUsage,
+		CPUAvailable: grpcRes.CpuAvailable,
+
+		// Memory Information
+		MemoryTotal:     grpcRes.MemoryTotal,
+		MemoryUsed:      grpcRes.MemoryUsed,
+		MemoryAvailable: grpcRes.MemoryAvailable,
+		MemoryUsage:     grpcRes.MemoryUsage,
+
+		// Go Runtime Information
+		GoRoutines: int(grpcRes.GoRoutines),
+		GoMemAlloc: grpcRes.GoMemAlloc,
+		GoMemSys:   grpcRes.GoMemSys,
+		GoGCCycles: grpcRes.GoGcCycles,
+		GoGCPause:  grpcRes.GoGcPause,
+
+		// Node Status
+		Uptime: formatDuration(time.Duration(grpcRes.UptimeSeconds) * time.Second),
+		Load1:  grpcRes.Load1,
+		Load5:  grpcRes.Load5,
+		Load15: grpcRes.Load15,
+
+		// Capacity Limits
+		MaxJobs:        int(grpcRes.MaxJobs),
+		CurrentJobs:    int(grpcRes.CurrentJobs),
+		AvailableSlots: int(grpcRes.AvailableSlots),
+
+		// Human-readable sizes (in MB)
+		MemoryTotalMB:     int(grpcRes.MemoryTotal / (1024 * 1024)),
+		MemoryUsedMB:      int(grpcRes.MemoryUsed / (1024 * 1024)),
+		MemoryAvailableMB: int(grpcRes.MemoryAvailable / (1024 * 1024)),
 	}
 }

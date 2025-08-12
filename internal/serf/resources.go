@@ -1,124 +1,159 @@
-// Package serf provides resource monitoring for Prism cluster nodes
+// Package serf provides resource querying functionality for Prism cluster nodes
 package serf
 
 import (
-	"encoding/json"
-	"runtime"
+	"fmt"
 	"time"
 
 	"github.com/concave-dev/prism/internal/logging"
-	"github.com/shirou/gopsutil/v3/mem"
+	"github.com/concave-dev/prism/internal/resources"
+	"github.com/hashicorp/serf/serf"
 )
 
-// NodeResources represents the available resources on a cluster node
-type NodeResources struct {
-	NodeID    string    `json:"nodeId"`    // Unique node identifier
-	NodeName  string    `json:"nodeName"`  // Human-readable node name
-	Timestamp time.Time `json:"timestamp"` // When this resource snapshot was taken
-
-	// CPU Information
-	CPUCores     int     `json:"cpuCores"`     // Number of CPU cores
-	CPUUsage     float64 `json:"cpuUsage"`     // Current CPU usage percentage (0-100)
-	CPUAvailable float64 `json:"cpuAvailable"` // Available CPU percentage (0-100)
-
-	// Memory Information (in bytes) - actual system memory, not Go runtime
-	MemoryTotal     uint64  `json:"memoryTotal"`     // Total physical system memory
-	MemoryUsed      uint64  `json:"memoryUsed"`      // Currently used system memory
-	MemoryAvailable uint64  `json:"memoryAvailable"` // Available system memory for new processes
-	MemoryUsage     float64 `json:"memoryUsage"`     // System memory usage percentage (0-100)
-
-	// Go Runtime Information
-	GoRoutines int     `json:"goRoutines"` // Number of active goroutines
-	GoMemAlloc uint64  `json:"goMemAlloc"` // Bytes allocated by Go runtime
-	GoMemSys   uint64  `json:"goMemSys"`   // Bytes obtained from system by Go
-	GoGCCycles uint32  `json:"goGcCycles"` // Number of completed GC cycles
-	GoGCPause  float64 `json:"goGcPause"`  // Recent GC pause time in milliseconds
-
-	// Node Status
-	Uptime time.Duration `json:"uptime"` // How long the node has been running
-	Load1  float64       `json:"load1"`  // 1-minute load average (if available)
-	Load5  float64       `json:"load5"`  // 5-minute load average (if available)
-	Load15 float64       `json:"load15"` // 15-minute load average (if available)
-
-	// Capacity Limits (for future scheduling decisions)
-	MaxJobs        int `json:"maxJobs"`        // Maximum concurrent jobs this node can handle
-	CurrentJobs    int `json:"currentJobs"`    // Currently running jobs
-	AvailableSlots int `json:"availableSlots"` // Available job slots
+// GatherLocalResources returns current resource information for this node
+func (sm *SerfManager) GatherLocalResources() *resources.NodeResources {
+	return resources.GatherSystemResources(sm.NodeID, sm.NodeName, sm.startTime)
 }
 
-// gatherResources gathers current resource information for this node
-func (sm *SerfManager) gatherResources() *NodeResources {
-	now := time.Now()
+// QueryResources sends a get-resources query to all cluster nodes and returns their responses
+func (sm *SerfManager) QueryResources() (map[string]*resources.NodeResources, error) {
+	// Get expected node count for early optimization
+	members := sm.GetMembers()
+	expectedNodes := len(members)
+	logging.Debug("Querying resources from %d cluster nodes", expectedNodes)
 
-	// Get Go runtime memory stats for Go-specific metrics
-	var memStats runtime.MemStats
-	runtime.ReadMemStats(&memStats)
+	// Send query to all nodes
+	//
+	// PERFORMANCE FIX: Timeout Configuration
+	//
+	// BEFORE (competing timeouts):
+	// Time:    0s    2s    4s    6s    8s    10s   12s
+	// HTTP:    [---------- waiting ----------] TIMEOUT
+	// Serf:         [------ collecting ------] Done, but too late
+	// API:                                     Tries to respond... Too late
+	//
+	// AFTER (consistent timeouts):
+	// Time:    0s    2s    4s    5s    6s    8s
+	// HTTP:    [---- waiting --------] Gets response
+	// Serf:         [-- fast --] Done at 5s
+	// API:                      Process & respond at 6s
+	//
+	// - Serf query timeout: 5s (reduced from 10s)
+	// - Response collection: 5s (matches Serf timeout)
+	// - HTTP client timeout: 8s (in prismctl)
+	//
+	// This cascade prevents HTTP timeouts during normal Serf operations.
+	// Serf queries via gossip are fast, but need buffer time for response
+	// collection and JSON serialization before HTTP response.
+	queryParams := &serf.QueryParam{
+		RequestAck: true,
+		Timeout:    5 * time.Second, // Reduced to give HTTP response time
+	}
 
-	// Get actual system memory information
-	virtualMem, err := mem.VirtualMemory()
+	resp, err := sm.serf.Query("get-resources", nil, queryParams)
 	if err != nil {
-		logging.Error("Failed to get system memory stats: %v", err)
-		// Fallback to Go runtime stats if system stats fail
-		virtualMem = &mem.VirtualMemoryStat{
-			Total:     memStats.Sys,
-			Used:      memStats.Alloc,
-			Available: memStats.Sys - memStats.Alloc,
+		return nil, fmt.Errorf("failed to send get-resources query: %w", err)
+	}
+
+	// Process responses
+	resourcesMap := make(map[string]*resources.NodeResources)
+
+	// Handle responses as they come in with timeout
+	//
+	// OPTIMIZATION: Early Return + Response Timeout
+	// - Collect responses until all expected nodes reply OR timeout
+	// - Early return when we get all responses (faster for small clusters)
+	// - 5s response timeout matches Serf query timeout (Serf closes channel at 5s anyway)
+	responseTimeout := time.NewTimer(5 * time.Second) // Matches query timeout
+	defer responseTimeout.Stop()
+
+	for {
+		select {
+		case response, ok := <-resp.ResponseCh():
+			if !ok {
+				// Channel closed, all responses received
+				goto done
+			}
+
+			nodeResources, err := resources.NodeResourcesFromJSON(response.Payload)
+			if err != nil {
+				logging.Warn("Failed to parse resources from node %s: %v", response.From, err)
+				continue
+			}
+
+			resourcesMap[response.From] = nodeResources
+			logging.Debug("Received resources from node %s: CPU=%d, Memory=%dMB",
+				response.From, nodeResources.CPUCores, nodeResources.MemoryTotal/(1024*1024))
+
+			// Early return if we have all expected responses
+			if len(resourcesMap) >= expectedNodes {
+				logging.Debug("Received all %d expected responses, returning early", expectedNodes)
+				goto done
+			}
+
+		case <-responseTimeout.C:
+			// Timeout waiting for responses
+			logging.Warn("Timeout waiting for resource responses, got %d responses", len(resourcesMap))
+			goto done
+		}
+	}
+done:
+
+	logging.Info("Successfully gathered resources from %d nodes", len(resourcesMap))
+	return resourcesMap, nil
+}
+
+// QueryResourcesFromNode sends a get-resources query to a specific node
+func (sm *SerfManager) QueryResourcesFromNode(nodeID string) (*resources.NodeResources, error) {
+	logging.Debug("Querying resources from specific node: %s", nodeID)
+
+	// Try exact node ID first, then fall back to node name search
+	node, exists := sm.GetMember(nodeID)
+	if !exists {
+		// Try to find by node name if exact ID doesn't work
+		for _, member := range sm.GetMembers() {
+			if member.Name == nodeID {
+				node = member
+				exists = true
+				logging.Debug("Found node by name: %s -> %s", nodeID, member.ID)
+				break
+			}
 		}
 	}
 
-	// Calculate basic resource metrics
-	resources := &NodeResources{
-		NodeID:    sm.NodeID,
-		NodeName:  sm.NodeName,
-		Timestamp: now,
-
-		// CPU Information
-		CPUCores:     runtime.NumCPU(),
-		CPUUsage:     0.0,   // TODO: Implement actual CPU monitoring
-		CPUAvailable: 100.0, // TODO: Calculate based on current load
-
-		// Memory Information (actual system memory)
-		MemoryTotal:     virtualMem.Total,
-		MemoryUsed:      virtualMem.Used,
-		MemoryAvailable: virtualMem.Available,
-		MemoryUsage:     virtualMem.UsedPercent,
-
-		// Go Runtime Information
-		GoRoutines: runtime.NumGoroutine(),
-		GoMemAlloc: memStats.Alloc,
-		GoMemSys:   memStats.Sys,
-		GoGCCycles: memStats.NumGC,
-		GoGCPause:  float64(memStats.PauseNs[(memStats.NumGC+255)%256]) / 1000000, // Convert to milliseconds
-
-		// Node Status
-		Uptime: time.Since(sm.startTime),
-		Load1:  0.0, // TODO: Implement load average monitoring
-		Load5:  0.0,
-		Load15: 0.0,
-
-		// Capacity (initial simple implementation)
-		MaxJobs:        10, // TODO: Make configurable
-		CurrentJobs:    0,  // TODO: Track actual job count
-		AvailableSlots: 10, // TODO: Calculate based on current load
+	if !exists {
+		return nil, fmt.Errorf("node %s not found in cluster", nodeID)
 	}
 
-	logging.Debug("Gathered resources for node %s: CPU cores=%d, Memory=%dMB, Goroutines=%d",
-		sm.NodeID, resources.CPUCores, resources.MemoryTotal/(1024*1024), resources.GoRoutines)
+	// Extract node name for Serf filtering (FilterNodes expects node names, not IDs)
+	nodeName := node.Name
 
-	return resources
-}
+	// Send query to specific node
+	queryParams := &serf.QueryParam{
+		FilterNodes: []string{nodeName},
+		RequestAck:  true,
+		Timeout:     5 * time.Second,
+	}
 
-// ToJSON converts NodeResources to JSON for network transmission
-func (nr *NodeResources) ToJSON() ([]byte, error) {
-	return json.Marshal(nr)
-}
-
-// NodeResourcesFromJSON converts JSON to NodeResources
-func NodeResourcesFromJSON(data []byte) (*NodeResources, error) {
-	var resources NodeResources
-	err := json.Unmarshal(data, &resources)
+	resp, err := sm.serf.Query("get-resources", nil, queryParams)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to send get-resources query to node %s: %w", nodeID, err)
 	}
-	return &resources, nil
+
+	// Wait for response
+	for response := range resp.ResponseCh() {
+		// Since we filtered to only one node name, any response should be from our target
+		if response.From == nodeName {
+			nodeResources, err := resources.NodeResourcesFromJSON(response.Payload)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse resources from node %s: %w", nodeID, err)
+			}
+
+			logging.Debug("Received resources from node %s (name: %s): CPU=%d, Memory=%dMB",
+				nodeID, nodeName, nodeResources.CPUCores, nodeResources.MemoryTotal/(1024*1024))
+			return nodeResources, nil
+		}
+	}
+
+	return nil, fmt.Errorf("no response received from node %s", nodeID)
 }

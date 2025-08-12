@@ -4,13 +4,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/concave-dev/prism/internal/serf"
+	"github.com/concave-dev/prism/internal/resources"
 )
 
 // TestConvertToAPIResponse tests the resource conversion function
 func TestConvertToAPIResponse(t *testing.T) {
 	// Create test input
-	nodeRes := &serf.NodeResources{
+	nodeRes := &resources.NodeResources{
 		NodeID:    "test-node-123",
 		NodeName:  "test-node",
 		Timestamp: time.Now(),
@@ -153,7 +153,7 @@ func TestFormatDuration(t *testing.T) {
 // TestMemoryConversion tests memory byte to MB conversion logic
 func TestMemoryConversion(t *testing.T) {
 	// Test the key conversion: 1GB = 1024MB
-	nodeRes := &serf.NodeResources{
+	nodeRes := &resources.NodeResources{
 		MemoryTotal: 1073741824, // 1GB in bytes
 	}
 

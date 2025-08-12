@@ -6,6 +6,7 @@ package api
 import (
 	"fmt"
 
+	"github.com/concave-dev/prism/internal/grpc"
 	"github.com/concave-dev/prism/internal/raft"
 	"github.com/concave-dev/prism/internal/serf"
 )
@@ -20,10 +21,11 @@ const (
 // TODO: Add support for configurable timeouts (read, write, idle)
 // TODO: Add support for authentication/authorization middleware
 type Config struct {
-	BindAddr    string            // HTTP server bind address (e.g., "0.0.0.0")
-	BindPort    int               // HTTP server bind port
-	SerfManager *serf.SerfManager // Reference to cluster manager for data access
-	RaftManager *raft.RaftManager // Reference to Raft manager for consensus status
+	BindAddr       string            // HTTP server bind address (e.g., "0.0.0.0")
+	BindPort       int               // HTTP server bind port
+	SerfManager    *serf.SerfManager // Reference to cluster manager for data access
+	RaftManager    *raft.RaftManager // Reference to Raft manager for consensus status
+	GRPCClientPool *grpc.ClientPool  // Reference to gRPC client pool for inter-node communication
 }
 
 // DefaultConfig returns a default API server configuration
@@ -33,10 +35,11 @@ func DefaultConfig() *Config {
 	return &Config{
 		// Default to loopback for safer local development. Daemon can override.
 		// TODO(api): Consider env/config to expose externally when needed.
-		BindAddr:    "127.0.0.1",
-		BindPort:    DefaultAPIPort,
-		SerfManager: nil, // Must be set by caller
-		RaftManager: nil, // Must be set by caller
+		BindAddr:       "127.0.0.1",
+		BindPort:       DefaultAPIPort,
+		SerfManager:    nil, // Must be set by caller
+		RaftManager:    nil, // Must be set by caller
+		GRPCClientPool: nil, // Must be set by caller
 	}
 }
 
@@ -55,6 +58,9 @@ func (c *Config) Validate() error {
 	}
 	if c.RaftManager == nil {
 		return fmt.Errorf("raft manager cannot be nil")
+	}
+	if c.GRPCClientPool == nil {
+		return fmt.Errorf("gRPC client pool cannot be nil")
 	}
 
 	return nil

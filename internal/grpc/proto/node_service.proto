@@ -1,0 +1,98 @@
+syntax = "proto3";
+
+package prism.node.v1;
+
+option go_package = "github.com/concave-dev/prism/internal/grpc/proto";
+
+import "google/protobuf/timestamp.proto";
+
+// NodeService provides resource information and health status for cluster nodes
+// TODO: Add authentication for secure inter-node communication
+// TODO: Add streaming methods for real-time resource monitoring
+service NodeService {
+  // GetResources returns current resource utilization for this node
+  rpc GetResources(GetResourcesRequest) returns (GetResourcesResponse);
+  
+  // GetHealth returns health status for this node
+  rpc GetHealth(GetHealthRequest) returns (GetHealthResponse);
+  
+  // TODO: Add streaming resource monitoring
+  // rpc StreamResources(StreamResourcesRequest) returns (stream ResourceUpdate);
+}
+
+// GetResourcesRequest is the request message for resource queries
+message GetResourcesRequest {
+  // Optional: specific resource types to query (empty = all)
+  repeated string resource_types = 1;
+}
+
+// GetResourcesResponse contains node resource information
+message GetResourcesResponse {
+  string node_id = 1;
+  string node_name = 2;
+  google.protobuf.Timestamp timestamp = 3;
+  
+  // CPU Information
+  int32 cpu_cores = 4;
+  double cpu_usage = 5;
+  double cpu_available = 6;
+  
+  // Memory Information (in bytes)
+  uint64 memory_total = 7;
+  uint64 memory_used = 8;
+  uint64 memory_available = 9;
+  double memory_usage = 10;
+  
+  // Go Runtime Information
+  int32 go_routines = 11;
+  uint64 go_mem_alloc = 12;
+  uint64 go_mem_sys = 13;
+  uint32 go_gc_cycles = 14;
+  double go_gc_pause = 15;
+  
+  // Node Status
+  int64 uptime_seconds = 16;
+  double load1 = 17;
+  double load5 = 18;
+  double load15 = 19;
+  
+  // Capacity Limits
+  int32 max_jobs = 20;
+  int32 current_jobs = 21;
+  int32 available_slots = 22;
+}
+
+// GetHealthRequest is the request message for health checks
+message GetHealthRequest {
+  // Optional: specific health checks to perform
+  repeated string check_types = 1;
+}
+
+// GetHealthResponse contains node health information
+message GetHealthResponse {
+  string node_id = 1;
+  string node_name = 2;
+  google.protobuf.Timestamp timestamp = 3;
+  
+  // Overall health status
+  HealthStatus status = 4;
+  
+  // Individual health checks
+  repeated HealthCheck checks = 5;
+}
+
+// HealthStatus represents the overall health of a node
+enum HealthStatus {
+  UNKNOWN = 0;
+  HEALTHY = 1;
+  DEGRADED = 2;
+  UNHEALTHY = 3;
+}
+
+// HealthCheck represents an individual health check result
+message HealthCheck {
+  string name = 1;
+  HealthStatus status = 2;
+  string message = 3;
+  google.protobuf.Timestamp timestamp = 4;
+}

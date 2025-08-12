@@ -5,7 +5,9 @@ import (
 	"net"
 	"sync"
 
+	"github.com/concave-dev/prism/internal/grpc/proto"
 	"github.com/concave-dev/prism/internal/logging"
+	"github.com/concave-dev/prism/internal/serf"
 	"google.golang.org/grpc"
 )
 
@@ -14,24 +16,26 @@ import (
 // TODO: Add middleware for authentication and logging
 // TODO: Add graceful shutdown with connection draining
 type Server struct {
-	config     *Config       // Configuration for the gRPC server
-	grpcServer *grpc.Server  // Main gRPC server instance
-	listener   net.Listener  // Network listener
-	mu         sync.RWMutex  // Mutex for thread-safe operations
-	shutdown   chan struct{} // Channel to signal shutdown
+	config      *Config           // Configuration for the gRPC server
+	grpcServer  *grpc.Server      // Main gRPC server instance
+	listener    net.Listener      // Network listener
+	mu          sync.RWMutex      // Mutex for thread-safe operations
+	shutdown    chan struct{}     // Channel to signal shutdown
+	serfManager *serf.SerfManager // Serf manager for resource gathering
 }
 
 // NewServer creates a new gRPC server with the given configuration
 // TODO: Add support for TLS configuration
 // TODO: Implement custom interceptors for logging and metrics
-func NewServer(config *Config) (*Server, error) {
+func NewServer(config *Config, serfManager *serf.SerfManager) (*Server, error) {
 	if err := config.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid config: %w", err)
 	}
 
 	server := &Server{
-		config:   config,
-		shutdown: make(chan struct{}),
+		config:      config,
+		shutdown:    make(chan struct{}),
+		serfManager: serfManager,
 	}
 
 	logging.Info("gRPC server created successfully with config for %s:%d", config.BindAddr, config.BindPort)
@@ -72,8 +76,9 @@ func (s *Server) Start() error {
 	s.grpcServer = grpc.NewServer(opts...)
 	// TODO: attach interceptors for structured logging; gRPC itself does not use std logger by default.
 
-	// TODO: Register service implementations here
-	// Example: pb.RegisterResourceServiceServer(s.grpcServer, resourceService)
+	// Register NodeService for resource and health queries
+	nodeService := NewNodeServiceImpl(s.serfManager)
+	proto.RegisterNodeServiceServer(s.grpcServer, nodeService)
 
 	// Start serving in a goroutine
 	go func() {

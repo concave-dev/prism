@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/concave-dev/prism/internal/api/handlers"
+	"github.com/concave-dev/prism/internal/grpc"
 	"github.com/concave-dev/prism/internal/logging"
 	"github.com/concave-dev/prism/internal/raft"
 	"github.com/concave-dev/prism/internal/serf"
@@ -19,11 +20,12 @@ import (
 
 // Represents the Prism API server
 type Server struct {
-	serfManager *serf.SerfManager
-	raftManager *raft.RaftManager
-	httpServer  *http.Server
-	bindAddr    string
-	bindPort    int
+	serfManager    *serf.SerfManager
+	raftManager    *raft.RaftManager
+	grpcClientPool *grpc.ClientPool
+	httpServer     *http.Server
+	bindAddr       string
+	bindPort       int
 }
 
 // NewServer creates a new Prism API server instance
@@ -32,10 +34,11 @@ func NewServer(config *Config) *Server {
 	gin.SetMode(gin.ReleaseMode)
 
 	return &Server{
-		serfManager: config.SerfManager,
-		raftManager: config.RaftManager,
-		bindAddr:    config.BindAddr,
-		bindPort:    config.BindPort,
+		serfManager:    config.SerfManager,
+		raftManager:    config.RaftManager,
+		grpcClientPool: config.GRPCClientPool,
+		bindAddr:       config.BindAddr,
+		bindPort:       config.BindPort,
 	}
 }
 
@@ -168,7 +171,7 @@ func (s *Server) handleClusterResources(c *gin.Context) {
 
 // getHandlerClusterResources is a cluster resources endpoint handler factory
 func (s *Server) getHandlerClusterResources() gin.HandlerFunc {
-	return handlers.HandleClusterResources(s.serfManager)
+	return handlers.HandleClusterResources(s.grpcClientPool, s.serfManager)
 }
 
 // handleNodeResources delegates to handlers.HandleNodeResources
@@ -179,7 +182,7 @@ func (s *Server) handleNodeResources(c *gin.Context) {
 
 // getHandlerNodeResources is a node resources endpoint handler factory
 func (s *Server) getHandlerNodeResources() gin.HandlerFunc {
-	return handlers.HandleNodeResources(s.serfManager)
+	return handlers.HandleNodeResources(s.grpcClientPool, s.serfManager)
 }
 
 // handleRaftPeers delegates to handlers.HandleRaftPeers
