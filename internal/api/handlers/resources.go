@@ -190,6 +190,7 @@ func HandleNodeResources(clientPool *grpc.ClientPool, serfManager *serf.SerfMana
 			// Try to find by node name if exact ID doesn't work
 			for _, member := range serfManager.GetMembers() {
 				if member.Name == nodeID {
+					nodeID = member.ID // Replace name with actual ID for gRPC calls
 					exists = true
 					break
 				}
