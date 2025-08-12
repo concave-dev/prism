@@ -117,23 +117,20 @@ func formatDuration(d time.Duration) string {
 // HandleClusterResources returns resources from all cluster nodes using gRPC with serf fallback
 func HandleClusterResources(clientPool *grpc.ClientPool, serfManager *serf.SerfManager) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Try gRPC first for faster communication
-		grpcResources := clientPool.GetResourcesFromAllNodes()
-
-		// Convert gRPC responses to API format
+		// Try gRPC first for faster communication - this now includes all nodes (local + remote)
+		allMembers := serfManager.GetMembers()
 		var resources []NodeResourcesResponse
 
-		// Add resources from gRPC responses (excludes local node)
-		for _, grpcRes := range grpcResources {
+		// Query all nodes (including local) using the unified approach
+		for nodeID := range allMembers {
+			grpcRes, err := clientPool.GetResourcesFromNode(nodeID)
+			if err != nil {
+				logging.Warn("Failed to get resources from node %s via gRPC: %v", nodeID, err)
+				continue
+			}
+
 			apiRes := convertFromGRPCResponse(grpcRes)
 			resources = append(resources, apiRes)
-		}
-
-		// Add local node resources via gRPC for consistency
-		localGrpcRes := clientPool.GetResourcesFromLocalNode()
-		if localGrpcRes != nil {
-			localApiRes := convertFromGRPCResponse(localGrpcRes)
-			resources = append(resources, localApiRes)
 		}
 
 		// If we didn't get enough nodes via gRPC, fall back to serf for missing nodes
@@ -205,17 +202,8 @@ func HandleNodeResources(clientPool *grpc.ClientPool, serfManager *serf.SerfMana
 			return
 		}
 
-		// Try gRPC first, including for local node
-		var grpcRes *proto.GetResourcesResponse
-		var err error
-		if nodeID == serfManager.NodeID {
-			grpcRes = clientPool.GetResourcesFromLocalNode()
-			if grpcRes == nil {
-				err = fmt.Errorf("local gRPC call failed")
-			}
-		} else {
-			grpcRes, err = clientPool.GetResourcesFromNode(nodeID)
-		}
+		// Try gRPC first - unified approach for all nodes (local and remote)
+		grpcRes, err := clientPool.GetResourcesFromNode(nodeID)
 		if err != nil {
 			logging.Warn("gRPC query failed for node %s, falling back to serf: %v", nodeID, err)
 

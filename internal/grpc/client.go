@@ -186,33 +186,3 @@ func (cp *ClientPool) Close() {
 	cp.connections = make(map[string]*grpc.ClientConn)
 	cp.clients = make(map[string]proto.NodeServiceClient)
 }
-
-// GetResourcesFromLocalNode calls the local gRPC service to get resources
-// This provides consistency - all resource calls go through gRPC
-func (cp *ClientPool) GetResourcesFromLocalNode() *proto.GetResourcesResponse {
-	// Create a direct connection to local gRPC server
-	localAddr := fmt.Sprintf("127.0.0.1:%d", cp.grpcPort)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	conn, err := grpc.NewClient(localAddr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
-	if err != nil {
-		logging.Warn("Failed to connect to local gRPC server: %v", err)
-		return nil
-	}
-	defer conn.Close()
-
-	client := proto.NewNodeServiceClient(conn)
-
-	response, err := client.GetResources(ctx, &proto.GetResourcesRequest{})
-	if err != nil {
-		logging.Warn("Failed to get resources from local gRPC service: %v", err)
-		return nil
-	}
-
-	logging.Debug("Successfully got resources from local gRPC service")
-	return response
-}
