@@ -119,7 +119,7 @@ func HandleClusterResources(clientPool *grpc.ClientPool, serfManager *serf.SerfM
 	return func(c *gin.Context) {
 		// Try gRPC first for faster communication - this now includes all nodes (local + remote)
 		allMembers := serfManager.GetMembers()
-		var resources []NodeResourcesResponse
+		var resList []NodeResourcesResponse
 
 		// Query all nodes (including local) using the unified approach
 		for nodeID := range allMembers {
@@ -130,13 +130,13 @@ func HandleClusterResources(clientPool *grpc.ClientPool, serfManager *serf.SerfM
 			}
 
 			apiRes := convertFromGRPCResponse(grpcRes)
-			resources = append(resources, apiRes)
+			resList = append(resList, apiRes)
 		}
 
 		// If we didn't get enough nodes via gRPC, fall back to serf for missing nodes
 		expectedNodes := len(serfManager.GetMembers())
-		if len(resources) < expectedNodes {
-			logging.Warn("gRPC returned %d nodes, expected %d. Falling back to serf queries", len(resources), expectedNodes)
+		if len(resList) < expectedNodes {
+			logging.Warn("gRPC returned %d nodes, expected %d. Falling back to serf queries", len(resList), expectedNodes)
 
 			// Get all resources via serf as fallback
 			resourceMap, err := serfManager.QueryResources()
@@ -149,22 +149,22 @@ func HandleClusterResources(clientPool *grpc.ClientPool, serfManager *serf.SerfM
 			}
 
 			// Use serf results instead
-			resources = []NodeResourcesResponse{}
+			resList = []NodeResourcesResponse{}
 			for _, nodeRes := range resourceMap {
 				apiRes := convertToAPIResponse(nodeRes)
-				resources = append(resources, apiRes)
+				resList = append(resList, apiRes)
 			}
 		}
 
 		// Sort by node name for consistent output
-		sort.Slice(resources, func(i, j int) bool {
-			return resources[i].NodeName < resources[j].NodeName
+		sort.Slice(resList, func(i, j int) bool {
+			return resList[i].NodeName < resList[j].NodeName
 		})
 
 		c.JSON(http.StatusOK, gin.H{
 			"status": "success",
-			"data":   resources,
-			"count":  len(resources),
+			"data":   resList,
+			"count":  len(resList),
 		})
 	}
 }
