@@ -82,7 +82,7 @@ func (sm *SerfManager) QueryResources() (map[string]*resources.NodeResources, er
 			}
 
 			resourcesMap[response.From] = nodeResources
-			logging.Debug("Received resources from node %s: CPU=%d cores, Memory=%dMB",
+			logging.Debug("Received resources from node %s: CPU=%d, Memory=%dMB",
 				response.From, nodeResources.CPUCores, nodeResources.MemoryTotal/(1024*1024))
 
 			// Early return if we have all expected responses
@@ -149,7 +149,7 @@ func (sm *SerfManager) QueryResourcesFromNode(nodeID string) (*resources.NodeRes
 				return nil, fmt.Errorf("failed to parse resources from node %s: %w", nodeID, err)
 			}
 
-			logging.Debug("Received resources from node %s (name: %s): CPU=%d cores, Memory=%dMB",
+			logging.Debug("Received resources from node %s (name: %s): CPU=%d, Memory=%dMB",
 				nodeID, nodeName, nodeResources.CPUCores, nodeResources.MemoryTotal/(1024*1024))
 			return nodeResources, nil
 		}

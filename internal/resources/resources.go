@@ -102,7 +102,7 @@ func GatherSystemResources(nodeID, nodeName string, startTime time.Time) *NodeRe
 		AvailableSlots: 10, // TODO: Calculate based on current load
 	}
 
-	logging.Debug("Gathered resources for node %s: CPU cores=%d, Memory=%dMB, Goroutines=%d",
+	logging.Debug("Gathered resources for node %s: CPU=%d, Memory=%dMB, Goroutines=%d",
 		nodeID, resources.CPUCores, resources.MemoryTotal/(1024*1024), resources.GoRoutines)
 
 	return resources
