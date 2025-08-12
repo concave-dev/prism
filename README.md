@@ -68,6 +68,8 @@ Use the CLI:
 - [x] CLI tool with cluster overview and node management
 - [x] JSON/table output formats for scripting and debugging
 - [x] Remote cluster access via API endpoints
+- [x] gRPC NodeService for inter-node resource queries (health stub)
+- [x] API uses gRPC for resource aggregation with Serf fallback
 
 **Workload Management & AI Platform:**
 - [ ] VM/Container Scheduling (core workload orchestration)
@@ -88,13 +90,12 @@ Use the CLI:
 ## Known Issues
 
 - **Raft peer lifecycle vs Serf membership:** Peers are added/removed by the Raft leader in response to Serf events. If this node is not the leader or events are dropped, stale peers can remain after a node leaves/fails until the leader reconciles.
-- **Serf-based resource queries:** Cluster resource aggregation currently uses Serf `get-resources` distributed queries. Latency grows with cluster size and responses can be partial under timeouts; this is not a strongly consistent snapshot.
+- **Resource queries (gRPC-first):** Cluster resource aggregation now queries each node via gRPC for speed and consistency, with Serf `get-resources` as a fallback if gRPC fails. Gossip fallback can be slower and partial under timeouts; not a strongly consistent snapshot.
 - **Resource aggregation delays on failures:** Aggregation counts all known members; failed nodes are included until reaped, so calls may wait for timeout before returning.
 - **Security (no TLS/Auth):** HTTP API and gRPC are plaintext with no authentication/authorization; Serf gossip is unencrypted (no keyring configured).
 - **Metrics completeness:** CPU usage, load averages, and job accounting are placeholders; reported metrics are not yet suitable for scheduling decisions.
 - **Event backpressure risk:** External event forwarding can drop events when `ConsumerEventCh` is saturated, which may delay Raft peer reconciliation on non-leader nodes.
 - **Serf reap delay:** Reaping of dead members is time-based. Large `DeadNodeReclaimTime` can delay full cleanup and UI/CLI visibility.
-- **gRPC services TBD:** gRPC server runs but no services are registered yet; future resource APIs will move here.
 - **Tag drift risk:** Raft/gRPC peer discovery relies on Serf tags (`raft_port`, `grpc_port`). Misconfigured/missing tags prevent peer wiring and may require manual correction.
 - **Data at rest:** Raft logs/snapshots and local state are stored unencrypted by default in `./data`.
 - **Minimum 3+ Nodes Required:** Clusters with fewer than 3 nodes lose fault tolerance and behave unpredictably. With 1 node: no fault tolerance (if it dies, cluster is down). With 2 nodes: no fault tolerance (if either dies, cluster loses quorum). **Recommendation:** Always deploy 3+ nodes (preferably odd numbers: 3, 5, 7) for meaningful fault tolerance.
@@ -102,4 +103,4 @@ Use the CLI:
 - **Node Identity vs Data Persistence:** Killed nodes that restart with the same data directory get fresh identities (new ID/name) but recover Raft log state. This prevents split-brain but means node identity is ephemeral while consensus state persists.
 - **Split Brain Risk:** Network partitions can cause Raft leadership conflicts. Use odd-numbered clusters (3+) for proper quorum.
 - **Network Connectivity:** Nodes behind NAT or firewalls may fail to join. Ensure gossip ports are accessible between all nodes.
-- **Bootstrap Race Conditions:** The current `--bootstrap` flag creates single-node clusters that become leader immediately, risking split-brain scenarios if multiple nodes bootstrap. **Recommendation:** Use `--bootstrap-expect=N` approach (like Nomad) where nodes wait for expected quorum before starting cluster formation.
+- **Bootstrap Race Conditions:** The current `--bootstrap` flag creates single-node clusters that become leader immediately, risking split-brain scenarios if multiple nodes bootstrap. **Recommendation:** Adopt a bootstrap-expect-style approach where nodes wait for expected quorum before forming a cluster — planned; not yet implemented.
