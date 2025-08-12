@@ -1,7 +1,7 @@
 # Prism
 
 > [!CAUTION]
-> The cluster is not yet stable. Use at your own risk.
+> The cluster is not yet stable. Use at your own risk. Test coverage: ~25%.
 
 Distributed runtime platform for AI agents and workflows.
 
