@@ -83,29 +83,6 @@ func (cp *ClientPool) GetClient(nodeID string) (proto.NodeServiceClient, error) 
 	return client, nil
 }
 
-// GetAllClients returns gRPC clients for all active cluster nodes
-// Skips nodes that fail to connect
-func (cp *ClientPool) GetAllClients() map[string]proto.NodeServiceClient {
-	members := cp.serfManager.GetMembers()
-	clients := make(map[string]proto.NodeServiceClient)
-
-	for nodeID := range members {
-		// Skip self
-		if nodeID == cp.serfManager.NodeID {
-			continue
-		}
-
-		client, err := cp.GetClient(nodeID)
-		if err != nil {
-			logging.Warn("Failed to get gRPC client for node %s: %v", nodeID, err)
-			continue
-		}
-		clients[nodeID] = client
-	}
-
-	return clients
-}
-
 // GetResourcesFromNode queries resources from a specific node via gRPC
 func (cp *ClientPool) GetResourcesFromNode(nodeID string) (*proto.GetResourcesResponse, error) {
 	client, err := cp.GetClient(nodeID)
@@ -118,46 +95,6 @@ func (cp *ClientPool) GetResourcesFromNode(nodeID string) (*proto.GetResourcesRe
 
 	req := &proto.GetResourcesRequest{}
 	return client.GetResources(ctx, req)
-}
-
-// GetResourcesFromAllNodes queries resources from all cluster nodes via gRPC
-// Returns a map of nodeID -> resources, skipping failed nodes
-func (cp *ClientPool) GetResourcesFromAllNodes() map[string]*proto.GetResourcesResponse {
-	clients := cp.GetAllClients()
-	resources := make(map[string]*proto.GetResourcesResponse)
-
-	// Use a channel to collect results from concurrent requests
-	type result struct {
-		nodeID string
-		resp   *proto.GetResourcesResponse
-		err    error
-	}
-
-	resultCh := make(chan result, len(clients))
-
-	// Launch concurrent requests
-	for nodeID, client := range clients {
-		go func(id string, c proto.NodeServiceClient) {
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			defer cancel()
-
-			req := &proto.GetResourcesRequest{}
-			resp, err := c.GetResources(ctx, req)
-			resultCh <- result{nodeID: id, resp: resp, err: err}
-		}(nodeID, client)
-	}
-
-	// Collect results
-	for i := 0; i < len(clients); i++ {
-		res := <-resultCh
-		if res.err != nil {
-			logging.Warn("Failed to get resources from node %s via gRPC: %v", res.nodeID, res.err)
-			continue
-		}
-		resources[res.nodeID] = res.resp
-	}
-
-	return resources
 }
 
 // CloseConnection closes and removes a specific node connection
