@@ -38,14 +38,14 @@ const (
 // displayLogo prints the Prism ASCII logo with version information
 func displayLogo() {
 	fmt.Println()
-	fmt.Println(`██████╗ ██████╗ ██╗███████╗███╗   ███╗
-██╔══██╗██╔══██╗██║██╔════╝████╗ ████║
-██████╔╝██████╔╝██║███████╗██╔████╔██║
-██╔═══╝ ██╔══██╗██║╚════██║██║╚██╔╝██║
-██║     ██║  ██║██║███████║██║ ╚═╝ ██║
-╚═╝     ╚═╝  ╚═╝╚═╝╚══════╝╚═╝     ╚═╝`)
-	fmt.Printf("\nPrism v%s - Distributed AI Agent Runtime\n", Version)
-	fmt.Println("Kubernetes for AI agents, MCP tools and workflows")
+	fmt.Println(` ██████╗ ██████╗ ██╗███████╗███╗   ███╗
+ ██╔══██╗██╔══██╗██║██╔════╝████╗ ████║
+ ██████╔╝██████╔╝██║███████╗██╔████╔██║
+ ██╔═══╝ ██╔══██╗██║╚════██║██║╚██╔╝██║
+ ██║     ██║  ██║██║███████║██║ ╚═╝ ██║
+ ╚═╝     ╚═╝  ╚═╝╚═╝╚══════╝╚═╝     ╚═╝`)
+	fmt.Printf("\n Prism v%s - Distributed AI Agent Runtime\n", Version)
+	fmt.Println(" Kubernetes for AI agents, MCP tools and workflows")
 	fmt.Println()
 }
 
