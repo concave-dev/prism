@@ -168,21 +168,6 @@ type HealthCheck struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
-// structuredLogger implements resty.Logger interface and routes logs through our structured logging
-type structuredLogger struct{}
-
-func (s structuredLogger) Errorf(format string, v ...interface{}) {
-	logging.Error(format, v...)
-}
-
-func (s structuredLogger) Warnf(format string, v ...interface{}) {
-	logging.Warn(format, v...)
-}
-
-func (s structuredLogger) Debugf(format string, v ...interface{}) {
-	logging.Debug(format, v...)
-}
-
 // PrismAPIClient wraps Resty client with Prism-specific functionality
 type PrismAPIClient struct {
 	client  *resty.Client
@@ -196,7 +181,7 @@ func NewPrismAPIClient(apiAddr string, timeout int) *PrismAPIClient {
 	baseURL := fmt.Sprintf("http://%s/api/v1", apiAddr)
 
 	// Route Resty's internal logging through our structured logging system
-	client.SetLogger(structuredLogger{})
+	client.SetLogger(utils.RestryLogger{})
 
 	// Configure client
 	client.
@@ -536,21 +521,6 @@ func (api *PrismAPIClient) GetNodeResources(nodeID string) (*NodeResources, erro
 	return nil, fmt.Errorf("unexpected response format for node resources")
 }
 
-// setupLogging sets up logging based on DEBUG environment variable and log level
-func setupLogging() {
-	// Check for DEBUG environment variable for debug logging
-	if os.Getenv("DEBUG") == "true" {
-		// Show debug output - restore normal logging and enable DEBUG level
-		logging.RestoreOutput()
-		logging.SetLevel("DEBUG")
-	} else {
-		// Configure our application logging level first
-		logging.SetLevel(config.Global.LogLevel)
-		// Suppress debug/info logs by default (only show errors)
-		logging.SuppressOutput()
-	}
-}
-
 // createAPIClient creates a new Prism API client
 func createAPIClient() *PrismAPIClient {
 	return NewPrismAPIClient(config.Global.APIAddr, config.Global.Timeout)
@@ -605,7 +575,7 @@ func filterResources(resources []NodeResources, members []ClusterMember) []NodeR
 
 // handlePeerList handles peer ls command
 func handlePeerList(cmd *cobra.Command, args []string) error {
-	setupLogging()
+	utils.SetupLogging()
 
 	apiClient := createAPIClient()
 	resp, err := apiClient.GetRaftPeers()
@@ -654,7 +624,7 @@ func handlePeerList(cmd *cobra.Command, args []string) error {
 
 // handlePeerInfo handles peer info command
 func handlePeerInfo(cmd *cobra.Command, args []string) error {
-	setupLogging()
+	utils.SetupLogging()
 
 	peerID := args[0]
 	apiClient := createAPIClient()
@@ -706,7 +676,7 @@ func handlePeerInfo(cmd *cobra.Command, args []string) error {
 
 // handleMembers handles the node ls subcommand
 func handleMembers(cmd *cobra.Command, args []string) error {
-	setupLogging()
+	utils.SetupLogging()
 
 	fetchAndDisplayMembers := func() error {
 		logging.Info("Fetching cluster nodes from API server: %s", config.Global.APIAddr)
@@ -733,7 +703,7 @@ func handleMembers(cmd *cobra.Command, args []string) error {
 
 // handleClusterInfo handles the cluster info subcommand
 func handleClusterInfo(cmd *cobra.Command, args []string) error {
-	setupLogging()
+	utils.SetupLogging()
 
 	logging.Info("Fetching cluster information from API server: %s", config.Global.APIAddr)
 
@@ -751,7 +721,7 @@ func handleClusterInfo(cmd *cobra.Command, args []string) error {
 
 // handleNodeTop handles the node top subcommand (resource overview for all nodes)
 func handleNodeTop(cmd *cobra.Command, args []string) error {
-	setupLogging()
+	utils.SetupLogging()
 
 	fetchAndDisplayResources := func() error {
 		logging.Info("Fetching cluster node information from API server: %s", config.Global.APIAddr)
@@ -784,7 +754,7 @@ func handleNodeTop(cmd *cobra.Command, args []string) error {
 
 // handleNodeInfo handles the node info subcommand (detailed info for specific node)
 func handleNodeInfo(cmd *cobra.Command, args []string) error {
-	setupLogging()
+	utils.SetupLogging()
 
 	nodeIdentifier := args[0]
 	logging.Info("Fetching information for node '%s' from API server: %s", nodeIdentifier, config.Global.APIAddr)
