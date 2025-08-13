@@ -7,14 +7,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/signal"
 	"sort"
 	"strings"
-	"syscall"
 	"text/tabwriter"
 	"time"
 
 	"github.com/concave-dev/prism/cmd/prismctl/commands"
+	"github.com/concave-dev/prism/cmd/prismctl/utils"
 	"github.com/concave-dev/prism/internal/logging"
 	"github.com/concave-dev/prism/internal/validate"
 	"github.com/dustin/go-humanize"
@@ -357,15 +356,15 @@ func (api *PrismAPIClient) GetMembers() ([]ClusterMember, error) {
 		for _, memberData := range membersData {
 			if memberMap, ok := memberData.(map[string]interface{}); ok {
 				member := ClusterMember{
-					ID:         getString(memberMap, "id"),
-					Name:       getString(memberMap, "name"),
-					Address:    getString(memberMap, "address"),
-					Status:     getString(memberMap, "status"),
-					Tags:       getStringMap(memberMap, "tags"),
-					LastSeen:   getTime(memberMap, "lastSeen"),
-					SerfStatus: getString(memberMap, "serfStatus"),
-					RaftStatus: getString(memberMap, "raftStatus"),
-					IsLeader:   getBool(memberMap, "isLeader"),
+					ID:         utils.GetString(memberMap, "id"),
+					Name:       utils.GetString(memberMap, "name"),
+					Address:    utils.GetString(memberMap, "address"),
+					Status:     utils.GetString(memberMap, "status"),
+					Tags:       utils.GetStringMap(memberMap, "tags"),
+					LastSeen:   utils.GetTime(memberMap, "lastSeen"),
+					SerfStatus: utils.GetString(memberMap, "serfStatus"),
+					RaftStatus: utils.GetString(memberMap, "raftStatus"),
+					IsLeader:   utils.GetBool(memberMap, "isLeader"),
 				}
 				members = append(members, member)
 			}
@@ -373,6 +372,30 @@ func (api *PrismAPIClient) GetMembers() ([]ClusterMember, error) {
 	}
 
 	return members, nil
+}
+
+// GetID returns the ID for MemberLike interface
+func (c ClusterMember) GetID() string {
+	return c.ID
+}
+
+// GetName returns the Name for MemberLike interface
+func (c ClusterMember) GetName() string {
+	return c.Name
+}
+
+// GetMembersForResolver adapts GetMembers for the resolver interface
+func (api *PrismAPIClient) GetMembersForResolver() ([]utils.MemberLike, error) {
+	members, err := api.GetMembers()
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]utils.MemberLike, len(members))
+	for i, member := range members {
+		result[i] = member
+	}
+	return result, nil
 }
 
 // GetClusterInfo fetches comprehensive cluster information from the API
@@ -399,8 +422,8 @@ func (api *PrismAPIClient) GetClusterInfo() (*ClusterInfo, error) {
 		// Parse status
 		statusData := infoData["status"].(map[string]interface{})
 		status := ClusterStatus{
-			TotalNodes:    getInt(statusData, "totalNodes"),
-			NodesByStatus: getIntMap(statusData, "nodesByStatus"),
+			TotalNodes:    utils.GetInt(statusData, "totalNodes"),
+			NodesByStatus: utils.GetIntMap(statusData, "nodesByStatus"),
 		}
 
 		// Parse members
@@ -409,15 +432,15 @@ func (api *PrismAPIClient) GetClusterInfo() (*ClusterInfo, error) {
 			for _, memberData := range membersData {
 				if memberMap, ok := memberData.(map[string]interface{}); ok {
 					member := ClusterMember{
-						ID:         getString(memberMap, "id"),
-						Name:       getString(memberMap, "name"),
-						Address:    getString(memberMap, "address"),
-						Status:     getString(memberMap, "status"),
-						Tags:       getStringMap(memberMap, "tags"),
-						LastSeen:   getTime(memberMap, "lastSeen"),
-						SerfStatus: getString(memberMap, "serfStatus"),
-						RaftStatus: getString(memberMap, "raftStatus"),
-						IsLeader:   getBool(memberMap, "isLeader"),
+						ID:         utils.GetString(memberMap, "id"),
+						Name:       utils.GetString(memberMap, "name"),
+						Address:    utils.GetString(memberMap, "address"),
+						Status:     utils.GetString(memberMap, "status"),
+						Tags:       utils.GetStringMap(memberMap, "tags"),
+						LastSeen:   utils.GetTime(memberMap, "lastSeen"),
+						SerfStatus: utils.GetString(memberMap, "serfStatus"),
+						RaftStatus: utils.GetString(memberMap, "raftStatus"),
+						IsLeader:   utils.GetBool(memberMap, "isLeader"),
 					}
 					members = append(members, member)
 				}
@@ -425,20 +448,20 @@ func (api *PrismAPIClient) GetClusterInfo() (*ClusterInfo, error) {
 		}
 
 		// Parse uptime
-		uptimeNs := int64(getFloat(infoData, "uptime"))
+		uptimeNs := int64(utils.GetFloat(infoData, "uptime"))
 		uptime := time.Duration(uptimeNs)
 
 		// Parse start time
-		startTime := getTime(infoData, "startTime")
+		startTime := utils.GetTime(infoData, "startTime")
 
 		return &ClusterInfo{
-			Version:    getString(infoData, "version"),
+			Version:    utils.GetString(infoData, "version"),
 			Status:     status,
 			Members:    members,
 			Uptime:     uptime,
 			StartTime:  startTime,
-			RaftLeader: getString(infoData, "raftLeader"),
-			ClusterID:  getString(infoData, "clusterId"),
+			RaftLeader: utils.GetString(infoData, "raftLeader"),
+			ClusterID:  utils.GetString(infoData, "clusterId"),
 		}, nil
 	}
 
@@ -466,16 +489,16 @@ func (api *PrismAPIClient) GetRaftPeers() (*RaftPeersResponse, error) {
 
 	if data, ok := response.Data.(map[string]interface{}); ok {
 		res := &RaftPeersResponse{
-			Leader: getString(data, "leader"),
+			Leader: utils.GetString(data, "leader"),
 		}
 		if peers, ok := data["peers"].([]interface{}); ok {
 			for _, p := range peers {
 				if pm, ok := p.(map[string]interface{}); ok {
 					res.Peers = append(res.Peers, RaftPeer{
-						ID:        getString(pm, "id"),
-						Name:      getString(pm, "name"),
-						Address:   getString(pm, "address"),
-						Reachable: getBool(pm, "reachable"),
+						ID:        utils.GetString(pm, "id"),
+						Name:      utils.GetString(pm, "name"),
+						Address:   utils.GetString(pm, "address"),
+						Reachable: utils.GetBool(pm, "reachable"),
 					})
 				}
 			}
@@ -511,31 +534,31 @@ func (api *PrismAPIClient) GetClusterResources() ([]NodeResources, error) {
 		for _, resourceData := range resourcesData {
 			if resourceMap, ok := resourceData.(map[string]interface{}); ok {
 				resource := NodeResources{
-					NodeID:            getString(resourceMap, "nodeId"),
-					NodeName:          getString(resourceMap, "nodeName"),
-					Timestamp:         getTime(resourceMap, "timestamp"),
-					CPUCores:          getInt(resourceMap, "cpuCores"),
-					CPUUsage:          getFloat(resourceMap, "cpuUsage"),
-					CPUAvailable:      getFloat(resourceMap, "cpuAvailable"),
-					MemoryTotal:       getUint64(resourceMap, "memoryTotal"),
-					MemoryUsed:        getUint64(resourceMap, "memoryUsed"),
-					MemoryAvailable:   getUint64(resourceMap, "memoryAvailable"),
-					MemoryUsage:       getFloat(resourceMap, "memoryUsage"),
-					GoRoutines:        getInt(resourceMap, "goRoutines"),
-					GoMemAlloc:        getUint64(resourceMap, "goMemAlloc"),
-					GoMemSys:          getUint64(resourceMap, "goMemSys"),
-					GoGCCycles:        getUint32(resourceMap, "goGcCycles"),
-					GoGCPause:         getFloat(resourceMap, "goGcPause"),
-					Uptime:            getString(resourceMap, "uptime"),
-					Load1:             getFloat(resourceMap, "load1"),
-					Load5:             getFloat(resourceMap, "load5"),
-					Load15:            getFloat(resourceMap, "load15"),
-					MaxJobs:           getInt(resourceMap, "maxJobs"),
-					CurrentJobs:       getInt(resourceMap, "currentJobs"),
-					AvailableSlots:    getInt(resourceMap, "availableSlots"),
-					MemoryTotalMB:     getInt(resourceMap, "memoryTotalMB"),
-					MemoryUsedMB:      getInt(resourceMap, "memoryUsedMB"),
-					MemoryAvailableMB: getInt(resourceMap, "memoryAvailableMB"),
+					NodeID:            utils.GetString(resourceMap, "nodeId"),
+					NodeName:          utils.GetString(resourceMap, "nodeName"),
+					Timestamp:         utils.GetTime(resourceMap, "timestamp"),
+					CPUCores:          utils.GetInt(resourceMap, "cpuCores"),
+					CPUUsage:          utils.GetFloat(resourceMap, "cpuUsage"),
+					CPUAvailable:      utils.GetFloat(resourceMap, "cpuAvailable"),
+					MemoryTotal:       utils.GetUint64(resourceMap, "memoryTotal"),
+					MemoryUsed:        utils.GetUint64(resourceMap, "memoryUsed"),
+					MemoryAvailable:   utils.GetUint64(resourceMap, "memoryAvailable"),
+					MemoryUsage:       utils.GetFloat(resourceMap, "memoryUsage"),
+					GoRoutines:        utils.GetInt(resourceMap, "goRoutines"),
+					GoMemAlloc:        utils.GetUint64(resourceMap, "goMemAlloc"),
+					GoMemSys:          utils.GetUint64(resourceMap, "goMemSys"),
+					GoGCCycles:        utils.GetUint32(resourceMap, "goGcCycles"),
+					GoGCPause:         utils.GetFloat(resourceMap, "goGcPause"),
+					Uptime:            utils.GetString(resourceMap, "uptime"),
+					Load1:             utils.GetFloat(resourceMap, "load1"),
+					Load5:             utils.GetFloat(resourceMap, "load5"),
+					Load15:            utils.GetFloat(resourceMap, "load15"),
+					MaxJobs:           utils.GetInt(resourceMap, "maxJobs"),
+					CurrentJobs:       utils.GetInt(resourceMap, "currentJobs"),
+					AvailableSlots:    utils.GetInt(resourceMap, "availableSlots"),
+					MemoryTotalMB:     utils.GetInt(resourceMap, "memoryTotalMB"),
+					MemoryUsedMB:      utils.GetInt(resourceMap, "memoryUsedMB"),
+					MemoryAvailableMB: utils.GetInt(resourceMap, "memoryAvailableMB"),
 				}
 				resources = append(resources, resource)
 			}
@@ -572,185 +595,36 @@ func (api *PrismAPIClient) GetNodeResources(nodeID string) (*NodeResources, erro
 	// Parse resource from the response data
 	if resourceMap, ok := response.Data.(map[string]interface{}); ok {
 		resource := &NodeResources{
-			NodeID:            getString(resourceMap, "nodeId"),
-			NodeName:          getString(resourceMap, "nodeName"),
-			Timestamp:         getTime(resourceMap, "timestamp"),
-			CPUCores:          getInt(resourceMap, "cpuCores"),
-			CPUUsage:          getFloat(resourceMap, "cpuUsage"),
-			CPUAvailable:      getFloat(resourceMap, "cpuAvailable"),
-			MemoryTotal:       getUint64(resourceMap, "memoryTotal"),
-			MemoryUsed:        getUint64(resourceMap, "memoryUsed"),
-			MemoryAvailable:   getUint64(resourceMap, "memoryAvailable"),
-			MemoryUsage:       getFloat(resourceMap, "memoryUsage"),
-			GoRoutines:        getInt(resourceMap, "goRoutines"),
-			GoMemAlloc:        getUint64(resourceMap, "goMemAlloc"),
-			GoMemSys:          getUint64(resourceMap, "goMemSys"),
-			GoGCCycles:        getUint32(resourceMap, "goGcCycles"),
-			GoGCPause:         getFloat(resourceMap, "goGcPause"),
-			Uptime:            getString(resourceMap, "uptime"),
-			Load1:             getFloat(resourceMap, "load1"),
-			Load5:             getFloat(resourceMap, "load5"),
-			Load15:            getFloat(resourceMap, "load15"),
-			MaxJobs:           getInt(resourceMap, "maxJobs"),
-			CurrentJobs:       getInt(resourceMap, "currentJobs"),
-			AvailableSlots:    getInt(resourceMap, "availableSlots"),
-			MemoryTotalMB:     getInt(resourceMap, "memoryTotalMB"),
-			MemoryUsedMB:      getInt(resourceMap, "memoryUsedMB"),
-			MemoryAvailableMB: getInt(resourceMap, "memoryAvailableMB"),
+			NodeID:            utils.GetString(resourceMap, "nodeId"),
+			NodeName:          utils.GetString(resourceMap, "nodeName"),
+			Timestamp:         utils.GetTime(resourceMap, "timestamp"),
+			CPUCores:          utils.GetInt(resourceMap, "cpuCores"),
+			CPUUsage:          utils.GetFloat(resourceMap, "cpuUsage"),
+			CPUAvailable:      utils.GetFloat(resourceMap, "cpuAvailable"),
+			MemoryTotal:       utils.GetUint64(resourceMap, "memoryTotal"),
+			MemoryUsed:        utils.GetUint64(resourceMap, "memoryUsed"),
+			MemoryAvailable:   utils.GetUint64(resourceMap, "memoryAvailable"),
+			MemoryUsage:       utils.GetFloat(resourceMap, "memoryUsage"),
+			GoRoutines:        utils.GetInt(resourceMap, "goRoutines"),
+			GoMemAlloc:        utils.GetUint64(resourceMap, "goMemAlloc"),
+			GoMemSys:          utils.GetUint64(resourceMap, "goMemSys"),
+			GoGCCycles:        utils.GetUint32(resourceMap, "goGcCycles"),
+			GoGCPause:         utils.GetFloat(resourceMap, "goGcPause"),
+			Uptime:            utils.GetString(resourceMap, "uptime"),
+			Load1:             utils.GetFloat(resourceMap, "load1"),
+			Load5:             utils.GetFloat(resourceMap, "load5"),
+			Load15:            utils.GetFloat(resourceMap, "load15"),
+			MaxJobs:           utils.GetInt(resourceMap, "maxJobs"),
+			CurrentJobs:       utils.GetInt(resourceMap, "currentJobs"),
+			AvailableSlots:    utils.GetInt(resourceMap, "availableSlots"),
+			MemoryTotalMB:     utils.GetInt(resourceMap, "memoryTotalMB"),
+			MemoryUsedMB:      utils.GetInt(resourceMap, "memoryUsedMB"),
+			MemoryAvailableMB: utils.GetInt(resourceMap, "memoryAvailableMB"),
 		}
 		return resource, nil
 	}
 
 	return nil, fmt.Errorf("unexpected response format for node resources")
-}
-
-// resolveNodeIdentifier resolves a node identifier (supports partial ID matching)
-func resolveNodeIdentifier(apiClient *PrismAPIClient, identifier string) (string, error) {
-	// Get all cluster members to check for partial ID matches
-	members, err := apiClient.GetMembers()
-	if err != nil {
-		return "", fmt.Errorf("failed to get cluster members for ID resolution: %w", err)
-	}
-
-	// Check for partial ID matches (only for identifiers that look like hex and have valid length)
-	if isHexString(identifier) && isValidPartialIDLength(identifier) {
-		var matches []ClusterMember
-		for _, member := range members {
-			if strings.HasPrefix(member.ID, identifier) {
-				matches = append(matches, member)
-			}
-		}
-
-		if len(matches) == 1 {
-			// Unique partial match found
-			logging.Info("Resolved partial ID '%s' to full ID '%s' (node: %s)",
-				identifier, matches[0].ID, matches[0].Name)
-			return matches[0].ID, nil
-		} else if len(matches) > 1 {
-			// Multiple matches - not unique
-			var matchIDs []string
-			for _, match := range matches {
-				matchIDs = append(matchIDs, fmt.Sprintf("%s (%s)", match.ID, match.Name))
-			}
-			logging.Error("Partial ID '%s' is not unique, matches multiple nodes:", identifier)
-			for _, matchID := range matchIDs {
-				logging.Error("  %s", matchID)
-			}
-			return "", fmt.Errorf("partial ID not unique")
-		}
-	}
-
-	// No partial match found, return original identifier
-	// (will be handled by the API as either full ID or node name)
-	return identifier, nil
-}
-
-// isHexString checks if a string contains only hexadecimal characters
-func isHexString(s string) bool {
-	if len(s) == 0 {
-		return false
-	}
-	for _, char := range s {
-		if !((char >= '0' && char <= '9') || (char >= 'a' && char <= 'f') || (char >= 'A' && char <= 'F')) {
-			return false
-		}
-	}
-	return true
-}
-
-// isValidPartialIDLength checks if a string has valid length for partial node ID matching
-func isValidPartialIDLength(s string) bool {
-	// Node IDs are 12 hex characters (6 bytes)
-	// Allow partial matching for inputs between 1-12 characters
-	// - Minimum 1 char (as requested)
-	// - Maximum 12 chars (full node ID length)
-	return len(s) >= 1 && len(s) <= 12
-}
-
-// getString safely extracts a string value from interface{} maps
-func getString(m map[string]interface{}, key string) string {
-	if val, ok := m[key].(string); ok {
-		return val
-	}
-	return ""
-}
-
-// getStringMap safely extracts a string map from interface{} maps
-func getStringMap(m map[string]interface{}, key string) map[string]string {
-	if val, ok := m[key].(map[string]interface{}); ok {
-		result := make(map[string]string)
-		for k, v := range val {
-			if str, ok := v.(string); ok {
-				result[k] = str
-			}
-		}
-		return result
-	}
-	return make(map[string]string)
-}
-
-// getIntMap safely extracts an int map from interface{} maps
-func getIntMap(m map[string]interface{}, key string) map[string]int {
-	if val, ok := m[key].(map[string]interface{}); ok {
-		result := make(map[string]int)
-		for k, v := range val {
-			if num, ok := v.(float64); ok {
-				result[k] = int(num)
-			}
-		}
-		return result
-	}
-	return make(map[string]int)
-}
-
-// getInt safely extracts an int value from interface{} maps
-func getInt(m map[string]interface{}, key string) int {
-	if val, ok := m[key].(float64); ok {
-		return int(val)
-	}
-	return 0
-}
-
-// getTime safely extracts a time value from interface{} maps
-func getTime(m map[string]interface{}, key string) time.Time {
-	if val, ok := m[key].(string); ok {
-		if t, err := time.Parse(time.RFC3339, val); err == nil {
-			return t
-		}
-	}
-	return time.Time{}
-}
-
-// getFloat safely extracts a float64 value from interface{} maps
-func getFloat(m map[string]interface{}, key string) float64 {
-	if val, ok := m[key].(float64); ok {
-		return val
-	}
-	return 0.0
-}
-
-// getUint64 safely extracts a uint64 value from interface{} maps
-func getUint64(m map[string]interface{}, key string) uint64 {
-	if val, ok := m[key].(float64); ok {
-		return uint64(val)
-	}
-	return 0
-}
-
-// getUint32 safely extracts a uint32 value from interface{} maps
-func getUint32(m map[string]interface{}, key string) uint32 {
-	if val, ok := m[key].(float64); ok {
-		return uint32(val)
-	}
-	return 0
-}
-
-// getBool safely extracts a bool value from interface{} maps
-func getBool(m map[string]interface{}, key string) bool {
-	if val, ok := m[key].(bool); ok {
-		return val
-	}
-	return false
 }
 
 // setupLogging sets up logging based on DEBUG environment variable and log level
@@ -818,41 +692,6 @@ func filterResources(resources []NodeResources, members []ClusterMember) []NodeR
 		filtered = append(filtered, resource)
 	}
 	return filtered
-}
-
-// runWithWatch executes a function periodically until interrupted
-func runWithWatch(fn func() error) error {
-	if !nodeConfig.Watch {
-		return fn()
-	}
-
-	// Set up signal handling for graceful shutdown
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
-	// Create a ticker for periodic updates
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
-
-	// Clear screen and show initial data
-	fmt.Print("\033[2J\033[H") // Clear screen and move cursor to top
-	if err := fn(); err != nil {
-		return err
-	}
-
-	for {
-		select {
-		case <-ticker.C:
-			fmt.Print("\033[2J\033[H") // Clear screen and move cursor to top
-			if err := fn(); err != nil {
-				logging.Error("Error updating display: %v", err)
-				continue
-			}
-		case <-sigChan:
-			fmt.Println("\nWatch mode interrupted")
-			return nil
-		}
-	}
 }
 
 // handlePeerList handles peer ls command
@@ -980,7 +819,7 @@ func handleMembers(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	return runWithWatch(fetchAndDisplayMembers)
+	return utils.RunWithWatch(fetchAndDisplayMembers, nodeConfig.Watch)
 }
 
 // handleClusterInfo handles the cluster info subcommand
@@ -1031,7 +870,7 @@ func handleNodeTop(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	return runWithWatch(fetchAndDisplayResources)
+	return utils.RunWithWatch(fetchAndDisplayResources, nodeConfig.Watch)
 }
 
 // handleNodeInfo handles the node info subcommand (detailed info for specific node)
@@ -1045,7 +884,7 @@ func handleNodeInfo(cmd *cobra.Command, args []string) error {
 	apiClient := createAPIClient()
 
 	// Resolve partial ID if needed
-	resolvedNodeID, err := resolveNodeIdentifier(apiClient, nodeIdentifier)
+	resolvedNodeID, err := utils.ResolveNodeIdentifier(apiClient, nodeIdentifier)
 	if err != nil {
 		return err
 	}
@@ -1124,7 +963,7 @@ func displayMembersFromAPI(members []ClusterMember) {
 
 		// Display each member
 		for _, member := range members {
-			lastSeen := formatDuration(time.Since(member.LastSeen))
+			lastSeen := utils.FormatDuration(time.Since(member.LastSeen))
 			name := member.Name
 			leader := "false"
 			if member.IsLeader {
@@ -1179,7 +1018,7 @@ func displayClusterInfoFromAPI(info ClusterInfo) {
 		if info.ClusterID != "" {
 			fmt.Printf("  Cluster ID:  %s\n", info.ClusterID)
 		}
-		fmt.Printf("  Uptime:      %s\n", formatDuration(info.Uptime))
+		fmt.Printf("  Uptime:      %s\n", utils.FormatDuration(info.Uptime))
 		if !info.StartTime.IsZero() {
 			fmt.Printf("  Started:     %s\n", info.StartTime.Format(time.RFC3339))
 		}
@@ -1203,7 +1042,7 @@ func displayClusterInfoFromAPI(info ClusterInfo) {
 			fmt.Fprintln(w, "ID\tNAME\tADDRESS\tSTATUS\tSERF\tRAFT\tLAST SEEN")
 
 			for _, member := range info.Members {
-				lastSeen := formatDuration(time.Since(member.LastSeen))
+				lastSeen := utils.FormatDuration(time.Since(member.LastSeen))
 
 				serfStatus := member.SerfStatus
 				if serfStatus == "" {
@@ -1443,19 +1282,19 @@ func (api *PrismAPIClient) GetNodeHealth(nodeID string) (*NodeHealth, error) {
 
 	if m, ok := response.Data.(map[string]interface{}); ok {
 		nh := &NodeHealth{
-			NodeID:    getString(m, "nodeId"),
-			NodeName:  getString(m, "nodeName"),
-			Timestamp: getTime(m, "timestamp"),
-			Status:    getString(m, "status"),
+			NodeID:    utils.GetString(m, "nodeId"),
+			NodeName:  utils.GetString(m, "nodeName"),
+			Timestamp: utils.GetTime(m, "timestamp"),
+			Status:    utils.GetString(m, "status"),
 		}
 		if arr, ok := m["checks"].([]interface{}); ok {
 			for _, it := range arr {
 				if cm, ok := it.(map[string]interface{}); ok {
 					nh.Checks = append(nh.Checks, HealthCheck{
-						Name:      getString(cm, "name"),
-						Status:    getString(cm, "status"),
-						Message:   getString(cm, "message"),
-						Timestamp: getTime(cm, "timestamp"),
+						Name:      utils.GetString(cm, "name"),
+						Status:    utils.GetString(cm, "status"),
+						Message:   utils.GetString(cm, "message"),
+						Timestamp: utils.GetTime(cm, "timestamp"),
 					})
 				}
 			}
@@ -1464,19 +1303,6 @@ func (api *PrismAPIClient) GetNodeHealth(nodeID string) (*NodeHealth, error) {
 	}
 
 	return nil, fmt.Errorf("unexpected response format for node health")
-}
-
-// formatDuration formats a duration in human-readable format
-func formatDuration(d time.Duration) string {
-	if d < time.Minute {
-		return fmt.Sprintf("%ds", int(d.Seconds()))
-	} else if d < time.Hour {
-		return fmt.Sprintf("%dm", int(d.Minutes()))
-	} else if d < 24*time.Hour {
-		return fmt.Sprintf("%dh", int(d.Hours()))
-	} else {
-		return fmt.Sprintf("%dd", int(d.Hours()/24))
-	}
 }
 
 // main is the main entry point
