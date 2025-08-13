@@ -377,10 +377,13 @@ func buildSerfConfig() *serf.Config {
 	serfConfig.NodeName = config.NodeName
 	serfConfig.LogLevel = config.LogLevel
 
+	// Wire service ports so they appear in Serf tags
+	serfConfig.RaftPort = config.RaftPort
+	serfConfig.GRPCPort = config.GRPCPort
+	serfConfig.APIPort = config.APIPort
+
 	// Add custom tags
 	serfConfig.Tags["prism_version"] = Version
-	serfConfig.Tags["raft_port"] = fmt.Sprintf("%d", config.RaftPort) // Raft peer discovery
-	serfConfig.Tags["grpc_port"] = fmt.Sprintf("%d", config.GRPCPort) // gRPC peer discovery
 
 	return serfConfig
 }

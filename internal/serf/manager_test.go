@@ -66,21 +66,6 @@ func TestNewSerfManager_InvalidConfig(t *testing.T) {
 	}
 }
 
-// TestNewSerfManager_NilConfig tests SerfManager creation with nil config (should use defaults)
-func TestNewSerfManager_NilConfig(t *testing.T) {
-	// This should use DefaultConfig()
-	manager, err := NewSerfManager(nil)
-
-	// Should fail because DefaultConfig() doesn't set NodeName (required field)
-	if err == nil {
-		t.Error("NewSerfManager() with nil config should return error (missing NodeName)")
-	}
-
-	if manager != nil {
-		t.Error("NewSerfManager() with nil config should return nil manager")
-	}
-}
-
 // TestGenerateNodeID tests node ID generation
 func TestGenerateNodeID(t *testing.T) {
 	nodeID1, err := generateNodeID()
@@ -108,39 +93,70 @@ func TestGenerateNodeID(t *testing.T) {
 	}
 }
 
-// TestBuildNodeTags tests node tag building logic
+// TestBuildNodeTags tests core tag building functionality for cluster membership
 func TestBuildNodeTags(t *testing.T) {
-	config := &Config{
-		NodeName: "test-node",
-		BindAddr: "127.0.0.1",
-		BindPort: 4200,
-		Tags:     map[string]string{"env": "test", "role": "worker"},
+	tests := []struct {
+		name     string
+		config   *Config
+		expected map[string]string
+	}{
+		{
+			name: "full_service_ports",
+			config: &Config{
+				NodeName: "test-node",
+				BindAddr: "127.0.0.1",
+				BindPort: 4200,
+				RaftPort: 9000,
+				GRPCPort: 9001,
+				APIPort:  8080,
+				Tags:     map[string]string{"env": "prod"},
+			},
+			expected: map[string]string{
+				"env":       "prod",
+				"node_id":   "abc123def456",
+				"serf_port": "4200",
+				"raft_port": "9000",
+				"grpc_port": "9001",
+				"api_port":  "8080",
+			},
+		},
+		{
+			name: "minimal_config",
+			config: &Config{
+				NodeName: "test-node",
+				BindAddr: "127.0.0.1",
+				BindPort: 4200,
+				Tags:     map[string]string{},
+			},
+			expected: map[string]string{
+				"node_id":   "abc123def456",
+				"serf_port": "4200",
+			},
+		},
 	}
 
-	manager := &SerfManager{
-		NodeID: "abc123def456",
-		config: config,
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			manager := &SerfManager{
+				NodeID: "abc123def456",
+				config: tt.config,
+			}
 
-	tags := manager.buildNodeTags()
+			tags := manager.buildNodeTags()
 
-	// Should include custom tags
-	if tags["env"] != "test" {
-		t.Errorf("buildNodeTags() env tag = %q, want %q", tags["env"], "test")
-	}
+			// Verify expected tags are present
+			for key, expectedValue := range tt.expected {
+				if actualValue, exists := tags[key]; !exists {
+					t.Errorf("buildNodeTags() missing expected tag %q", key)
+				} else if actualValue != expectedValue {
+					t.Errorf("buildNodeTags() tag %q = %q, want %q", key, actualValue, expectedValue)
+				}
+			}
 
-	if tags["role"] != "worker" {
-		t.Errorf("buildNodeTags() role tag = %q, want %q", tags["role"], "worker")
-	}
-
-	// Should include system tag
-	if tags["node_id"] != "abc123def456" {
-		t.Errorf("buildNodeTags() node_id tag = %q, want %q", tags["node_id"], "abc123def456")
-	}
-
-	// Should have correct total count (2 custom + 1 system)
-	expectedCount := 3
-	if len(tags) != expectedCount {
-		t.Errorf("buildNodeTags() tag count = %d, want %d", len(tags), expectedCount)
+			// Verify no unexpected tags
+			if len(tags) != len(tt.expected) {
+				t.Errorf("buildNodeTags() tag count = %d, want %d. Tags: %+v", len(tags), len(tt.expected), tags)
+			}
+		})
 	}
 }

@@ -27,5 +27,6 @@ func (s *Server) setupRoutes(router *gin.Engine) {
 		nodes.GET("", s.handleNodes)
 		nodes.GET("/:id", s.handleNodeByID)
 		nodes.GET("/:id/resources", s.handleNodeResources)
+		nodes.GET("/:id/health", s.handleNodeHealth)
 	}
 }

@@ -8,7 +8,7 @@ import (
 	"github.com/concave-dev/prism/internal/grpc/proto"
 	"github.com/concave-dev/prism/internal/logging"
 	"github.com/concave-dev/prism/internal/serf"
-	"google.golang.org/grpc"
+	grpcstd "google.golang.org/grpc"
 )
 
 // Server manages the gRPC server for inter-node communication
@@ -17,7 +17,7 @@ import (
 // TODO: Add graceful shutdown with connection draining
 type Server struct {
 	config      *Config           // Configuration for the gRPC server
-	grpcServer  *grpc.Server      // Main gRPC server instance
+	grpcServer  *grpcstd.Server   // Main gRPC server instance
 	listener    net.Listener      // Network listener
 	mu          sync.RWMutex      // Mutex for thread-safe operations
 	shutdown    chan struct{}     // Channel to signal shutdown
@@ -65,15 +65,15 @@ func (s *Server) Start() error {
 	s.listener = listener
 
 	// Create gRPC server with options
-	opts := []grpc.ServerOption{
-		grpc.MaxRecvMsgSize(s.config.MaxMsgSize),
-		grpc.MaxSendMsgSize(s.config.MaxMsgSize),
+	opts := []grpcstd.ServerOption{
+		grpcstd.MaxRecvMsgSize(s.config.MaxMsgSize),
+		grpcstd.MaxSendMsgSize(s.config.MaxMsgSize),
 	}
 
 	// TODO: Add TLS credentials when EnableTLS is true
 	// TODO: Add authentication interceptors
 
-	s.grpcServer = grpc.NewServer(opts...)
+	s.grpcServer = grpcstd.NewServer(opts...)
 	// TODO: attach interceptors for structured logging; gRPC itself does not use std logger by default.
 
 	// Register NodeService for resource and health queries
