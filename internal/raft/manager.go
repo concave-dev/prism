@@ -37,6 +37,7 @@
 package raft
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -474,10 +475,14 @@ func (m *RaftManager) SubmitCommand(data string) error {
 func (m *RaftManager) IntegrateWithSerf(serfEventCh <-chan serf.Event) {
 	logging.Info("Setting up Raft-Serf integration for automatic peer discovery")
 
+	// Start handling Serf events
 	go m.handleSerfEvents(serfEventCh)
 
 	// Start autopilot cleanup (leader-only)
 	go m.autopilotCleanup()
+
+	// Start periodic reconciliation to guarantee convergence even if events drop
+	go m.reconcilePeers(context.Background(), 5*time.Second)
 }
 
 // handleSerfEvents processes Serf membership events to automatically manage
@@ -942,4 +947,124 @@ func (m *RaftManager) reportDeadlock(deadPeers []string, totalPeers, alivePeers,
 // maintaining cluster health through automated peer management.
 func (m *RaftManager) SetSerfManager(serfMgr SerfInterface) {
 	m.serfManager = serfMgr
+}
+
+// reconcilePeers periodically converges Raft peers to Serf membership to ensure
+// eventual consistency even if Serf events were dropped or delayed. Runs continuously
+// in a background goroutine and reconciles every 5 seconds by default.
+//
+// Critical for cluster reliability as it eliminates the risk of Raft peer
+// desyncs caused by dropped best-effort Serf events. Operations are idempotent
+// and safe to run alongside event-based adds/removes, providing a safety net
+// that guarantees convergence within the reconciliation interval.
+func (m *RaftManager) reconcilePeers(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	logging.Info("Starting Raft peer reconciliation (interval: %v)", interval)
+
+	for {
+		select {
+		case <-ctx.Done():
+			logging.Info("Raft peer reconciliation shutting down")
+			return
+		case <-m.shutdown:
+			logging.Info("Raft peer reconciliation shutting down")
+			return
+		case <-ticker.C:
+			m.performPeerReconciliation()
+		}
+	}
+}
+
+// performPeerReconciliation synchronizes Raft cluster membership with Serf
+// membership by adding missing peers that are alive in Serf but not in Raft.
+// Only leaders can modify cluster membership, so followers skip reconciliation.
+//
+// Essential for maintaining cluster consistency as it ensures all alive Serf
+// nodes that advertise raft_port are included in the Raft cluster, regardless
+// of whether their join events were processed successfully. Provides automatic
+// recovery from event drops and guarantees eventual convergence.
+func (m *RaftManager) performPeerReconciliation() {
+	// Only leader can add peers - check this first for fast exit
+	if !m.IsLeader() {
+		logging.Debug("Reconciliation: Not Raft leader, skipping peer reconciliation (this is normal)")
+		return
+	}
+
+	// Check if we have Serf manager available
+	if m.serfManager == nil {
+		logging.Debug("Reconciliation: No Serf manager available, skipping reconciliation")
+		return
+	}
+
+	// Desired peers from Serf (only nodes that advertise raft_port)
+	desired := make(map[string]string) // nodeID -> raftAddr
+	serfMembers := m.serfManager.GetMembers()
+
+	for nodeID, member := range serfMembers {
+		// Skip ourselves
+		if nodeID == m.config.NodeID {
+			continue
+		}
+
+		// Only consider alive members
+		if member.Status != serf.StatusAlive {
+			continue
+		}
+
+		// Only nodes that advertise raft_port
+		raftPortStr, ok := member.Tags["raft_port"]
+		if !ok || raftPortStr == "" {
+			continue
+		}
+
+		// Build Raft address for this node
+		raftAddr := fmt.Sprintf("%s:%s", member.Addr.String(), raftPortStr)
+		desired[nodeID] = raftAddr
+	}
+
+	// Current peers in Raft
+	currentPeers, err := m.GetPeers()
+	if err != nil {
+		logging.Error("Reconciliation: Failed to get current Raft peers: %v", err)
+		return
+	}
+
+	// Build set of current peer IDs
+	currentSet := make(map[string]struct{})
+	for _, peer := range currentPeers {
+		// Parse peer format: "nodeID@address"
+		parts := strings.SplitN(peer, "@", 2)
+		if len(parts) == 2 {
+			currentSet[parts[0]] = struct{}{}
+		}
+	}
+
+	// Add missing peers (in desired but not in current)
+	var addedCount int
+	for nodeID, raftAddr := range desired {
+		if _, exists := currentSet[nodeID]; !exists {
+			logging.Info("Reconciliation: Adding missing peer %s at %s", nodeID, raftAddr)
+			if err := m.AddPeer(nodeID, raftAddr); err != nil {
+				logging.Error("Reconciliation: Failed to add peer %s: %v", nodeID, err)
+			} else {
+				addedCount++
+			}
+		}
+	}
+
+	// Log reconciliation results
+	if addedCount > 0 {
+		logging.Info("Reconciliation: Added %d missing peers", addedCount)
+	} else {
+		logging.Debug("Reconciliation: No missing peers found, cluster is synchronized")
+	}
+
+	// Note: We intentionally do not remove peers here for safety.
+	// Peer removal is handled by:
+	// 1. Event-driven removal for graceful leaves
+	// 2. Autopilot cleanup for failed/dead nodes
+	// This prevents accidental removal of temporarily partitioned nodes
+	// that are still part of the cluster but temporarily unreachable.
 }
