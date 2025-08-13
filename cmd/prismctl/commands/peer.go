@@ -2,6 +2,8 @@
 package commands
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 )
 
@@ -25,7 +27,13 @@ var peerInfoCmd = &cobra.Command{
 	Use:   "info <peer-id>",
 	Short: "Show detailed information for a specific Raft peer",
 	Long:  "Display detailed information for a specific Raft peer by ID.",
-	Args:  cobra.ExactArgs(1),
+	Args: func(cmd *cobra.Command, args []string) error {
+		if len(args) != 1 {
+			cmd.Help()
+			return fmt.Errorf("requires exactly 1 argument (peer ID)")
+		}
+		return nil
+	},
 	// RunE will be set by the main package that imports this
 }
 
