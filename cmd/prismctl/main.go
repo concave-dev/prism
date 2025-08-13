@@ -1472,7 +1472,7 @@ func displayNodeInfo(resource NodeResources, isLeader bool, health *NodeHealth, 
 		fmt.Printf("Leader: %t\n", isLeader)
 		fmt.Printf("Timestamp: %s\n", resource.Timestamp.Format(time.RFC3339))
 		if health != nil {
-			fmt.Printf("Health: %s\n", strings.ToLower(health.Status))
+			fmt.Printf("Status: %s\n", strings.ToLower(health.Status))
 		}
 		// Network information (best-effort based on Serf tags)
 		// TODO: Add explicit api_port and serf_port tags in the future for clarity
