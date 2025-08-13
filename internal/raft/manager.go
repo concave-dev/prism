@@ -64,8 +64,8 @@ import (
 type RaftManager struct {
 	config      *Config                // Configuration for the Raft manager
 	raft        *raft.Raft             // Main Raft consensus instance
-	fsm         raft.FSM               // Finite State Machine for applying commands
 	transport   *raft.NetworkTransport // Network transport for Raft communication
+	fsm         raft.FSM               // Finite State Machine for applying commands
 	logStore    raft.LogStore          // BoltDB-backed persistent log storage
 	stableStore raft.StableStore       // BoltDB-backed stable storage for metadata
 	snapshots   raft.SnapshotStore     // File-based snapshot storage
@@ -275,6 +275,10 @@ func (m *RaftManager) resolveBindAddress() string {
 
 	bindAddr := m.config.BindAddr
 	if bindAddr == "0.0.0.0" {
+		// TODO: Implement true 0.0.0.0 binding to all interfaces instead of resolving to single IP
+		// Current approach resolves to one interface that can reach internet, not true wildcard binding
+		// Future implementation should bind to all available network interfaces properly
+
 		// Get the local IP address that can be used by other nodes
 		// Use UDP dial to Google DNS to let OS pick the right interface
 		conn, err := net.Dial("udp", "8.8.8.8:80")
