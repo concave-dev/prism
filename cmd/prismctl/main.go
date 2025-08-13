@@ -922,16 +922,17 @@ func getBool(m map[string]interface{}, key string) bool {
 	return false
 }
 
-// setupLogging sets up logging based on verbose flag and log level
+// setupLogging sets up logging based on DEBUG environment variable and log level
 func setupLogging() {
-	if config.Verbose {
-		// Show verbose output - restore normal logging and enable DEBUG level
+	// Check for DEBUG environment variable for debug logging
+	if os.Getenv("DEBUG") == "true" {
+		// Show debug output - restore normal logging and enable DEBUG level
 		logging.RestoreOutput()
 		logging.SetLevel("DEBUG")
 	} else {
 		// Configure our application logging level first
 		logging.SetLevel(config.LogLevel)
-		// Suppress verbose output by default
+		// Suppress debug/info logs by default (only show errors)
 		logging.SuppressOutput()
 	}
 }
