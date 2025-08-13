@@ -831,6 +831,12 @@ func (m *RaftManager) autopilotCleanup() {
 // operator guidance when cluster quorum is insufficient for recovery.
 // TODO: Add safety checks (minimum quorum, cooldown periods)
 func (m *RaftManager) performAutopilotCleanup() {
+	// Only leader can remove peers - check this first for fast exit
+	if !m.IsLeader() {
+		logging.Debug("Autopilot: Not Raft leader, skipping cleanup (this is normal)")
+		return
+	}
+
 	// Get current Raft peers
 	peers, err := m.GetPeers()
 	if err != nil {
@@ -855,9 +861,8 @@ func (m *RaftManager) performAutopilotCleanup() {
 		}
 	}
 
-	isLeader := m.IsLeader()
-	logging.Debug("Autopilot: Found %d alive Serf members, checking %d Raft peers (leader: %t)",
-		len(aliveNodeIDs), len(peers), isLeader)
+	logging.Debug("Autopilot: Found %d alive Serf members, checking %d Raft peers",
+		len(aliveNodeIDs), len(peers))
 
 	// Find dead peers (in Raft but not alive in Serf)
 	var deadPeers []string
@@ -895,11 +900,6 @@ func (m *RaftManager) performAutopilotCleanup() {
 				m.reportDeadlock(deadPeers, totalPeers, alivePeers, requiredQuorum)
 			}
 		}
-	}
-
-	// Only perform actual cleanup if we're the leader
-	if !isLeader {
-		return
 	}
 
 	// Remove dead peers from Raft cluster
