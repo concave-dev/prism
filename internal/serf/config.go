@@ -48,6 +48,14 @@ const (
 )
 
 // Config holds configuration parameters for SerfManager cluster operations.
+//
+// This struct defines all the necessary settings for establishing and maintaining
+// a distributed cluster using HashiCorp's Serf gossip protocol. Configuration
+// includes network binding settings, node identification, event processing
+// parameters, and optional service port advertisements for inter-node communication.
+//
+// The optional port fields (GRPCPort, RaftPort, APIPort) are intentionally kept
+// here to avoid circular dependencies while allowing service discovery via Serf tags.
 type Config struct {
 	BindAddr            string            // Network address to bind Serf agent to
 	BindPort            int               // Network port for cluster communication
@@ -69,7 +77,15 @@ type Config struct {
 }
 
 // DefaultConfig returns a default configuration for SerfManager with sensible
-// production defaults. Tags are built later in manager.buildNodeTags().
+// production defaults suitable for most cluster deployments.
+//
+// Initializes all required fields with tested values:
+//   - Network binding uses system defaults for address/port
+//   - Event processing configured for moderate cluster sizes (1K buffer)
+//   - Join retry behavior balanced for reliability vs startup speed
+//   - Dead node reclaim time set for network partition tolerance
+//
+// Returns fully initialized Config ready for validation and use.
 func DefaultConfig() *Config {
 	return &Config{
 		BindAddr:            config.DefaultBindAddr,
@@ -83,14 +99,21 @@ func DefaultConfig() *Config {
 	}
 }
 
-// validateConfig validates SerfManager configuration fields including network
-// settings, buffer sizes, node naming, and tag restrictions.
+// validateConfig validates SerfManager configuration fields to ensure reliable
+// cluster operation and prevent common misconfigurations.
+//
+// Performs validation on:
+//   - Node name presence (required for cluster identity)
+//   - Network settings: bind address (valid IP) and port (1-65535, no auto-assign)
+//   - Event buffer size (positive values for proper message handling)
+//   - User tags (cannot conflict with system-reserved tag names)
+//
+// Returns descriptive error for any validation failure to aid debugging.
 func validateConfig(config *Config) error {
 	if config.NodeName == "" {
 		return fmt.Errorf("node name cannot be empty")
 	}
 
-	// Use built-in validators directly
 	if err := validate.ValidateField(config.BindAddr, "required,ip"); err != nil {
 		return fmt.Errorf("invalid bind address: %w", err)
 	}
@@ -105,7 +128,6 @@ func validateConfig(config *Config) error {
 		return fmt.Errorf("event buffer size must be positive, got: %d", config.EventBufferSize)
 	}
 
-	// Validate tags don't use reserved names
 	if err := validateTags(config.Tags); err != nil {
 		return fmt.Errorf("invalid tags: %w", err)
 	}
@@ -114,17 +136,20 @@ func validateConfig(config *Config) error {
 }
 
 // validateTags validates that user-provided tags don't conflict with system-reserved
-// tag names used internally by Prism. Reserved tags like "node_id" are automatically
-// set by the system and cannot be overridden.
+// tag names used internally by Prism for cluster management and service discovery.
+//
+// System-reserved tags are automatically managed by Prism:
+//   - "node_id": unique identifier assigned to each cluster node
+//   - Port tags (serf_port, grpc_port, etc.): service endpoints for inter-node communication
+//
+// User tags are free-form key-value pairs for application-specific metadata
+// like roles, capabilities, or deployment environments. Validation prevents
+// accidental conflicts that could disrupt cluster operations or service discovery.
 func validateTags(tags map[string]string) error {
-	// Define reserved tag names that are used by the system
-	// Port tags (serf_port, grpc_port, raft_port, api_port) are system-managed
-	// and added in buildNodeTags(), so they don't need validation here.
 	reservedTags := map[string]bool{
 		"node_id": true,
 	}
 
-	// Check each user tag against reserved names
 	for tagName := range tags {
 		if reservedTags[tagName] {
 			return fmt.Errorf("tag name '%s' is reserved and cannot be used", tagName)
