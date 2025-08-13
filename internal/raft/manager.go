@@ -1,3 +1,39 @@
+// Package raft provides distributed consensus management for Prism's orchestration layer.
+//
+// This package implements the Raft consensus algorithm integration for distributed
+// state management, leader election, and log replication across the Prism cluster.
+// It provides strong consistency guarantees essential for coordinating distributed
+// operations and maintaining cluster state.
+//
+// RAFT CONSENSUS ARCHITECTURE:
+// The Raft implementation manages distributed coordination through several components:
+//
+//   - Leader Election: Automatic leader selection with fast failure detection
+//   - Log Replication: Consistent state propagation across all cluster nodes
+//   - State Machine: Finite state machine for applying committed operations
+//   - Storage Layer: Persistent log and snapshot storage using BoltDB
+//   - Network Transport: TCP-based communication between Raft nodes
+//
+// SERF INTEGRATION:
+// Integrates with Serf's gossip protocol for automatic peer discovery and failure
+// detection. Uses Serf membership events to dynamically manage Raft cluster
+// composition, adding/removing peers as nodes join/leave the cluster.
+//
+// AUTOPILOT FUNCTIONALITY:
+// Implements autopilot cleanup to automatically remove dead peers detected by
+// Serf's SWIM protocol, preventing election deadlocks and maintaining cluster
+// health. Provides deadlock detection and resolution guidance for operators.
+//
+// BOOTSTRAP AND SCALING:
+// Supports single-node bootstrap for initial cluster formation and dynamic
+// scaling through automatic peer discovery. Handles leadership transfer during
+// graceful shutdowns to maintain cluster availability.
+//
+// FUTURE EXTENSIONS:
+// Designed for extensibility with planned features including custom FSM
+// implementations, TLS encryption, metrics collection, and advanced snapshot
+// management for large-scale deployments.
+
 package raft
 
 import (
@@ -18,10 +54,13 @@ import (
 	"github.com/hashicorp/serf/serf"
 )
 
-// RaftManager manages the Raft consensus protocol for the Prism cluster
-// TODO: Integrate with Serf for automatic peer discovery
-// TODO: Add metrics collection for Raft operations
-// TODO: Implement cluster membership changes via Serf events
+// RaftManager orchestrates distributed consensus operations for the Prism cluster
+// using the Raft algorithm. Manages leader election, log replication, and state
+// machine operations while integrating with Serf for automatic peer discovery.
+//
+// Provides the foundation for distributed coordination across cluster nodes,
+// ensuring strong consistency for critical operations. Handles cluster lifecycle
+// from bootstrap through dynamic scaling and graceful shutdown with leadership transfer.
 type RaftManager struct {
 	config      *Config                // Configuration for the Raft manager
 	raft        *raft.Raft             // Main Raft consensus instance
@@ -36,14 +75,23 @@ type RaftManager struct {
 	serfManager SerfInterface          // Interface for Serf member queries
 }
 
-// SerfInterface defines the methods we need from Serf manager for autopilot
+// SerfInterface defines the required methods from Serf manager for autopilot
+// operations and peer liveness detection. Enables loose coupling between
+// Raft consensus and Serf membership management.
+//
+// Critical for autopilot functionality that uses Serf's SWIM protocol to
+// determine node health and automatically manage Raft cluster membership.
 type SerfInterface interface {
 	GetMembers() map[string]*serfpkg.PrismNode
 }
 
-// NewRaftManager creates a new Raft manager with the given configuration
-// TODO: Add support for TLS encryption in transport
-// TODO: Implement custom snapshot scheduling
+// NewRaftManager creates a new Raft manager with comprehensive configuration
+// validation and initialization. Sets up the foundation for distributed consensus
+// operations but does not start the Raft instance until Start() is called.
+//
+// Essential for establishing Raft consensus capabilities in the cluster while
+// maintaining separation between configuration and runtime initialization.
+// Validates all configuration parameters to prevent runtime errors.
 func NewRaftManager(config *Config) (*RaftManager, error) {
 	if err := config.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid config: %w", err)
@@ -58,9 +106,13 @@ func NewRaftManager(config *Config) (*RaftManager, error) {
 	return manager, nil
 }
 
-// Start starts the Raft manager
-// TODO: Add health check endpoint for Raft status
-// TODO: Implement graceful startup with retry logic
+// Start initializes and starts the Raft consensus manager with full cluster
+// participation capabilities. Configures storage, transport, and state machine
+// components before creating the Raft instance and optionally bootstrapping.
+//
+// Critical for establishing distributed consensus in the cluster and enabling
+// leader election, log replication, and state machine operations. Handles
+// bootstrap mode for initial cluster formation and normal join operations.
 func (m *RaftManager) Start() error {
 	logging.Info("Starting Raft manager on %s:%d", m.config.BindAddr, m.config.BindPort)
 
@@ -151,9 +203,13 @@ func (m *RaftManager) Start() error {
 	return nil
 }
 
-// Stop gracefully stops the Raft manager
-// TODO: Add configurable shutdown timeout
-// TODO: Implement clean snapshot on shutdown
+// Stop gracefully shuts down the Raft manager with leadership transfer and
+// resource cleanup. Attempts to transfer leadership before shutdown to maintain
+// cluster availability and properly closes all storage and transport resources.
+//
+// Essential for clean cluster operations during node maintenance or scaling down.
+// Prevents data corruption and ensures smooth cluster transitions by transferring
+// leadership and properly closing persistent storage and network connections.
 func (m *RaftManager) Stop() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -204,8 +260,13 @@ func (m *RaftManager) Stop() error {
 	return nil
 }
 
-// resolveBindAddress resolves the bind address to an actual IP if it's 0.0.0.0
-// Caches the resolved IP to ensure consistency between bootstrap and transport setup
+// resolveBindAddress resolves wildcard bind addresses to actual IPs for
+// advertisable addresses in Raft cluster formation. Caches the resolved IP
+// to ensure consistency between bootstrap and transport configuration.
+//
+// Critical for proper cluster formation as Raft nodes need advertisable
+// addresses for peer communication. Handles 0.0.0.0 binding by determining
+// the local IP that other nodes can use to reach this node.
 func (m *RaftManager) resolveBindAddress() string {
 	// If we already resolved the IP, return the cached value for consistency
 	if m.resolvedIP != "" {
@@ -232,7 +293,12 @@ func (m *RaftManager) resolveBindAddress() string {
 	return bindAddr
 }
 
-// IsLeader returns true if this node is the Raft leader
+// IsLeader returns true if this node is the current Raft leader for the cluster.
+// Used for determining if this node can perform leader-only operations like
+// adding/removing peers and processing write commands.
+//
+// Essential for distributed coordination as only the leader can make cluster
+// changes and accept write operations in the Raft consensus protocol.
 func (m *RaftManager) IsLeader() bool {
 	if m.raft == nil {
 		return false
@@ -240,7 +306,12 @@ func (m *RaftManager) IsLeader() bool {
 	return m.raft.State() == raft.Leader
 }
 
-// Leader returns the current leader address
+// Leader returns the current Raft leader's address for client redirection
+// and cluster status monitoring. Provides the endpoint where write operations
+// should be directed in the distributed system.
+//
+// Critical for client applications and load balancers to route write requests
+// to the appropriate node and for monitoring cluster leadership status.
 func (m *RaftManager) Leader() string {
 	if m.raft == nil {
 		return ""
@@ -249,7 +320,12 @@ func (m *RaftManager) Leader() string {
 	return string(leaderID)
 }
 
-// State returns the current Raft state
+// State returns the current Raft node state (Leader, Follower, Candidate)
+// for monitoring and debugging cluster behavior. Provides insight into
+// the node's role in the consensus process.
+//
+// Essential for operational monitoring and troubleshooting cluster issues
+// like election failures or network partitions affecting consensus.
 func (m *RaftManager) State() string {
 	if m.raft == nil {
 		return "Unknown"
@@ -257,8 +333,13 @@ func (m *RaftManager) State() string {
 	return m.raft.State().String()
 }
 
-// AddPeer adds a new voting peer to the Raft cluster
-// TODO: Add support for non-voting peers for scaling reads
+// AddPeer adds a new voting peer to the Raft cluster for distributed consensus.
+// Only the current leader can add peers to maintain cluster consistency and
+// prevent split-brain scenarios during cluster membership changes.
+//
+// Essential for dynamic cluster scaling as new nodes join the system.
+// Automatically integrates new peers into the consensus protocol for
+// leader election and log replication operations.
 func (m *RaftManager) AddPeer(nodeID, address string) error {
 	if m.raft == nil {
 		return fmt.Errorf("raft not initialized")
@@ -287,8 +368,13 @@ func (m *RaftManager) AddPeer(nodeID, address string) error {
 	return nil
 }
 
-// RemovePeer removes a peer from the Raft cluster
-// TODO: Add graceful peer removal with leadership transfer
+// RemovePeer removes a peer from the Raft cluster for cluster downsizing or
+// failed node cleanup. Only the current leader can remove peers to maintain
+// consensus safety and prevent cluster membership conflicts.
+//
+// Critical for cluster maintenance and autopilot operations when nodes
+// permanently leave or fail. Ensures proper quorum management and prevents
+// dead peers from affecting leader election and consensus operations.
 func (m *RaftManager) RemovePeer(nodeID string) error {
 	if m.raft == nil {
 		return fmt.Errorf("raft not initialized")
@@ -316,7 +402,12 @@ func (m *RaftManager) RemovePeer(nodeID string) error {
 	return nil
 }
 
-// GetPeers returns the current Raft cluster configuration
+// GetPeers returns the current Raft cluster configuration with all peer
+// information for monitoring and management operations. Provides complete
+// cluster topology including node IDs and addresses.
+//
+// Essential for cluster monitoring, debugging, and administrative operations
+// that need to understand current cluster membership and peer connectivity.
 func (m *RaftManager) GetPeers() ([]string, error) {
 	if m.raft == nil {
 		return nil, fmt.Errorf("raft not initialized")
@@ -337,8 +428,13 @@ func (m *RaftManager) GetPeers() ([]string, error) {
 	return peers, nil
 }
 
-// SubmitCommand submits a command to the Raft cluster for consensus (hello world test)
-// TODO: Replace with actual business logic commands
+// SubmitCommand submits a command to the Raft cluster for consensus and state
+// machine application. Only the leader can accept commands, providing strong
+// consistency guarantees for distributed state management operations.
+//
+// Critical for maintaining distributed state consistency across the cluster.
+// Commands are replicated to all peers before being applied to ensure
+// fault tolerance and data consistency in the distributed system.
 func (m *RaftManager) SubmitCommand(data string) error {
 	if m.raft == nil {
 		return fmt.Errorf("raft not initialized")
@@ -363,9 +459,14 @@ func (m *RaftManager) SubmitCommand(data string) error {
 	return nil
 }
 
-// IntegrateWithSerf sets up integration between Raft and Serf for automatic peer discovery
-// TODO: Add support for graceful peer removal when nodes leave
-// TODO: Implement leader election coordination with Serf events
+// IntegrateWithSerf establishes integration between Raft consensus and Serf
+// membership for automatic peer discovery and cluster management. Enables
+// dynamic cluster scaling by automatically adding/removing Raft peers based
+// on Serf membership events.
+//
+// Critical for operational simplicity as it eliminates manual peer management
+// and provides automatic cluster healing through autopilot functionality.
+// Uses Serf's SWIM protocol for reliable failure detection.
 func (m *RaftManager) IntegrateWithSerf(serfEventCh <-chan serf.Event) {
 	logging.Info("Setting up Raft-Serf integration for automatic peer discovery")
 
@@ -375,7 +476,13 @@ func (m *RaftManager) IntegrateWithSerf(serfEventCh <-chan serf.Event) {
 	go m.autopilotCleanup()
 }
 
-// handleSerfEvents processes Serf membership events to manage Raft peers
+// handleSerfEvents processes Serf membership events to automatically manage
+// Raft cluster composition based on node join/leave events. Runs in a dedicated
+// goroutine to provide asynchronous cluster membership management.
+//
+// Essential for autopilot functionality that automatically adds/removes Raft
+// peers as nodes join/leave the cluster, eliminating manual peer management
+// and providing seamless cluster scaling operations.
 func (m *RaftManager) handleSerfEvents(eventCh <-chan serf.Event) {
 	for event := range eventCh {
 		switch e := event.(type) {
@@ -387,7 +494,13 @@ func (m *RaftManager) handleSerfEvents(eventCh <-chan serf.Event) {
 	}
 }
 
-// handleMemberEvent processes member join/leave events to update Raft cluster
+// handleMemberEvent processes individual Serf member events to update Raft
+// cluster membership. Dispatches join/leave events to specialized handlers
+// for appropriate cluster management actions.
+//
+// Critical for maintaining synchronization between Serf membership and Raft
+// cluster configuration, ensuring consistent cluster topology across both
+// gossip and consensus protocols.
 func (m *RaftManager) handleMemberEvent(event serf.MemberEvent) {
 	for _, member := range event.Members {
 		switch event.Type {
@@ -399,7 +512,13 @@ func (m *RaftManager) handleMemberEvent(event serf.MemberEvent) {
 	}
 }
 
-// handleMemberJoin adds a new Serf member as a Raft peer
+// handleMemberJoin processes Serf member join events by adding the new node
+// as a Raft peer. Extracts node metadata from Serf tags and constructs the
+// appropriate Raft peer address for cluster integration.
+//
+// Essential for automatic cluster scaling as it seamlessly integrates new
+// nodes into the Raft consensus without manual intervention. Only the leader
+// performs the actual peer addition to maintain cluster consistency.
 func (m *RaftManager) handleMemberJoin(member serf.Member) {
 	// Extract node_id from member tags
 	nodeID := member.Tags["node_id"]
@@ -442,7 +561,13 @@ func (m *RaftManager) handleMemberJoin(member serf.Member) {
 	}
 }
 
-// handleMemberLeave removes a Serf member from Raft peers
+// handleMemberLeave processes Serf member leave events by removing the
+// departed node from the Raft cluster. Maintains cluster health by cleaning
+// up peers that are no longer available for consensus operations.
+//
+// Critical for preventing election deadlocks and maintaining optimal cluster
+// performance by removing unavailable peers. Only the leader performs the
+// actual peer removal to ensure cluster consistency.
 func (m *RaftManager) handleMemberLeave(member serf.Member) {
 	// Extract node_id from member tags
 	nodeID := member.Tags["node_id"]
@@ -469,7 +594,13 @@ func (m *RaftManager) handleMemberLeave(member serf.Member) {
 	}
 }
 
-// setupTransport configures the network transport for Raft
+// setupTransport configures the TCP network transport for Raft peer
+// communication. Handles address resolution for advertisable addresses
+// and creates the transport layer for inter-node consensus operations.
+//
+// Essential for Raft cluster formation as it establishes the communication
+// channel between nodes for leader election, log replication, and heartbeat
+// messages. Resolves wildcard addresses for proper peer connectivity.
 func (m *RaftManager) setupTransport(logWriter io.Writer) error {
 	// For Raft transport, we need an advertisable address, not 0.0.0.0
 	// Use centralized IP resolution to ensure consistency with bootstrap
@@ -495,7 +626,13 @@ func (m *RaftManager) setupTransport(logWriter io.Writer) error {
 	return nil
 }
 
-// setupStorage configures the storage layers for Raft
+// setupStorage configures the persistent storage layers for Raft including
+// log storage, stable storage, and snapshot storage. Uses BoltDB for reliable
+// persistence and file-based snapshots for log compaction.
+//
+// Critical for Raft durability and recovery as it provides persistent storage
+// for committed log entries, cluster metadata, and snapshots. Ensures data
+// survival across node restarts and enables cluster recovery operations.
 func (m *RaftManager) setupStorage(logWriter io.Writer) error {
 	// Setup BoltDB for log and stable storage
 	logStore, err := raftboltdb.NewBoltStore(filepath.Join(m.config.DataDir, "raft-log.db"))
@@ -516,7 +653,13 @@ func (m *RaftManager) setupStorage(logWriter io.Writer) error {
 	return nil
 }
 
-// buildRaftConfig creates the Raft configuration
+// buildRaftConfig creates the Raft configuration with optimized timeouts
+// and settings for the cluster environment. Configures aggressive timeouts
+// for fast leader election and failure detection in stable networks.
+//
+// Essential for tuning Raft behavior to match the deployment environment
+// and performance requirements. Enables PreVote to reduce unnecessary
+// elections and configures logging for operational visibility.
 func (m *RaftManager) buildRaftConfig(logWriter io.Writer) *raft.Config {
 	config := raft.DefaultConfig()
 	config.LocalID = raft.ServerID(m.config.NodeID)
@@ -539,16 +682,25 @@ func (m *RaftManager) buildRaftConfig(logWriter io.Writer) *raft.Config {
 	return config
 }
 
-// simpleFSM is a basic finite state machine for hello world functionality
-// TODO: Replace with actual business logic FSM for AI agent state management
-// TODO: Add support for agent lifecycle events (create, start, stop, destroy)
-// TODO: Implement state persistence and recovery
+// simpleFSM implements a basic finite state machine for Raft command processing
+// and state management. Provides the foundation for distributed state operations
+// that will be expanded for AI agent lifecycle and orchestration management.
+//
+// Critical for Raft consensus as it applies committed log entries to maintain
+// consistent state across all cluster nodes. Currently implements basic state
+// tracking that will evolve into comprehensive agent state management.
 type simpleFSM struct {
 	mu    sync.RWMutex
 	state map[string]interface{}
 }
 
-// Apply applies a Raft log entry to the FSM
+// Apply processes committed Raft log entries and applies them to the finite
+// state machine. Maintains consistent state across all cluster nodes by
+// processing commands in the same order on every node.
+//
+// Essential for distributed state consistency as it ensures all nodes apply
+// the same state changes in the same sequence. Forms the foundation for
+// future AI agent state management and orchestration operations.
 func (f *simpleFSM) Apply(log *raft.Log) interface{} {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -571,7 +723,13 @@ func (f *simpleFSM) Apply(log *raft.Log) interface{} {
 	}
 }
 
-// Snapshot creates a snapshot of the FSM state
+// Snapshot creates a point-in-time snapshot of the finite state machine
+// for log compaction and recovery operations. Enables efficient storage
+// by capturing current state without requiring full log replay.
+//
+// Critical for cluster performance and storage efficiency as it allows
+// Raft to compact logs and reduce storage requirements while maintaining
+// the ability to restore state for new or recovering nodes.
 func (f *simpleFSM) Snapshot() (raft.FSMSnapshot, error) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
@@ -580,7 +738,13 @@ func (f *simpleFSM) Snapshot() (raft.FSMSnapshot, error) {
 	return &simpleFSMSnapshot{state: f.state}, nil
 }
 
-// Restore restores the FSM state from a snapshot
+// Restore rebuilds the finite state machine state from a snapshot during
+// cluster recovery or new node initialization. Provides fast state recovery
+// without requiring full log replay from the beginning of time.
+//
+// Essential for cluster scalability and recovery as it enables new nodes
+// to quickly catch up to current state and allows existing nodes to recover
+// efficiently after restarts or failures.
 func (f *simpleFSM) Restore(snapshot io.ReadCloser) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -592,12 +756,24 @@ func (f *simpleFSM) Restore(snapshot io.ReadCloser) error {
 	return snapshot.Close()
 }
 
-// simpleFSMSnapshot represents a snapshot of the simple FSM
+// simpleFSMSnapshot represents a point-in-time capture of the finite state
+// machine state for persistence and recovery operations. Implements the
+// snapshot interface required by Raft for log compaction functionality.
+//
+// Critical for efficient cluster operation as it enables state persistence
+// without requiring full log storage and provides fast recovery mechanisms
+// for cluster scaling and failure recovery scenarios.
 type simpleFSMSnapshot struct {
 	state map[string]interface{}
 }
 
-// Persist saves the snapshot data
+// Persist saves the snapshot data to the provided sink for durable storage.
+// Implements the snapshot persistence interface required by Raft for log
+// compaction and recovery operations.
+//
+// Essential for cluster durability as it ensures snapshot data is properly
+// stored to disk for future recovery operations and log compaction.
+// Currently implements basic persistence that will be enhanced for production use.
 func (s *simpleFSMSnapshot) Persist(sink raft.SnapshotSink) error {
 	// TODO: Implement proper snapshot serialization
 	defer sink.Close()
@@ -607,12 +783,24 @@ func (s *simpleFSMSnapshot) Persist(sink raft.SnapshotSink) error {
 	return err
 }
 
-// Release is called when the snapshot is no longer needed
+// Release cleans up resources associated with the snapshot when it's no longer
+// needed. Called by Raft when the snapshot has been successfully persisted
+// or when the snapshot operation is cancelled.
+//
+// Important for resource management and preventing memory leaks during
+// snapshot operations. Currently no cleanup is needed but provides the
+// hook for future resource management as the FSM becomes more complex.
 func (s *simpleFSMSnapshot) Release() {
 	// TODO: Clean up any resources if needed
 }
 
-// autopilotCleanup runs periodic cleanup of dead Raft peers (leader-only)
+// autopilotCleanup runs periodic cleanup of dead Raft peers to maintain
+// cluster health and prevent election deadlocks. Runs continuously in a
+// background goroutine with regular health checks every 5 seconds.
+//
+// Critical for cluster stability as it automatically removes peers that
+// are dead according to Serf's SWIM protocol, preventing cluster lockup
+// scenarios where dead peers prevent new leader elections from succeeding.
 func (m *RaftManager) autopilotCleanup() {
 	ticker := time.NewTicker(5 * time.Second) // Check every 5 seconds
 	defer ticker.Stop()
@@ -630,8 +818,13 @@ func (m *RaftManager) autopilotCleanup() {
 	}
 }
 
-// performAutopilotCleanup removes Raft peers that are dead in Serf
-// Uses Serf's SWIM protocol to determine member liveness instead of TCP probes
+// performAutopilotCleanup removes Raft peers that are detected as dead by
+// Serf's SWIM protocol. Uses gossip-based failure detection instead of direct
+// TCP probes for more reliable liveness assessment in distributed environments.
+//
+// Essential for preventing election deadlocks by removing peers that cannot
+// participate in consensus operations. Detects deadlock scenarios and provides
+// operator guidance when cluster quorum is insufficient for recovery.
 // TODO: Add safety checks (minimum quorum, cooldown periods)
 func (m *RaftManager) performAutopilotCleanup() {
 	// Get current Raft peers
@@ -719,7 +912,13 @@ func (m *RaftManager) performAutopilotCleanup() {
 	}
 }
 
-// reportDeadlock reports election deadlock caused by insufficient quorum
+// reportDeadlock reports election deadlock scenarios caused by insufficient
+// quorum due to dead peers. Provides detailed diagnostic information and
+// operator guidance for resolving cluster lockup situations.
+//
+// Critical for operational support as it clearly identifies the root cause
+// of election failures and provides actionable steps for cluster recovery.
+// Helps operators understand the relationship between dead peers and quorum requirements.
 func (m *RaftManager) reportDeadlock(deadPeers []string, totalPeers, alivePeers, requiredQuorum int) {
 	logging.Error("ELECTION DEADLOCK DETECTED")
 	logging.Error("No leader elected and insufficient quorum for new elections")
@@ -731,7 +930,13 @@ func (m *RaftManager) reportDeadlock(deadPeers []string, totalPeers, alivePeers,
 	logging.Error("Cluster is locked until quorum is restored!")
 }
 
-// SetSerfManager sets the Serf manager reference for autopilot
+// SetSerfManager establishes the connection between Raft and Serf managers
+// for autopilot operations and peer liveness detection. Enables the Raft
+// manager to query Serf for node health information during cleanup operations.
+//
+// Essential for autopilot functionality that automatically removes dead peers
+// detected by Serf's SWIM protocol, preventing election deadlocks and
+// maintaining cluster health through automated peer management.
 func (m *RaftManager) SetSerfManager(serfMgr SerfInterface) {
 	m.serfManager = serfMgr
 }
