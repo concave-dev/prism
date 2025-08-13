@@ -524,6 +524,12 @@ func (m *RaftManager) handleMemberEvent(event serf.MemberEvent) {
 // nodes into the Raft consensus without manual intervention. Only the leader
 // performs the actual peer addition to maintain cluster consistency.
 func (m *RaftManager) handleMemberJoin(member serf.Member) {
+	// Only leader can add peers - check this first for fast exit
+	if !m.IsLeader() {
+		logging.Debug("Not Raft leader, skipping peer addition for member %s (this is normal)", member.Name)
+		return
+	}
+
 	// Extract node_id from member tags
 	nodeID := member.Tags["node_id"]
 	if nodeID == "" {
@@ -554,12 +560,6 @@ func (m *RaftManager) handleMemberJoin(member serf.Member) {
 
 	logging.Info("Serf member %s (%s) joined, attempting to add as Raft peer at %s", member.Name, nodeID, raftAddr)
 
-	// Add as Raft peer using node_id (only leader can do this)
-	if !m.IsLeader() {
-		logging.Debug("Not Raft leader, cannot add peer %s (this is normal)", nodeID)
-		return
-	}
-
 	if err := m.AddPeer(nodeID, raftAddr); err != nil {
 		logging.Error("Failed to add Raft peer %s: %v", nodeID, err)
 	}
@@ -573,6 +573,12 @@ func (m *RaftManager) handleMemberJoin(member serf.Member) {
 // performance by removing unavailable peers. Only the leader performs the
 // actual peer removal to ensure cluster consistency.
 func (m *RaftManager) handleMemberLeave(member serf.Member) {
+	// Only leader can remove peers - check this first for fast exit
+	if !m.IsLeader() {
+		logging.Debug("Not Raft leader, skipping peer removal for member %s (this is normal)", member.Name)
+		return
+	}
+
 	// Extract node_id from member tags
 	nodeID := member.Tags["node_id"]
 	if nodeID == "" {
@@ -586,12 +592,6 @@ func (m *RaftManager) handleMemberLeave(member serf.Member) {
 	}
 
 	logging.Info("Serf member %s (%s) left, attempting to remove from Raft cluster", member.Name, nodeID)
-
-	// Remove from Raft cluster using node_id (only leader can do this)
-	if !m.IsLeader() {
-		logging.Debug("Not Raft leader, cannot remove peer %s (this is normal)", nodeID)
-		return
-	}
 
 	if err := m.RemovePeer(nodeID); err != nil {
 		logging.Error("Failed to remove Raft peer %s: %v", nodeID, err)
