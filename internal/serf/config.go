@@ -27,10 +27,10 @@ const (
 	// Will auto-increment if port is already in use.
 	DefaultSerfPort = 4200
 
-	// DefaultEventBufferSize is the default event buffer size
+	// DefaultEventBufferSize is the default event buffer size.
 	//
-	// ConsumerEventCh (external) will use DefaultEventBufferSize.
-	// And ingestEventQueue (internal) will use DefaultEventBufferSize * 2.
+	// ConsumerEventCh(external) will use DefaultEventBufferSize
+	// And ingestEventQueue(internal) will use DefaultEventBufferSize*2
 	DefaultEventBufferSize = 1024
 
 	// DefaultJoinRetries is the default join retries.
@@ -42,8 +42,8 @@ const (
 	DefaultJoinTimeout = 30 * time.Second
 
 	// DefaultDeadNodeReclaimTime is how long we wait before removing dead nodes.
-	// Maybe default is around 30 minutes? But we use 10 minutes for now.
 	// This is used to prevent rapid node flapping and allows time for temporary network issues to resolve.
+	// Maybe default is around 30 minutes? But we use 10 minutes, for a slightly aggressive failure detection.
 	DefaultDeadNodeReclaimTime = 10 * time.Minute
 )
 
@@ -64,13 +64,11 @@ type Config struct {
 	EventBufferSize     int               // Base buffer size for event channels (ingestEventQueue uses 2x)
 	JoinRetries         int               // Maximum join attempts on failure
 	JoinTimeout         time.Duration     // Timeout for single join attempt
-	LogLevel            string            // Logging verbosity (debug, info, warn, error)
 	DeadNodeReclaimTime time.Duration     // Time before permanently removing dead nodes
+	LogLevel            string            // Logging verbosity (debug, info, warn, error)
 
 	// Optional: well-known service ports to advertise via Serf tags
 	// If zero, the tag will be omitted. These are populated by the daemon wiring.
-	// We intentionally keep these here (instead of importing other packages) to
-	// avoid cyclic dependencies between packages.
 	GRPCPort int // gRPC service port (tag: "grpc_port")
 	RaftPort int // Raft service port (tag: "raft_port")
 	APIPort  int // HTTP API service port (tag: "api_port")

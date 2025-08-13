@@ -1,4 +1,35 @@
-// Package serf provides resource querying functionality for Prism cluster nodes
+// Package serf provides resource querying functionality for Prism cluster nodes.
+//
+// This package implements distributed resource discovery and querying capabilities
+// using Serf's query-response mechanism. It enables cluster-wide resource gathering
+// for orchestration decisions, load balancing, and capacity planning across the
+// distributed system.
+//
+// RESOURCE QUERYING ARCHITECTURE:
+// The resource system uses Serf's gossip-based query protocol to efficiently
+// collect resource information from cluster nodes:
+//
+//   - Query Distribution: Leverages gossip protocol for efficient cluster-wide queries
+//   - Response Collection: Handles concurrent responses with timeout management
+//   - Early Optimization: Returns immediately when all expected responses arrive
+//   - Graceful Degradation: Continues operation even if some nodes don't respond
+//
+// QUERY TYPES SUPPORTED:
+//   - Cluster-wide: Gather resources from all available cluster nodes
+//   - Node-specific: Target individual nodes by ID or name for detailed queries
+//   - Local: Fast access to current node's resource information
+//
+// PERFORMANCE OPTIMIZATIONS:
+// The system implements cascading timeouts to prevent HTTP client timeouts while
+// allowing sufficient time for Serf query propagation, response collection, and
+// JSON serialization. Early return logic minimizes latency for responsive clusters
+// while timeout handling ensures reliability in degraded network conditions.
+//
+// TIMEOUT STRATEGY:
+// Coordinated timeout configuration prevents competing timeouts between HTTP
+// clients, Serf queries, and response processing to ensure reliable end-to-end
+// operation across the distributed orchestration platform.
+
 package serf
 
 import (
@@ -10,12 +41,29 @@ import (
 	"github.com/hashicorp/serf/serf"
 )
 
-// GatherLocalResources returns current resource information for this node
+// GatherLocalResources returns current resource information for this node without
+// network communication. Provides fast access to local system resources including
+// CPU cores, memory, disk space, and operational metadata for immediate use.
+//
+// Essential for local resource reporting, health checks, and quick resource
+// availability assessment without the overhead of distributed queries.
+// Used both internally and as the response handler for resource queries from other nodes.
 func (sm *SerfManager) GatherLocalResources() *resources.NodeResources {
 	return resources.GatherSystemResources(sm.NodeID, sm.NodeName, sm.startTime)
 }
 
-// QueryResources sends a get-resources query to all cluster nodes and returns their responses
+// ============================================================================
+// FALLBACK RESOURCE QUERYING - Handle distributed queries across the cluster
+// ============================================================================
+
+// QueryResources sends a distributed query to all cluster nodes to gather their
+// current resource information. Uses Serf's gossip protocol for efficient cluster-wide
+// resource discovery with optimized timeout handling and early return capabilities.
+//
+// Critical for orchestration decisions, load balancing, and capacity planning as it
+// provides a complete view of available cluster resources. Implements cascading timeouts
+// to prevent HTTP client timeouts while ensuring reliable resource collection across
+// the distributed system. Returns partial results if some nodes are unresponsive.
 func (sm *SerfManager) QueryResources() (map[string]*resources.NodeResources, error) {
 	// Get expected node count for early optimization
 	members := sm.GetMembers()
@@ -47,7 +95,7 @@ func (sm *SerfManager) QueryResources() (map[string]*resources.NodeResources, er
 	// collection and JSON serialization before HTTP response.
 	queryParams := &serf.QueryParam{
 		RequestAck: true,
-		Timeout:    5 * time.Second, // Reduced to give HTTP response time
+		Timeout:    5 * time.Second,
 	}
 
 	resp, err := sm.serf.Query("get-resources", nil, queryParams)
@@ -55,23 +103,26 @@ func (sm *SerfManager) QueryResources() (map[string]*resources.NodeResources, er
 		return nil, fmt.Errorf("failed to send get-resources query: %w", err)
 	}
 
-	// Process responses
+	// Initialize response collection map for storing node resources by node name
+	// Uses node names as keys (from Serf responses) to aggregate cluster resource data
 	resourcesMap := make(map[string]*resources.NodeResources)
 
-	// Handle responses as they come in with timeout
-	//
-	// OPTIMIZATION: Early Return + Response Timeout
-	// - Collect responses until all expected nodes reply OR timeout
-	// - Early return when we get all responses (faster for small clusters)
-	// - 5s response timeout matches Serf query timeout (Serf closes channel at 5s anyway)
-	responseTimeout := time.NewTimer(5 * time.Second) // Matches query timeout
+	// Set response collection timeout to match Serf query timeout (5s)
+	// This prevents hanging indefinitely if some nodes are unresponsive while
+	// allowing sufficient time for healthy nodes to respond via gossip protocol
+	responseTimeout := time.NewTimer(5 * time.Second)
 	defer responseTimeout.Stop()
 
+	// Process responses with early return optimization and timeout handling
+	// Implements concurrent response collection with two exit conditions:
+	// 1. All expected nodes respond (early return for performance)
+	// 2. Timeout expires (graceful degradation for reliability)
 	for {
 		select {
 		case response, ok := <-resp.ResponseCh():
 			if !ok {
-				// Channel closed, all responses received
+				// Serf has closed the response channel - all responses collected
+				// This indicates normal completion of the query operation
 				goto done
 			}
 
@@ -85,14 +136,12 @@ func (sm *SerfManager) QueryResources() (map[string]*resources.NodeResources, er
 			logging.Debug("Received resources from node %s: CPU=%d, Memory=%dMB",
 				response.From, nodeResources.CPUCores, nodeResources.MemoryTotal/(1024*1024))
 
-			// Early return if we have all expected responses
 			if len(resourcesMap) >= expectedNodes {
 				logging.Debug("Received all %d expected responses, returning early", expectedNodes)
 				goto done
 			}
 
 		case <-responseTimeout.C:
-			// Timeout waiting for responses
 			logging.Warn("Timeout waiting for resource responses, got %d responses", len(resourcesMap))
 			goto done
 		}
@@ -103,14 +152,21 @@ done:
 	return resourcesMap, nil
 }
 
-// QueryResourcesFromNode sends a get-resources query to a specific node
+// QueryResourcesFromNode sends a targeted resource query to a specific cluster node
+// identified by either node ID or name. Provides precise resource information for
+// individual nodes when cluster-wide queries are unnecessary or too expensive.
+//
+// Essential for targeted resource checks, node-specific health monitoring, and
+// fine-grained resource allocation decisions. Implements flexible node identification
+// supporting both unique node IDs and human-readable names for operational convenience.
+// Used by management tools and APIs for detailed node inspection.
 func (sm *SerfManager) QueryResourcesFromNode(nodeID string) (*resources.NodeResources, error) {
 	logging.Debug("Querying resources from specific node: %s", nodeID)
 
 	// Try exact node ID first, then fall back to node name search
 	node, exists := sm.GetMember(nodeID)
 	if !exists {
-		// Try to find by node name if exact ID doesn't work
+		// Fallback: Try to find by node name if exact ID doesn't work
 		for _, member := range sm.GetMembers() {
 			if member.Name == nodeID {
 				node = member
