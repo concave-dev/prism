@@ -28,37 +28,22 @@ This aligns with [Concave's mission](https://concave.dev/) to build unified infr
 - [x] **Network Resilience**: Graceful daemon lifecycle, automatic peer discovery, partition tolerance
 
 ### Workload Execution
-- [ ] **MicroVM Orchestration**: Firecracker VM lifecycle management with sub-second boot times (primary)
-- [ ] **Cloud-Hypervisor Support**: Alternative VM runtime for different performance profiles
-- [ ] **Docker Container Runtime**: Container-based execution for lighter workloads and development
-- [ ] **Intention-Driven Scaling**: Burst from 0 to 10k instances based on agent decisions, not traffic
-- [ ] **Runtime-Agnostic Scheduling**: Dense packing with GPU burst support across all runtimes
-- [ ] **Agent Sandbox Isolation**: Secure execution environments for autonomous agent workloads
+- [ ] **MicroVM Orchestration**: Firecracker VM lifecycle management with sub-second boot times
+- [ ] **Burst Scaling**: Dynamic scaling from 0 to 10k instances based on workload demands
+- [ ] **Task Scheduling**: Resource-aware placement and execution of agent workloads
+- [ ] **Sandbox Isolation**: Secure execution environments for code execution
 
-### Agent Mesh
-- [ ] **Agent Primitives**: First-class support for non-deterministic agent behaviors
-- [ ] **Semantic Routing**: Embedding-based intelligent communication between agent VMs
-- [ ] **Multi-Agent Coordination**: Distributed agent collaboration and behavior management
-- [ ] **MCP Protocol**: Tool and workflow execution via Model Context Protocol
-- [ ] **Long-Running Flows**: Task management across days with resumable contexts
+### Observability
+- [ ] **Execution Tracking**: Monitor workload lifecycle and resource utilization
+- [ ] **Performance Metrics**: Real-time visibility into VM and cluster performance
+- [ ] **Debugging Tools**: Analysis and troubleshooting for distributed workloads
 
-### State Management
-- [ ] **Distributed Memory**: Shared contextual storage for agent state persistence
-- [ ] **Artifact Registry**: Version control for agent outputs, models, and dependencies  
-- [ ] **Context Continuity**: Failover with preserved agent state and execution history
-- [ ] **Knowledge Persistence**: Cross-instance knowledge sharing and state recovery
+### Future Agentic Primitives
 
-### Monitoring
-- [ ] **Agent Behavior Tracking**: Monitor agent decision-making and execution flow
-- [ ] **Workflow Tracing**: End-to-end visibility into long-running agent processes
-- [ ] **Resource Metrics**: Performance monitoring across execution environments
-- [ ] **Debugging Tools**: Analysis tools for non-deterministic agent behaviors
-
-### Security
-- [ ] **Workload Isolation**: Security boundaries between agent execution environments
-- [ ] **Authentication**: Credential management for inter-agent communication
-- [ ] **Secrets Management**: Secure storage and distribution of API keys and credentials
-- [ ] **Access Control**: Fine-grained permissions for agent resource access
+- Distributed memory and state management
+- Agent mesh and inter-agent communication  
+- Multi-runtime support (cloud-hypervisor, Docker)
+- Crash-proof agent execution
 
 ## Build
 
