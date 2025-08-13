@@ -9,7 +9,7 @@
 //
 // LOGGING FEATURES:
 //   - Color-coded levels: DEBUG (purple), INFO (blue), WARN (yellow), ERROR (red), SUCCESS (green)
-//   - Third-party integration: Captures and reformats Serf and Raft library logs
+//   - Log interception: Intercepts and reformats Serf and Raft library logs with custom writers
 //   - Flexible output: Configurable log levels and output suppression for CLI tools
 //   - Standard redirection: Routes standard library logs through the unified system
 //
@@ -50,7 +50,7 @@ var (
 )
 
 // setupCustomStyles configures custom color schemes for log levels to improve
-// visual distinction and operational clarity during cluster monitoring and debugging.
+// visual distinction during cluster monitoring and debugging.
 func setupCustomStyles() *log.Styles {
 	styles := log.DefaultStyles()
 
@@ -145,7 +145,10 @@ func SetLevel(level string) {
 	}
 }
 
-// SetOutput configures the log output destination, accepting nil to suppress output.
+// SetOutput configures where logs are written, accepting nil to suppress output.
+// When nil is passed, sets logging level high to effectively disable output.
+//
+// Used by CLI tools to redirect logs to files or discard them completely.
 func SetOutput(w *os.File) {
 	if w == nil {
 		// Suppress output by setting level to a high value
@@ -167,6 +170,9 @@ func SuppressOutput() {
 }
 
 // RestoreOutput restores normal logging to stderr at INFO level and above.
+// Recreates the logger with default settings and custom color styling.
+//
+// Used by CLI tools to re-enable logging after suppression during operations.
 func RestoreOutput() {
 	logger = log.NewWithOptions(os.Stderr, log.Options{
 		ReportTimestamp: true,
@@ -218,6 +224,10 @@ func (csw *ColorfulSerfWriter) Close() error {
 }
 
 // processLogs parses Serf log lines and routes them through the colorful logging system.
+// Runs in a background goroutine to continuously process logs from the Serf library.
+// Extracts log levels from Serf's format and re-emits through our colored logger with "serf:" prefix.
+//
+// Essential for maintaining consistent log formatting across all cluster components.
 func (csw *ColorfulSerfWriter) processLogs() {
 	scanner := bufio.NewScanner(csw.reader)
 
@@ -297,6 +307,10 @@ func (crw *ColorfulRaftWriter) Close() error {
 }
 
 // processLogs parses Raft log lines and routes them through the colorful logging system.
+// Runs in a background goroutine to continuously process logs from the Raft library.
+// Handles multiple Raft log formats and extracts levels to re-emit through our colored logger.
+//
+// Essential for maintaining consistent log formatting across all cluster components.
 func (crw *ColorfulRaftWriter) processLogs() {
 	scanner := bufio.NewScanner(crw.reader)
 
@@ -375,6 +389,9 @@ func NewLevelWriter(level, prefix string) io.Writer {
 }
 
 // Write implements io.Writer by splitting input into lines and logging each at the configured level.
+// Processes each line separately and routes through the appropriate log level function.
+//
+// Essential for integrating external libraries into our unified logging system.
 func (w *LevelWriter) Write(p []byte) (int, error) {
 	text := string(p)
 	lines := strings.Split(text, "\n")
