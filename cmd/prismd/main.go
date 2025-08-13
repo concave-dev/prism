@@ -226,6 +226,12 @@ func findAvailablePort(address string, startPort int) (int, error) {
 func validateConfig(cmd *cobra.Command, args []string) error {
 	// Check which flags were explicitly set by user
 	checkExplicitFlags(cmd)
+
+	// Check for DEBUG environment variable to override log level
+	if os.Getenv("DEBUG") == "true" {
+		config.LogLevel = "DEBUG"
+		logging.Info("DEBUG environment variable detected, setting log level to DEBUG")
+	}
 	// Parse and validate serf address using centralized validation
 	netAddr, err := validate.ParseBindAddress(config.SerfAddr)
 	if err != nil {
