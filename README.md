@@ -20,8 +20,8 @@ This aligns with [Concave's mission](https://concave.dev/) to build unified infr
 ## Build
 
 ```bash
-go build -o bin/prismd cmd/prismd/main.go
-go build -o bin/prismctl cmd/prismctl/main.go
+go build -o bin/prismd ./cmd/prismd
+go build -o bin/prismctl ./cmd/prismctl
 ```
 
 ## Usage

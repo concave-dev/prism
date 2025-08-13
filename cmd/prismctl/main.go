@@ -42,240 +42,24 @@ var nodeConfig struct {
 	Verbose      bool   // Show verbose output including goroutines
 }
 
-// Root command
-var rootCmd = &cobra.Command{
-	Use:   "prismctl",
-	Short: "CLI tool for managing and deploying AI agents, MCP tools and workflows",
-	Long: `Prism CLI (prismctl) is a command-line tool for deploying and managing
-AI agents, MCP tools, and AI workflows in Prism clusters.
+// Root command moved to root.go
 
-Similar to kubectl for Kubernetes, prismctl lets you deploy agents, run 
-AI-generated code in sandboxes, manage workflows, and inspect cluster state.`,
-	Version:           Version,
-	SilenceUsage:      true, // Don't show usage on errors
-	PersistentPreRunE: validateGlobalFlags,
-	Example: `  # Show cluster information
-  prismctl info
+// Peer commands moved to peer_cmd.go
 
-  # List cluster nodes
-  prismctl node ls
-
-  # Watch nodes with live updates
-  prismctl node ls --watch
-
-  # Filter nodes by status
-  prismctl node ls --status=alive
-
-  # Show node resource overview
-  prismctl node top
-
-  # Show detailed node information
-  prismctl node info node1
-
-  # Connect to remote API server
-  prismctl --api=192.168.1.100:8008 info
-  
-  # Output in JSON format
-  prismctl --output=json node top
-  prismctl -o json info
-  
-  # Show verbose output
-  prismctl --verbose node ls`,
-}
-
-// Peer command group
-var peerCmd = &cobra.Command{
-	Use:   "peer",
-	Short: "Inspect and manage Raft consensus peers",
-	Long:  "Commands for managing and inspecting Raft consensus peers in the cluster.",
-}
-
-// Peer list command
-var peerLsCmd = &cobra.Command{
-	Use:   "ls",
-	Short: "List Raft peers and connectivity",
-	Long:  "Show Raft peers from the consensus configuration and whether they are reachable.",
-	RunE:  handlePeerList,
-}
-
-// Peer info command
-var peerInfoCmd = &cobra.Command{
-	Use:   "info <peer-id>",
-	Short: "Show detailed information for a specific Raft peer",
-	Long:  "Display detailed information for a specific Raft peer by ID.",
-	Args:  cobra.ExactArgs(1),
-	RunE:  handlePeerInfo,
-}
-
-// Node command (parent command for node operations)
-var nodeCmd = &cobra.Command{
-	Use:   "node",
-	Short: "Manage and inspect cluster nodes",
-	Long: `Commands for managing and inspecting nodes in the Prism cluster.
-
-This command group provides operations for listing nodes, viewing node details,
-and managing node-specific resources.`,
-}
-
-// Node list command
-var nodeLsCmd = &cobra.Command{
-	Use:   "ls",
-	Short: "List all cluster nodes",
-	Long: `List all nodes in the Prism cluster.
-
-This command connects to the cluster and displays information about all
-known nodes including their status and last seen times.`,
-	Example: `  # List all nodes
-  prismctl node ls
-
-  # List nodes with live updates
-  prismctl node ls --watch
-
-  # Filter nodes by status
-  prismctl node ls --status=alive
-
-
-
-  # List nodes from specific API server
-  prismctl --api=192.168.1.100:8008 node ls
-  
-  # Show verbose output during connection
-  prismctl --verbose node ls`,
-	Args: cobra.NoArgs,
-	RunE: handleMembers,
-}
-
-// Info command (cluster information)
-var infoCmd = &cobra.Command{
-	Use:   "info",
-	Short: "Show comprehensive cluster information",
-	Long: `Show comprehensive cluster information including member details,
-uptime, version, and cluster health status.
-
-This provides a complete overview of cluster state, composition, and health.`,
-	Example: `  # Show cluster information
-  prismctl info
-
-  # Show cluster info from specific API server
-  prismctl --api=192.168.1.100:8008 info
-  
-  # Output in JSON format
-  prismctl -o json info
-  
-  # Show verbose output during connection
-  prismctl --verbose info`,
-	Args: cobra.NoArgs,
-	RunE: handleClusterInfo,
-}
-
-// Node top command (resource overview for all nodes)
-var nodeTopCmd = &cobra.Command{
-	Use:   "top",
-	Short: "Show resource overview for all cluster nodes",
-	Long: `Display resource overview including CPU, memory, and capacity for all cluster nodes.
-
-This command shows resource utilization similar to 'kubectl top nodes',
-including CPU cores, memory usage, job capacity, and runtime statistics.`,
-	Example: `  # Show resource overview for all nodes
-  prismctl node top
-
-  # Show live updates with watch
-  prismctl node top --watch
-
-  # Filter nodes by status
-  prismctl node top --status=alive
-
-  # Show verbose output including goroutines
-  prismctl node top --verbose
-
-  # Show resource overview from specific API server
-  prismctl --api=192.168.1.100:8008 node top
-  
-  # Output in JSON format
-  prismctl -o json node top`,
-	Args: cobra.NoArgs,
-	RunE: handleNodeTop,
-}
-
-// Node info command (detailed info for specific node)
-var nodeInfoCmd = &cobra.Command{
-	Use:   "info <node-name-or-id>",
-	Short: "Show detailed information for a specific node",
-	Long: `Display detailed information including CPU, memory, and capacity for a specific node.
-
-This command shows comprehensive resource details and runtime statistics
-for a single node specified by name or ID.`,
-	Example: `  # Show info for specific node by name
-  prismctl node info node1
-
-  # Show info for specific node by ID
-  prismctl node info abc123def456
-
-  # Show verbose output including runtime and health checks
-  prismctl node info node1 --verbose
-
-  # Show info from specific API server
-  prismctl --api=192.168.1.100:8008 node info node1
-  
-  # Output in JSON format
-  prismctl --output=json node info node1`,
-	Args: func(cmd *cobra.Command, args []string) error {
-		if len(args) != 1 {
-			cmd.Help()
-			return fmt.Errorf("requires exactly 1 argument (node name or ID)")
-		}
-		return nil
-	},
-	RunE: handleNodeInfo,
-}
+// Node and info command declarations moved to node_cmd.go and info_cmd.go
 
 func init() {
-	// Global flags
+	// Global flags only; command wiring moved to respective files
 	rootCmd.PersistentFlags().StringVar(&config.APIAddr, "api", DefaultAPIAddr,
 		"Address of Prism API server to connect to")
 	rootCmd.PersistentFlags().StringVar(&config.LogLevel, "log-level", "ERROR",
 		"Log level: DEBUG, INFO, WARN, ERROR")
-	// PERFORMANCE FIX: Reduced HTTP timeout from 10s to 8s
-	// This allows Serf queries (3s) + response collection (3s) + buffer (2s) to complete
-	// before HTTP client times out, preventing false timeout errors
 	rootCmd.PersistentFlags().IntVar(&config.Timeout, "timeout", 8,
 		"Connection timeout in seconds")
 	rootCmd.PersistentFlags().BoolVarP(&config.Verbose, "verbose", "v", false,
 		"Show verbose output")
 	rootCmd.PersistentFlags().StringVarP(&config.Output, "output", "o", "table",
 		"Output format: table, json")
-
-	// Add flags to node ls command
-	nodeLsCmd.Flags().BoolVarP(&nodeConfig.Watch, "watch", "w", false,
-		"Watch for changes and continuously update the display")
-	nodeLsCmd.Flags().StringVar(&nodeConfig.StatusFilter, "status", "",
-		"Filter nodes by status (alive, failed, left)")
-
-	// Add flags to node top command
-	nodeTopCmd.Flags().BoolVarP(&nodeConfig.Watch, "watch", "w", false,
-		"Watch for changes and continuously update the display")
-	nodeTopCmd.Flags().StringVar(&nodeConfig.StatusFilter, "status", "",
-		"Filter nodes by status (alive, failed, left)")
-	nodeTopCmd.Flags().BoolVarP(&nodeConfig.Verbose, "verbose", "v", false,
-		"Show verbose output including goroutines")
-
-	// Add flags to node info command
-	nodeInfoCmd.Flags().BoolVarP(&nodeConfig.Verbose, "verbose", "v", false,
-		"Show verbose output including runtime and health checks")
-
-	// Add subcommands to node command
-	nodeCmd.AddCommand(nodeLsCmd)
-	nodeCmd.AddCommand(nodeTopCmd)
-	nodeCmd.AddCommand(nodeInfoCmd)
-
-	// Add subcommands to root
-	rootCmd.AddCommand(infoCmd)
-	rootCmd.AddCommand(nodeCmd)
-
-	// Peer
-	peerCmd.AddCommand(peerLsCmd)
-	peerCmd.AddCommand(peerInfoCmd)
-	rootCmd.AddCommand(peerCmd)
 }
 
 // validateGlobalFlags validates all global flags before running any command
