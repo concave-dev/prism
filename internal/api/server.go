@@ -185,6 +185,17 @@ func (s *Server) getHandlerNodeResources() gin.HandlerFunc {
 	return handlers.HandleNodeResources(s.grpcClientPool, s.serfManager)
 }
 
+// handleNodeHealth delegates to handlers.HandleNodeHealth
+func (s *Server) handleNodeHealth(c *gin.Context) {
+	handler := s.getHandlerNodeHealth()
+	handler(c)
+}
+
+// getHandlerNodeHealth is a node health endpoint handler factory
+func (s *Server) getHandlerNodeHealth() gin.HandlerFunc {
+	return handlers.HandleNodeHealth(s.grpcClientPool, s.serfManager)
+}
+
 // handleRaftPeers delegates to handlers.HandleRaftPeers
 func (s *Server) handleRaftPeers(c *gin.Context) {
 	handler := s.getHandlerRaftPeers()

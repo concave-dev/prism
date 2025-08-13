@@ -362,6 +362,19 @@ func (sm *SerfManager) buildNodeTags() map[string]string {
 
 	// Add system tags (+1 capacity is for this)
 	tags["node_id"] = sm.NodeID // random hex node identifier
+	// Advertise well-known service ports when available
+	if sm.config.BindPort > 0 {
+		tags["serf_port"] = fmt.Sprintf("%d", sm.config.BindPort)
+	}
+	if sm.config.RaftPort > 0 {
+		tags["raft_port"] = fmt.Sprintf("%d", sm.config.RaftPort)
+	}
+	if sm.config.GRPCPort > 0 {
+		tags["grpc_port"] = fmt.Sprintf("%d", sm.config.GRPCPort)
+	}
+	if sm.config.APIPort > 0 {
+		tags["api_port"] = fmt.Sprintf("%d", sm.config.APIPort)
+	}
 
 	return tags
 }

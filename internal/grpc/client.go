@@ -32,7 +32,7 @@ import (
 	"github.com/concave-dev/prism/internal/logging"
 	"github.com/concave-dev/prism/internal/serf"
 	"golang.org/x/sync/singleflight"
-	"google.golang.org/grpc"
+	grpcstd "google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
@@ -45,7 +45,7 @@ import (
 // TODO: Add connection pooling for high-throughput scenarios
 type ClientPool struct {
 	mu          sync.RWMutex
-	connections map[string]*grpc.ClientConn        // nodeID -> connection
+	connections map[string]*grpcstd.ClientConn     // nodeID -> connection
 	clients     map[string]proto.NodeServiceClient // nodeID -> client
 	serfManager *serf.SerfManager                  // For discovering node addresses
 	grpcPort    int                                // Default gRPC port
@@ -57,7 +57,7 @@ type ClientPool struct {
 // (nodes can override via "grpc_port" Serf tag).
 func NewClientPool(serfManager *serf.SerfManager, grpcPort int) *ClientPool {
 	return &ClientPool{
-		connections: make(map[string]*grpc.ClientConn),
+		connections: make(map[string]*grpcstd.ClientConn),
 		clients:     make(map[string]proto.NodeServiceClient),
 		serfManager: serfManager,
 		grpcPort:    grpcPort,
@@ -119,8 +119,8 @@ func (cp *ClientPool) GetClient(nodeID string) (proto.NodeServiceClient, error) 
 		// singleflight prevents from happening multiple times concurrently)
 		// TODO: Add TLS support when available
 		// TODO: Add custom dial options for timeouts and keepalive
-		conn, err := grpc.NewClient(addr,
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
+		conn, err := grpcstd.NewClient(addr,
+			grpcstd.WithTransportCredentials(insecure.NewCredentials()),
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to connect to node %s at %s: %w", nodeID, addr, err)
@@ -168,6 +168,24 @@ func (cp *ClientPool) GetResourcesFromNode(nodeID string) (*proto.GetResourcesRe
 	return client.GetResources(ctx, req)
 }
 
+// GetHealthFromNode queries health information from a specific node via gRPC.
+// Uses a short timeout to avoid hanging on unhealthy or unreachable nodes.
+//
+// TODO: Add per-call timeouts via configuration and context propagation
+// TODO: Enrich request with specific check types when implemented server-side
+func (cp *ClientPool) GetHealthFromNode(nodeID string) (*proto.GetHealthResponse, error) {
+	client, err := cp.GetClient(nodeID)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	req := &proto.GetHealthRequest{}
+	return client.GetHealth(ctx, req)
+}
+
 // CloseConnection closes and removes a specific node connection from the pool.
 // Safe to call even if no connection exists for the nodeID.
 func (cp *ClientPool) CloseConnection(nodeID string) {
@@ -193,6 +211,6 @@ func (cp *ClientPool) Close() {
 		logging.Debug("Closed gRPC connection to node %s", nodeID)
 	}
 
-	cp.connections = make(map[string]*grpc.ClientConn)
+	cp.connections = make(map[string]*grpcstd.ClientConn)
 	cp.clients = make(map[string]proto.NodeServiceClient)
 }

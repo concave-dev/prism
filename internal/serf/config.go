@@ -58,6 +58,14 @@ type Config struct {
 	JoinTimeout         time.Duration     // Timeout for single join attempt
 	LogLevel            string            // Logging verbosity (debug, info, warn, error)
 	DeadNodeReclaimTime time.Duration     // Time before permanently removing dead nodes
+
+	// Optional: well-known service ports to advertise via Serf tags
+	// If zero, the tag will be omitted. These are populated by the daemon wiring.
+	// We intentionally keep these here (instead of importing other packages) to
+	// avoid cyclic dependencies between packages.
+	GRPCPort int // gRPC service port (tag: "grpc_port")
+	RaftPort int // Raft service port (tag: "raft_port")
+	APIPort  int // HTTP API service port (tag: "api_port")
 }
 
 // DefaultConfig returns a default configuration for SerfManager with sensible
@@ -110,6 +118,8 @@ func validateConfig(config *Config) error {
 // set by the system and cannot be overridden.
 func validateTags(tags map[string]string) error {
 	// Define reserved tag names that are used by the system
+	// Port tags (serf_port, grpc_port, raft_port, api_port) are system-managed
+	// and added in buildNodeTags(), so they don't need validation here.
 	reservedTags := map[string]bool{
 		"node_id": true,
 	}

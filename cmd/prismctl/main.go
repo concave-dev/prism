@@ -231,7 +231,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&config.LogLevel, "log-level", "ERROR",
 		"Log level: DEBUG, INFO, WARN, ERROR")
 	// PERFORMANCE FIX: Reduced HTTP timeout from 10s to 8s
-	// This allows Serf queries (5s) + response collection (5s) to complete
+	// This allows Serf queries (3s) + response collection (3s) + buffer (2s) to complete
 	// before HTTP client times out, preventing false timeout errors
 	rootCmd.PersistentFlags().IntVar(&config.Timeout, "timeout", 8,
 		"Connection timeout in seconds")
@@ -400,6 +400,22 @@ type NodeResources struct {
 	MemoryTotalMB     int `json:"memoryTotalMB"`
 	MemoryUsedMB      int `json:"memoryUsedMB"`
 	MemoryAvailableMB int `json:"memoryAvailableMB"`
+}
+
+// NodeHealth represents node health information from the API
+type NodeHealth struct {
+	NodeID    string        `json:"nodeId"`
+	NodeName  string        `json:"nodeName"`
+	Timestamp time.Time     `json:"timestamp"`
+	Status    string        `json:"status"`
+	Checks    []HealthCheck `json:"checks"`
+}
+
+type HealthCheck struct {
+	Name      string    `json:"name"`
+	Status    string    `json:"status"`
+	Message   string    `json:"message"`
+	Timestamp time.Time `json:"timestamp"`
 }
 
 // structuredLogger implements resty.Logger interface and routes logs through our structured logging
@@ -1203,16 +1219,26 @@ func handleNodeInfo(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Find this node in the members list to get leader status
+	// Find this node in the members list to get leader status and network info
 	var isLeader bool
+	var nodeAddress string
+	var nodeTags map[string]string
 	for _, member := range members {
 		if member.ID == resource.NodeID || member.Name == resource.NodeName {
 			isLeader = member.IsLeader
+			nodeAddress = member.Address
+			nodeTags = member.Tags
 			break
 		}
 	}
 
-	displayNodeResourceFromAPI(*resource, isLeader)
+	// Fetch health
+	health, err := apiClient.GetNodeHealth(resolvedNodeID)
+	if err != nil {
+		logging.Warn("Failed to fetch node health: %v", err)
+	}
+
+	displayNodeInfo(*resource, isLeader, health, nodeAddress, nodeTags)
 	logging.Success("Successfully retrieved information for node '%s'", resource.NodeName)
 	return nil
 }
@@ -1406,15 +1432,27 @@ func displayClusterResourcesFromAPI(resources []NodeResources) {
 	}
 }
 
-// displayNodeResourceFromAPI displays detailed information for a single node
-// displayNodeResourceFromAPI displays detailed information for a single node
+// displayNodeInfo displays detailed information for a single node
 // isLeader indicates whether this node is the current Raft leader
-func displayNodeResourceFromAPI(resource NodeResources, isLeader bool) {
+func displayNodeInfo(resource NodeResources, isLeader bool, health *NodeHealth, address string, tags map[string]string) {
 	if config.Output == "json" {
 		// JSON output
+		obj := map[string]interface{}{
+			"resource": resource,
+			"leader":   isLeader,
+		}
+		if health != nil {
+			obj["health"] = health
+		}
+		if address != "" {
+			obj["address"] = address
+		}
+		if tags != nil {
+			obj["tags"] = tags
+		}
 		encoder := json.NewEncoder(os.Stdout)
 		encoder.SetIndent("", "  ")
-		if err := encoder.Encode(resource); err != nil {
+		if err := encoder.Encode(obj); err != nil {
 			logging.Error("Failed to encode JSON: %v", err)
 			fmt.Println("Error encoding JSON output")
 		}
@@ -1427,6 +1465,46 @@ func displayNodeResourceFromAPI(resource NodeResources, isLeader bool) {
 		fmt.Printf("Node: %s (%s)\n", name, resource.NodeID)
 		fmt.Printf("Leader: %t\n", isLeader)
 		fmt.Printf("Timestamp: %s\n", resource.Timestamp.Format(time.RFC3339))
+		if health != nil {
+			fmt.Printf("Health: %s\n", strings.ToLower(health.Status))
+		}
+		// Network information (best-effort based on Serf tags)
+		// TODO: Add explicit api_port and serf_port tags in the future for clarity
+		if address != "" || (tags != nil && (tags["raft_port"] != "" || tags["grpc_port"] != "" || tags["api_port"] != "")) {
+			fmt.Println()
+			fmt.Printf("Network:\n")
+			if address != "" {
+				fmt.Printf("  Serf:       %s\n", address)
+			}
+			// Derive host from address if available
+			host := ""
+			if parts := strings.Split(address, ":"); len(parts) == 2 {
+				host = parts[0]
+			}
+			if tags != nil {
+				if rp, ok := tags["raft_port"]; ok && rp != "" {
+					if host != "" {
+						fmt.Printf("  Raft:       %s:%s\n", host, rp)
+					} else {
+						fmt.Printf("  Raft Port:  %s\n", rp)
+					}
+				}
+				if gp, ok := tags["grpc_port"]; ok && gp != "" {
+					if host != "" {
+						fmt.Printf("  gRPC:       %s:%s\n", host, gp)
+					} else {
+						fmt.Printf("  gRPC Port:  %s\n", gp)
+					}
+				}
+				if ap, ok := tags["api_port"]; ok && ap != "" {
+					if host != "" {
+						fmt.Printf("  API:        %s:%s\n", host, ap)
+					} else {
+						fmt.Printf("  API Port:   %s\n", ap)
+					}
+				}
+			}
+		}
 		fmt.Println()
 
 		// CPU Information
@@ -1462,7 +1540,78 @@ func displayNodeResourceFromAPI(resource NodeResources, isLeader bool) {
 		if resource.Load1 > 0 || resource.Load5 > 0 || resource.Load15 > 0 {
 			fmt.Printf("  Load Avg:   %.2f, %.2f, %.2f\n", resource.Load1, resource.Load5, resource.Load15)
 		}
+
+		// Health checks (if available)
+		if health != nil && len(health.Checks) > 0 {
+			fmt.Println()
+			fmt.Printf("Health Checks:\n")
+			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+			defer w.Flush()
+			// Only show MESSAGE column when verbose is enabled
+			if config.Verbose {
+				fmt.Fprintln(w, "NAME\tSTATUS\tMESSAGE\tTIMESTAMP")
+				for _, chk := range health.Checks {
+					fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
+						chk.Name, strings.ToLower(chk.Status), chk.Message, chk.Timestamp.Format(time.RFC3339))
+				}
+			} else {
+				fmt.Fprintln(w, "NAME\tSTATUS\tTIMESTAMP")
+				for _, chk := range health.Checks {
+					fmt.Fprintf(w, "%s\t%s\t%s\n",
+						chk.Name, strings.ToLower(chk.Status), chk.Timestamp.Format(time.RFC3339))
+				}
+			}
+		}
 	}
+}
+
+// GetNodeHealth fetches health for a specific node from the API
+func (api *PrismAPIClient) GetNodeHealth(nodeID string) (*NodeHealth, error) {
+	var response APIResponse
+
+	resp, err := api.client.R().
+		SetResult(&response).
+		Get(fmt.Sprintf("/nodes/%s/health", nodeID))
+
+	if err != nil {
+		logging.Error("Failed to connect to API server: %v", err)
+		logging.Error("Make sure a Prism daemon with API server is running at %s", api.baseURL)
+		return nil, fmt.Errorf("connection failed")
+	}
+
+	if resp.StatusCode() == 404 {
+		logging.Error("Node '%s' not found in cluster", nodeID)
+		return nil, fmt.Errorf("node not found")
+	}
+
+	if resp.StatusCode() != 200 {
+		logging.Error("API request failed with status %d: %s", resp.StatusCode(), resp.String())
+		return nil, fmt.Errorf("API request failed")
+	}
+
+	if m, ok := response.Data.(map[string]interface{}); ok {
+		nh := &NodeHealth{
+			NodeID:    getString(m, "nodeId"),
+			NodeName:  getString(m, "nodeName"),
+			Timestamp: getTime(m, "timestamp"),
+			Status:    getString(m, "status"),
+		}
+		if arr, ok := m["checks"].([]interface{}); ok {
+			for _, it := range arr {
+				if cm, ok := it.(map[string]interface{}); ok {
+					nh.Checks = append(nh.Checks, HealthCheck{
+						Name:      getString(cm, "name"),
+						Status:    getString(cm, "status"),
+						Message:   getString(cm, "message"),
+						Timestamp: getTime(cm, "timestamp"),
+					})
+				}
+			}
+		}
+		return nh, nil
+	}
+
+	return nil, fmt.Errorf("unexpected response format for node health")
 }
 
 // formatDuration formats a duration in human-readable format
