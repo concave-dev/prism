@@ -220,7 +220,13 @@ for a single node specified by name or ID.`,
   
   # Show verbose output during connection
   prismctl --verbose node info node1`,
-	Args: cobra.ExactArgs(1),
+	Args: func(cmd *cobra.Command, args []string) error {
+		if len(args) != 1 {
+			cmd.Help()
+			return fmt.Errorf("requires exactly 1 argument (node name or ID)")
+		}
+		return nil
+	},
 	RunE: handleNodeInfo,
 }
 
