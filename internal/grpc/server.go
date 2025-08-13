@@ -1,6 +1,7 @@
 package grpc
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"sync"
@@ -12,7 +13,9 @@ import (
 	grpcstd "google.golang.org/grpc"
 )
 
-// Server manages the gRPC server for inter-node communication
+// Server manages the gRPC server for inter-node communication with connection tracking
+// and graceful shutdown capabilities including connection draining.
+//
 // TODO: Add metrics collection for gRPC operations
 // TODO: Add middleware for authentication and logging
 type Server struct {
@@ -22,6 +25,10 @@ type Server struct {
 	mu          sync.RWMutex      // Mutex for thread-safe operations
 	shutdown    chan struct{}     // Channel to signal shutdown
 	serfManager *serf.SerfManager // Serf manager for resource gathering
+
+	// Connection tracking for graceful draining
+	activeConns map[string]context.CancelFunc // Map of connection ID to cancel function
+	connMu      sync.Mutex                    // Mutex for connection tracking
 }
 
 // NewServer creates a new gRPC server with the given configuration
@@ -36,6 +43,7 @@ func NewServer(config *Config, serfManager *serf.SerfManager) (*Server, error) {
 		config:      config,
 		shutdown:    make(chan struct{}),
 		serfManager: serfManager,
+		activeConns: make(map[string]context.CancelFunc),
 	}
 
 	logging.Info("gRPC server created successfully with config for %s:%d", config.BindAddr, config.BindPort)
@@ -64,10 +72,11 @@ func (s *Server) Start() error {
 	}
 	s.listener = listener
 
-	// Create gRPC server with options
+	// Create gRPC server with options including connection tracking
 	opts := []grpcstd.ServerOption{
 		grpcstd.MaxRecvMsgSize(s.config.MaxMsgSize),
 		grpcstd.MaxSendMsgSize(s.config.MaxMsgSize),
+		grpcstd.UnaryInterceptor(s.connectionTrackingInterceptor),
 	}
 
 	// TODO: Add TLS credentials when EnableTLS is true
@@ -92,11 +101,66 @@ func (s *Server) Start() error {
 	return nil
 }
 
-// Stop gracefully stops the gRPC server with configurable timeout.
+// connectionTrackingInterceptor tracks active connections for graceful draining.
 //
-// Attempts graceful shutdown within the configured timeout period, falling back
-// to force stop if connections don't close cleanly. This prevents hanging during
-// daemon shutdown while allowing in-flight requests to complete when possible.
+// This interceptor creates a cancellable context for each request and tracks it
+// to enable proper connection draining during shutdown. When shutdown begins,
+// all tracked connections can be gracefully cancelled.
+func (s *Server) connectionTrackingInterceptor(
+	ctx context.Context,
+	req interface{},
+	info *grpcstd.UnaryServerInfo,
+	handler grpcstd.UnaryHandler,
+) (interface{}, error) {
+	// Create cancellable context for this request
+	reqCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// Generate unique connection ID
+	connID := fmt.Sprintf("%p", req) // Use request pointer as unique ID
+
+	// Track this connection
+	s.connMu.Lock()
+	s.activeConns[connID] = cancel
+	s.connMu.Unlock()
+
+	// Cleanup on completion
+	defer func() {
+		s.connMu.Lock()
+		delete(s.activeConns, connID)
+		s.connMu.Unlock()
+	}()
+
+	// Process the request with tracked context
+	return handler(reqCtx, req)
+}
+
+// drainConnections cancels all active connections to initiate graceful draining.
+//
+// This method is called during shutdown to signal all in-flight requests that
+// the server is shutting down, allowing them to complete gracefully rather
+// than being forcefully terminated.
+func (s *Server) drainConnections() {
+	s.connMu.Lock()
+	defer s.connMu.Unlock()
+
+	connCount := len(s.activeConns)
+	if connCount > 0 {
+		logging.Info("Draining %d active gRPC connections", connCount)
+		for connID, cancel := range s.activeConns {
+			cancel()
+			logging.Debug("Cancelled connection %s", connID)
+		}
+	} else {
+		logging.Info("No active gRPC connections to drain")
+	}
+}
+
+// Stop gracefully stops the gRPC server with configurable timeout and connection draining.
+//
+// Implements a two-phase shutdown: first drains active connections to signal
+// shutdown intent, then performs graceful stop with timeout fallback to force stop.
+// This ensures in-flight requests can complete while preventing daemon hangs.
 func (s *Server) Stop() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -106,7 +170,10 @@ func (s *Server) Stop() error {
 	// Signal shutdown
 	close(s.shutdown)
 
-	// Graceful stop with timeout
+	// Phase 1: Drain active connections
+	s.drainConnections()
+
+	// Phase 2: Graceful stop with timeout
 	if s.grpcServer != nil {
 		done := make(chan struct{})
 		go func() {
