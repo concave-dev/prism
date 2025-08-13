@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/concave-dev/prism/internal/grpc/proto"
 	"github.com/concave-dev/prism/internal/logging"
@@ -14,7 +15,6 @@ import (
 // Server manages the gRPC server for inter-node communication
 // TODO: Add metrics collection for gRPC operations
 // TODO: Add middleware for authentication and logging
-// TODO: Add graceful shutdown with connection draining
 type Server struct {
 	config      *Config           // Configuration for the gRPC server
 	grpcServer  *grpcstd.Server   // Main gRPC server instance
@@ -92,21 +92,36 @@ func (s *Server) Start() error {
 	return nil
 }
 
-// Stop gracefully stops the gRPC server
-// TODO: Add configurable shutdown timeout
-// TODO: Implement connection draining
+// Stop gracefully stops the gRPC server with configurable timeout.
+//
+// Attempts graceful shutdown within the configured timeout period, falling back
+// to force stop if connections don't close cleanly. This prevents hanging during
+// daemon shutdown while allowing in-flight requests to complete when possible.
 func (s *Server) Stop() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	logging.Info("Stopping gRPC server")
+	logging.Info("Stopping gRPC server with %v timeout", s.config.ShutdownTimeout)
 
 	// Signal shutdown
 	close(s.shutdown)
 
-	// Graceful stop
+	// Graceful stop with timeout
 	if s.grpcServer != nil {
-		s.grpcServer.GracefulStop()
+		done := make(chan struct{})
+		go func() {
+			s.grpcServer.GracefulStop()
+			close(done)
+		}()
+
+		// Wait for graceful stop or timeout
+		select {
+		case <-done:
+			logging.Info("gRPC server stopped gracefully")
+		case <-time.After(s.config.ShutdownTimeout):
+			logging.Warn("gRPC server graceful stop timed out after %v, forcing stop", s.config.ShutdownTimeout)
+			s.grpcServer.Stop() // Force stop
+		}
 	}
 
 	// Close listener
