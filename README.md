@@ -9,15 +9,56 @@ Distributed runtime platform for AI agents and workflows.
 
 ## Overview
 
-Distributed runtime for AI agents with sandboxed execution, cluster management, and built-in observability.
+Distributed orchestration platform for AI agents with adaptive scaling, fault-tolerant execution, and multi-runtime support.
+
+Designed specifically for AI workloads, Prism addresses unique operational requirements including non-deterministic behavior, dynamic resource scaling, and long-running probabilistic workflows. The platform supports multiple execution runtimes: Firecracker microVMs for secure isolation, cloud-hypervisor for performance optimization, and Docker containers for development workflows.
 
 The AI ecosystem is fragmented with slow deployment cycles. Current infrastructure wasn't designed for autonomous agents that need rapid iteration, inter-agent communication, and built-in observability. Prism aims to compress the time from idea to deployed agent from weeks to minutes.
 
-This aligns with [Concave's mission](https://concave.dev/) to build unified infrastructure for the emerging "Internet of Agents." See also: [Adapt Fast In The AI Era](https://matmul.net/$/adapt-fast.html) and [writing code was never the bottleneck](https://ordep.dev/posts/writing-code-was-never-the-bottleneck).
+This aligns with [Concave's mission](https://concave.dev/) to build unified infrastructure for the emerging _"Internet of Agents"_. See also: [Adapt Fast In The AI Era](https://matmul.net/$/adapt-fast.html) and [writing code was never the bottleneck](https://ordep.dev/posts/writing-code-was-never-the-bottleneck).
 
-**Key Features:**
-- Sandboxed code execution (planned)
-- Agent primitives (planned)
+## Features & Implementation Status
+
+### Distributed Control Plane
+- [x] **Cluster Management**: Serf gossip protocol for membership, failure detection, auto-discovery
+- [x] **Consensus Layer**: Raft for leader election, log replication, strong consistency guarantees  
+- [x] **Inter-Node Communication**: gRPC NodeService with HTTP REST API fallback
+- [x] **Resource Discovery**: Real-time system monitoring (CPU, memory, load) across cluster nodes
+- [x] **CLI Tooling**: Complete cluster management via `prismctl` with JSON/table output
+- [x] **Network Resilience**: Graceful daemon lifecycle, automatic peer discovery, partition tolerance
+
+### Workload Execution
+- [ ] **MicroVM Orchestration**: Firecracker VM lifecycle management with sub-second boot times (primary)
+- [ ] **Cloud-Hypervisor Support**: Alternative VM runtime for different performance profiles
+- [ ] **Docker Container Runtime**: Container-based execution for lighter workloads and development
+- [ ] **Intention-Driven Scaling**: Burst from 0 to 10k instances based on agent decisions, not traffic
+- [ ] **Runtime-Agnostic Scheduling**: Dense packing with GPU burst support across all runtimes
+- [ ] **Agent Sandbox Isolation**: Secure execution environments for autonomous agent workloads
+
+### Agent Mesh
+- [ ] **Agent Primitives**: First-class support for non-deterministic agent behaviors
+- [ ] **Semantic Routing**: Embedding-based intelligent communication between agent VMs
+- [ ] **Multi-Agent Coordination**: Distributed agent collaboration and behavior management
+- [ ] **MCP Protocol**: Tool and workflow execution via Model Context Protocol
+- [ ] **Long-Running Flows**: Task management across days with resumable contexts
+
+### State Management
+- [ ] **Distributed Memory**: Shared contextual storage for agent state persistence
+- [ ] **Artifact Registry**: Version control for agent outputs, models, and dependencies  
+- [ ] **Context Continuity**: Failover with preserved agent state and execution history
+- [ ] **Knowledge Persistence**: Cross-instance knowledge sharing and state recovery
+
+### Monitoring
+- [ ] **Agent Behavior Tracking**: Monitor agent decision-making and execution flow
+- [ ] **Workflow Tracing**: End-to-end visibility into long-running agent processes
+- [ ] **Resource Metrics**: Performance monitoring across execution environments
+- [ ] **Debugging Tools**: Analysis tools for non-deterministic agent behaviors
+
+### Security
+- [ ] **Workload Isolation**: Security boundaries between agent execution environments
+- [ ] **Authentication**: Credential management for inter-agent communication
+- [ ] **Secrets Management**: Secure storage and distribution of API keys and credentials
+- [ ] **Access Control**: Fine-grained permissions for agent resource access
 
 ## Build
 
@@ -63,37 +104,6 @@ Use the CLI:
 # Enable debug output for CLI operations
 DEBUG=true ./bin/prismctl info
 ```
-
-## Implementation Status
-
-**Core Infrastructure:**
-- [x] Cluster membership via Serf gossip protocol
-- [x] Raft consensus for leader election and state consistency
-- [x] HTTP REST API with endpoints for cluster/node information
-- [x] Resource monitoring and collection across nodes
-- [x] Graceful daemon startup/shutdown with auto-recovery
-- [x] Multi-node clusters with automatic peer discovery
-- [x] CLI tool with cluster overview and node management
-- [x] JSON/table output formats for scripting and debugging
-- [x] Remote cluster access via API endpoints
-- [x] gRPC NodeService for inter-node resource queries (health stub)
-- [x] API uses gRPC for resource aggregation with Serf fallback
-
-**Workload Management & AI Platform:**
-- [ ] VM/Container Scheduling (core workload orchestration)
-- [ ] Firecracker Integration (micro-VM management for sandboxed execution)
-- [ ] Agent Mesh (service discovery and communication for AI agents)
-- [ ] MCP Protocol Support (tool and workflow execution primitives)
-- [ ] Workflow Engine (multi-step AI agent coordination)
-
-**Infrastructure Services:**
-- [ ] External Memory (RAG) (lightweight RAG layer for context injection)
-- [ ] Observability (built-in metrics, tracing, and monitoring)
-- [ ] Artifact Registry (storage and versioning for code, models, dependencies)
-- [ ] LLM Gateway (centralized API gateway with routing, rate limiting)
-- [ ] Secrets Vault (secure storage and distribution of credentials)
-- [ ] Global Configuration (dynamic cluster-wide configuration management)
-- [ ] Authentication & Authorization (fine-grained access control)
 
 ## Known Issues
 
