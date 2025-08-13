@@ -924,14 +924,13 @@ func (m *RaftManager) performAutopilotCleanup() {
 // of election failures and provides actionable steps for cluster recovery.
 // Helps operators understand the relationship between dead peers and quorum requirements.
 func (m *RaftManager) reportDeadlock(deadPeers []string, totalPeers, alivePeers, requiredQuorum int) {
-	logging.Error("ELECTION DEADLOCK DETECTED")
-	logging.Error("No leader elected and insufficient quorum for new elections")
-	logging.Error("Cluster status: %d total peers, %d alive, %d required for quorum", totalPeers, alivePeers, requiredQuorum)
-	logging.Error("Dead peers blocking elections: %v", deadPeers)
-	logging.Error("Manual intervention required:")
-	logging.Error("  Option 1: Restart dead nodes to restore quorum")
-	logging.Error("  Option 2: Remove dead peers and rebuild cluster with remaining nodes")
-	logging.Error("Cluster is locked until quorum is restored!")
+	logging.Error("Raft cluster election deadlock detected: insufficient quorum for leader election")
+	logging.Error("Cluster state: total_peers=%d alive_peers=%d required_quorum=%d", totalPeers, alivePeers, requiredQuorum)
+	logging.Error("Unavailable peers preventing consensus: %v", deadPeers)
+	logging.Error("Recovery options:")
+	logging.Error("  1. Restore connectivity to unavailable nodes")
+	logging.Error("  2. Remove dead peers using 'prismctl peer remove' if nodes are permanently lost")
+	logging.Error("Cluster operations suspended until quorum restored")
 }
 
 // SetSerfManager establishes the connection between Raft and Serf managers
