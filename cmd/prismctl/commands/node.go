@@ -1,5 +1,5 @@
-// Package main contains the CLI entrypoint and command definitions for prismctl.
-package main
+// Package commands contains all CLI command definitions for prismctl.
+package commands
 
 import (
 	"fmt"
@@ -42,7 +42,7 @@ known nodes including their status and last seen times.`,
   # Show verbose output during connection
   prismctl --verbose node ls`,
 	Args: cobra.NoArgs,
-	RunE: handleMembers,
+	// RunE will be set by the main package that imports this
 }
 
 // Node top command (resource overview for all nodes)
@@ -71,7 +71,7 @@ including CPU cores, memory usage, job capacity, and runtime statistics.`,
   # Output in JSON format
   prismctl -o json node top`,
 	Args: cobra.NoArgs,
-	RunE: handleNodeTop,
+	// RunE will be set by the main package that imports this
 }
 
 // Node info command (detailed info for specific node)
@@ -103,33 +103,18 @@ for a single node specified by name or ID.`,
 		}
 		return nil
 	},
-	RunE: handleNodeInfo,
+	// RunE will be set by the main package that imports this
 }
 
-func init() {
-	// Add flags to node ls command
-	nodeLsCmd.Flags().BoolVarP(&nodeConfig.Watch, "watch", "w", false,
-		"Watch for changes and continuously update the display")
-	nodeLsCmd.Flags().StringVar(&nodeConfig.StatusFilter, "status", "",
-		"Filter nodes by status (alive, failed, left)")
-
-	// Add flags to node top command
-	nodeTopCmd.Flags().BoolVarP(&nodeConfig.Watch, "watch", "w", false,
-		"Watch for changes and continuously update the display")
-	nodeTopCmd.Flags().StringVar(&nodeConfig.StatusFilter, "status", "",
-		"Filter nodes by status (alive, failed, left)")
-	nodeTopCmd.Flags().BoolVarP(&nodeConfig.Verbose, "verbose", "v", false,
-		"Show verbose output including goroutines")
-
-	// Add flags to node info command
-	nodeInfoCmd.Flags().BoolVarP(&nodeConfig.Verbose, "verbose", "v", false,
-		"Show verbose output including runtime and health checks")
-
+// SetupNodeCommands initializes node commands and their flags
+func SetupNodeCommands() {
 	// Add subcommands to node command
 	nodeCmd.AddCommand(nodeLsCmd)
 	nodeCmd.AddCommand(nodeTopCmd)
 	nodeCmd.AddCommand(nodeInfoCmd)
+}
 
-	// Add node to root
-	rootCmd.AddCommand(nodeCmd)
+// GetNodeCommands returns the node command structures for handler assignment
+func GetNodeCommands() (*cobra.Command, *cobra.Command, *cobra.Command) {
+	return nodeLsCmd, nodeTopCmd, nodeInfoCmd
 }

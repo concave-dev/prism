@@ -1,5 +1,5 @@
-// Package main contains the CLI entrypoint and command definitions for prismctl.
-package main
+// Package commands contains all CLI command definitions for prismctl.
+package commands
 
 import (
 	"github.com/spf13/cobra"
@@ -17,7 +17,7 @@ var peerLsCmd = &cobra.Command{
 	Use:   "ls",
 	Short: "List Raft peers and connectivity",
 	Long:  "Show Raft peers from the consensus configuration and whether they are reachable.",
-	RunE:  handlePeerList,
+	// RunE will be set by the main package that imports this
 }
 
 // Peer info command
@@ -26,11 +26,16 @@ var peerInfoCmd = &cobra.Command{
 	Short: "Show detailed information for a specific Raft peer",
 	Long:  "Display detailed information for a specific Raft peer by ID.",
 	Args:  cobra.ExactArgs(1),
-	RunE:  handlePeerInfo,
+	// RunE will be set by the main package that imports this
 }
 
-func init() {
+// SetupPeerCommands initializes peer commands
+func SetupPeerCommands() {
 	peerCmd.AddCommand(peerLsCmd)
 	peerCmd.AddCommand(peerInfoCmd)
-	rootCmd.AddCommand(peerCmd)
+}
+
+// GetPeerCommands returns the peer command structures for handler assignment
+func GetPeerCommands() (*cobra.Command, *cobra.Command) {
+	return peerLsCmd, peerInfoCmd
 }

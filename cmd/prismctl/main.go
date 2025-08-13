@@ -14,6 +14,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/concave-dev/prism/cmd/prismctl/commands"
 	"github.com/concave-dev/prism/internal/logging"
 	"github.com/concave-dev/prism/internal/validate"
 	"github.com/dustin/go-humanize"
@@ -42,14 +43,20 @@ var nodeConfig struct {
 	Verbose      bool   // Show verbose output including goroutines
 }
 
-// Root command moved to root.go
-
-// Peer commands moved to peer_cmd.go
-
-// Node and info command declarations moved to node_cmd.go and info_cmd.go
-
 func init() {
-	// Global flags only; command wiring moved to respective files
+	// Get root command from commands package
+	rootCmd := commands.RootCmd
+
+	// Set version and validation
+	rootCmd.Version = Version
+	rootCmd.PersistentPreRunE = validateGlobalFlags
+
+	// Setup all command structures
+	commands.SetupCommands()
+	commands.SetupNodeCommands()
+	commands.SetupPeerCommands()
+
+	// Setup global flags
 	rootCmd.PersistentFlags().StringVar(&config.APIAddr, "api", DefaultAPIAddr,
 		"Address of Prism API server to connect to")
 	rootCmd.PersistentFlags().StringVar(&config.LogLevel, "log-level", "ERROR",
@@ -60,6 +67,46 @@ func init() {
 		"Show verbose output")
 	rootCmd.PersistentFlags().StringVarP(&config.Output, "output", "o", "table",
 		"Output format: table, json")
+
+	// Setup node command flags - get command references
+	nodeLsCmd, nodeTopCmd, nodeInfoCmd := commands.GetNodeCommands()
+
+	// Add flags to node ls command
+	nodeLsCmd.Flags().BoolVarP(&nodeConfig.Watch, "watch", "w", false,
+		"Watch for changes and continuously update the display")
+	nodeLsCmd.Flags().StringVar(&nodeConfig.StatusFilter, "status", "",
+		"Filter nodes by status (alive, failed, left)")
+
+	// Add flags to node top command
+	nodeTopCmd.Flags().BoolVarP(&nodeConfig.Watch, "watch", "w", false,
+		"Watch for changes and continuously update the display")
+	nodeTopCmd.Flags().StringVar(&nodeConfig.StatusFilter, "status", "",
+		"Filter nodes by status (alive, failed, left)")
+	nodeTopCmd.Flags().BoolVarP(&nodeConfig.Verbose, "verbose", "v", false,
+		"Show verbose output including goroutines")
+
+	// Add flags to node info command
+	nodeInfoCmd.Flags().BoolVarP(&nodeConfig.Verbose, "verbose", "v", false,
+		"Show verbose output including runtime and health checks")
+
+	// Setup command handlers
+	setupCommandHandlers()
+}
+
+// setupCommandHandlers assigns RunE functions to commands
+func setupCommandHandlers() {
+	// Get command references
+	nodeLsCmd, nodeTopCmd, nodeInfoCmd := commands.GetNodeCommands()
+	peerLsCmd, peerInfoCmd := commands.GetPeerCommands()
+	infoCmd := commands.GetInfoCommand()
+
+	// Assign handlers
+	nodeLsCmd.RunE = handleMembers
+	nodeTopCmd.RunE = handleNodeTop
+	nodeInfoCmd.RunE = handleNodeInfo
+	peerLsCmd.RunE = handlePeerList
+	peerInfoCmd.RunE = handlePeerInfo
+	infoCmd.RunE = handleClusterInfo
 }
 
 // validateGlobalFlags validates all global flags before running any command
@@ -1434,7 +1481,7 @@ func formatDuration(d time.Duration) string {
 
 // main is the main entry point
 func main() {
-	if err := rootCmd.Execute(); err != nil {
+	if err := commands.RootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
 }

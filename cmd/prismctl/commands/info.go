@@ -1,5 +1,5 @@
-// Package main contains the CLI entrypoint and command definitions for prismctl.
-package main
+// Package commands contains all CLI command definitions for prismctl.
+package commands
 
 import (
 	"github.com/spf13/cobra"
@@ -25,9 +25,10 @@ This provides a complete overview of cluster state, composition, and health.`,
   # Show verbose output during connection
   prismctl --verbose info`,
 	Args: cobra.NoArgs,
-	RunE: handleClusterInfo,
+	// RunE will be set by the main package that imports this
 }
 
-func init() {
-	rootCmd.AddCommand(infoCmd)
+// GetInfoCommand returns the info command for handler assignment
+func GetInfoCommand() *cobra.Command {
+	return infoCmd
 }
