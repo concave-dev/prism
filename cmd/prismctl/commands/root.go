@@ -51,3 +51,18 @@ func SetupCommands() {
 	RootCmd.AddCommand(nodeCmd)
 	RootCmd.AddCommand(peerCmd)
 }
+
+// SetupGlobalFlags configures all global persistent flags
+func SetupGlobalFlags(rootCmd *cobra.Command, apiAddrPtr *string, logLevelPtr *string,
+	timeoutPtr *int, verbosePtr *bool, outputPtr *string, defaultAPIAddr string) {
+	rootCmd.PersistentFlags().StringVar(apiAddrPtr, "api", defaultAPIAddr,
+		"Address of Prism API server to connect to")
+	rootCmd.PersistentFlags().StringVar(logLevelPtr, "log-level", "ERROR",
+		"Log level: DEBUG, INFO, WARN, ERROR")
+	rootCmd.PersistentFlags().IntVar(timeoutPtr, "timeout", 8,
+		"Connection timeout in seconds")
+	rootCmd.PersistentFlags().BoolVarP(verbosePtr, "verbose", "v", false,
+		"Show verbose output")
+	rootCmd.PersistentFlags().StringVarP(outputPtr, "output", "o", "table",
+		"Output format: table, json")
+}

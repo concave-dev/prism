@@ -13,42 +13,21 @@ import (
 	"time"
 
 	"github.com/concave-dev/prism/cmd/prismctl/commands"
+	"github.com/concave-dev/prism/cmd/prismctl/config"
 	"github.com/concave-dev/prism/cmd/prismctl/utils"
 	"github.com/concave-dev/prism/internal/logging"
-	"github.com/concave-dev/prism/internal/validate"
 	"github.com/dustin/go-humanize"
 	"github.com/go-resty/resty/v2"
 	"github.com/spf13/cobra"
 )
-
-const (
-	Version        = "0.1.0-dev"      // Version information
-	DefaultAPIAddr = "127.0.0.1:8008" // Default API server address (routable)
-)
-
-// Global configuration
-var config struct {
-	APIAddr  string // Address of Prism API server to connect to
-	LogLevel string // Log level for CLI operations
-	Timeout  int    // Connection timeout in seconds
-	Verbose  bool   // Show verbose output
-	Output   string // Output format: table, json
-}
-
-// Node command configuration
-var nodeConfig struct {
-	Watch        bool   // Enable watch mode for live updates
-	StatusFilter string // Filter nodes by status (alive, failed, left)
-	Verbose      bool   // Show verbose output including goroutines
-}
 
 func init() {
 	// Get root command from commands package
 	rootCmd := commands.RootCmd
 
 	// Set version and validation
-	rootCmd.Version = Version
-	rootCmd.PersistentPreRunE = validateGlobalFlags
+	rootCmd.Version = config.Version
+	rootCmd.PersistentPreRunE = config.ValidateGlobalFlags
 
 	// Setup all command structures
 	commands.SetupCommands()
@@ -56,37 +35,13 @@ func init() {
 	commands.SetupPeerCommands()
 
 	// Setup global flags
-	rootCmd.PersistentFlags().StringVar(&config.APIAddr, "api", DefaultAPIAddr,
-		"Address of Prism API server to connect to")
-	rootCmd.PersistentFlags().StringVar(&config.LogLevel, "log-level", "ERROR",
-		"Log level: DEBUG, INFO, WARN, ERROR")
-	rootCmd.PersistentFlags().IntVar(&config.Timeout, "timeout", 8,
-		"Connection timeout in seconds")
-	rootCmd.PersistentFlags().BoolVarP(&config.Verbose, "verbose", "v", false,
-		"Show verbose output")
-	rootCmd.PersistentFlags().StringVarP(&config.Output, "output", "o", "table",
-		"Output format: table, json")
+	commands.SetupGlobalFlags(rootCmd, &config.Global.APIAddr, &config.Global.LogLevel,
+		&config.Global.Timeout, &config.Global.Verbose, &config.Global.Output, config.DefaultAPIAddr)
 
-	// Setup node command flags - get command references
+	// Setup node command flags
 	nodeLsCmd, nodeTopCmd, nodeInfoCmd := commands.GetNodeCommands()
-
-	// Add flags to node ls command
-	nodeLsCmd.Flags().BoolVarP(&nodeConfig.Watch, "watch", "w", false,
-		"Watch for changes and continuously update the display")
-	nodeLsCmd.Flags().StringVar(&nodeConfig.StatusFilter, "status", "",
-		"Filter nodes by status (alive, failed, left)")
-
-	// Add flags to node top command
-	nodeTopCmd.Flags().BoolVarP(&nodeConfig.Watch, "watch", "w", false,
-		"Watch for changes and continuously update the display")
-	nodeTopCmd.Flags().StringVar(&nodeConfig.StatusFilter, "status", "",
-		"Filter nodes by status (alive, failed, left)")
-	nodeTopCmd.Flags().BoolVarP(&nodeConfig.Verbose, "verbose", "v", false,
-		"Show verbose output including goroutines")
-
-	// Add flags to node info command
-	nodeInfoCmd.Flags().BoolVarP(&nodeConfig.Verbose, "verbose", "v", false,
-		"Show verbose output including runtime and health checks")
+	commands.SetupNodeFlags(nodeLsCmd, nodeTopCmd, nodeInfoCmd,
+		&config.Node.Watch, &config.Node.StatusFilter, &config.Node.Verbose)
 
 	// Setup command handlers
 	setupCommandHandlers()
@@ -106,52 +61,6 @@ func setupCommandHandlers() {
 	peerLsCmd.RunE = handlePeerList
 	peerInfoCmd.RunE = handlePeerInfo
 	infoCmd.RunE = handleClusterInfo
-}
-
-// validateGlobalFlags validates all global flags before running any command
-func validateGlobalFlags(cmd *cobra.Command, args []string) error {
-	if err := validateAPIAddress(); err != nil {
-		return err
-	}
-
-	if err := validateOutputFormat(); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// validateAPIAddress validates the --api flag
-func validateAPIAddress() error {
-	// Parse and validate API server address
-	netAddr, err := validate.ParseBindAddress(config.APIAddr)
-	if err != nil {
-		return fmt.Errorf("invalid API server address '%s': %w", config.APIAddr, err)
-	}
-
-	// Reject unroutable 0.0.0.0 target for client connections
-	if netAddr.Host == "0.0.0.0" {
-		return fmt.Errorf("unroutable API address '0.0.0.0:%d'; use 127.0.0.1 or a specific IP address", netAddr.Port)
-	}
-
-	// Client must connect to specific port (not 0)
-	if err := validate.ValidateField(netAddr.Port, "required,min=1,max=65535"); err != nil {
-		return fmt.Errorf("API server port must be specific (not 0): %w", err)
-	}
-
-	return nil
-}
-
-// validateOutputFormat validates the --output flag
-func validateOutputFormat() error {
-	validOutputs := map[string]bool{
-		"table": true,
-		"json":  true,
-	}
-	if !validOutputs[config.Output] {
-		return fmt.Errorf("invalid output format '%s' (valid: table, json)", config.Output)
-	}
-	return nil
 }
 
 // API response types that match the server responses
@@ -295,7 +204,7 @@ func NewPrismAPIClient(apiAddr string, timeout int) *PrismAPIClient {
 		SetBaseURL(baseURL).
 		SetHeader("Accept", "application/json").
 		SetHeader("Content-Type", "application/json").
-		SetHeader("User-Agent", fmt.Sprintf("prismctl/%s", Version))
+		SetHeader("User-Agent", fmt.Sprintf("prismctl/%s", config.Version))
 
 	// Add retry mechanism with custom retry conditions
 	client.
@@ -636,7 +545,7 @@ func setupLogging() {
 		logging.SetLevel("DEBUG")
 	} else {
 		// Configure our application logging level first
-		logging.SetLevel(config.LogLevel)
+		logging.SetLevel(config.Global.LogLevel)
 		// Suppress debug/info logs by default (only show errors)
 		logging.SuppressOutput()
 	}
@@ -644,19 +553,19 @@ func setupLogging() {
 
 // createAPIClient creates a new Prism API client
 func createAPIClient() *PrismAPIClient {
-	return NewPrismAPIClient(config.APIAddr, config.Timeout)
+	return NewPrismAPIClient(config.Global.APIAddr, config.Global.Timeout)
 }
 
 // filterMembers applies filters to a list of members
 func filterMembers(members []ClusterMember) []ClusterMember {
-	if nodeConfig.StatusFilter == "" {
+	if config.Node.StatusFilter == "" {
 		return members
 	}
 
 	var filtered []ClusterMember
 	for _, member := range members {
 		// Filter by status
-		if nodeConfig.StatusFilter != "" && member.Status != nodeConfig.StatusFilter {
+		if config.Node.StatusFilter != "" && member.Status != config.Node.StatusFilter {
 			continue
 		}
 
@@ -667,7 +576,7 @@ func filterMembers(members []ClusterMember) []ClusterMember {
 
 // filterResources applies filters to a list of node resources
 func filterResources(resources []NodeResources, members []ClusterMember) []NodeResources {
-	if nodeConfig.StatusFilter == "" {
+	if config.Node.StatusFilter == "" {
 		return resources
 	}
 
@@ -685,7 +594,7 @@ func filterResources(resources []NodeResources, members []ClusterMember) []NodeR
 		}
 
 		// Filter by status
-		if nodeConfig.StatusFilter != "" && member.Status != nodeConfig.StatusFilter {
+		if config.Node.StatusFilter != "" && member.Status != config.Node.StatusFilter {
 			continue
 		}
 
@@ -704,7 +613,7 @@ func handlePeerList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if config.Output == "json" {
+	if config.Global.Output == "json" {
 		encoder := json.NewEncoder(os.Stdout)
 		encoder.SetIndent("", "  ")
 		return encoder.Encode(resp)
@@ -720,7 +629,7 @@ func handlePeerList(cmd *cobra.Command, args []string) error {
 	defer w.Flush()
 
 	// Header - show NAME column only in verbose mode, but always show LEADER
-	if config.Verbose {
+	if config.Global.Verbose {
 		fmt.Fprintln(w, "ID\tNAME\tADDRESS\tREACHABLE\tLEADER")
 	} else {
 		fmt.Fprintln(w, "ID\tADDRESS\tREACHABLE\tLEADER")
@@ -734,7 +643,7 @@ func handlePeerList(cmd *cobra.Command, args []string) error {
 			leader = "true"
 		}
 
-		if config.Verbose {
+		if config.Global.Verbose {
 			fmt.Fprintf(w, "%s\t%s\t%s\t%t\t%s\n", p.ID, name, p.Address, p.Reachable, leader)
 		} else {
 			fmt.Fprintf(w, "%s\t%s\t%t\t%s\n", p.ID, p.Address, p.Reachable, leader)
@@ -767,7 +676,7 @@ func handlePeerInfo(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("peer '%s' not found in Raft configuration", peerID)
 	}
 
-	if config.Output == "json" {
+	if config.Global.Output == "json" {
 		encoder := json.NewEncoder(os.Stdout)
 		encoder.SetIndent("", "  ")
 		return encoder.Encode(targetPeer)
@@ -800,7 +709,7 @@ func handleMembers(cmd *cobra.Command, args []string) error {
 	setupLogging()
 
 	fetchAndDisplayMembers := func() error {
-		logging.Info("Fetching cluster nodes from API server: %s", config.APIAddr)
+		logging.Info("Fetching cluster nodes from API server: %s", config.Global.APIAddr)
 
 		// Create API client and get members
 		apiClient := createAPIClient()
@@ -813,20 +722,20 @@ func handleMembers(cmd *cobra.Command, args []string) error {
 		filtered := filterMembers(members)
 
 		displayMembersFromAPI(filtered)
-		if !nodeConfig.Watch {
+		if !config.Node.Watch {
 			logging.Success("Successfully retrieved %d cluster nodes (%d after filtering)", len(members), len(filtered))
 		}
 		return nil
 	}
 
-	return utils.RunWithWatch(fetchAndDisplayMembers, nodeConfig.Watch)
+	return utils.RunWithWatch(fetchAndDisplayMembers, config.Node.Watch)
 }
 
 // handleClusterInfo handles the cluster info subcommand
 func handleClusterInfo(cmd *cobra.Command, args []string) error {
 	setupLogging()
 
-	logging.Info("Fetching cluster information from API server: %s", config.APIAddr)
+	logging.Info("Fetching cluster information from API server: %s", config.Global.APIAddr)
 
 	// Create API client and get cluster info
 	apiClient := createAPIClient()
@@ -845,7 +754,7 @@ func handleNodeTop(cmd *cobra.Command, args []string) error {
 	setupLogging()
 
 	fetchAndDisplayResources := func() error {
-		logging.Info("Fetching cluster node information from API server: %s", config.APIAddr)
+		logging.Info("Fetching cluster node information from API server: %s", config.Global.APIAddr)
 
 		// Create API client and get cluster resources
 		apiClient := createAPIClient()
@@ -864,13 +773,13 @@ func handleNodeTop(cmd *cobra.Command, args []string) error {
 		filtered := filterResources(resources, members)
 
 		displayClusterResourcesFromAPI(filtered)
-		if !nodeConfig.Watch {
+		if !config.Node.Watch {
 			logging.Success("Successfully retrieved information for %d cluster nodes (%d after filtering)", len(resources), len(filtered))
 		}
 		return nil
 	}
 
-	return utils.RunWithWatch(fetchAndDisplayResources, nodeConfig.Watch)
+	return utils.RunWithWatch(fetchAndDisplayResources, config.Node.Watch)
 }
 
 // handleNodeInfo handles the node info subcommand (detailed info for specific node)
@@ -878,7 +787,7 @@ func handleNodeInfo(cmd *cobra.Command, args []string) error {
 	setupLogging()
 
 	nodeIdentifier := args[0]
-	logging.Info("Fetching information for node '%s' from API server: %s", nodeIdentifier, config.APIAddr)
+	logging.Info("Fetching information for node '%s' from API server: %s", nodeIdentifier, config.Global.APIAddr)
 
 	// Create API client
 	apiClient := createAPIClient()
@@ -928,7 +837,7 @@ func handleNodeInfo(cmd *cobra.Command, args []string) error {
 // displayMembersFromAPI displays cluster nodes from API response, annotating the Raft leader
 func displayMembersFromAPI(members []ClusterMember) {
 	if len(members) == 0 {
-		if config.Output == "json" {
+		if config.Global.Output == "json" {
 			fmt.Println("[]")
 		} else {
 			fmt.Println("No cluster nodes found")
@@ -941,7 +850,7 @@ func displayMembersFromAPI(members []ClusterMember) {
 		return members[i].Name < members[j].Name
 	})
 
-	if config.Output == "json" {
+	if config.Global.Output == "json" {
 		// JSON output
 		encoder := json.NewEncoder(os.Stdout)
 		encoder.SetIndent("", "  ")
@@ -955,7 +864,7 @@ func displayMembersFromAPI(members []ClusterMember) {
 		defer w.Flush()
 
 		// Header - show SERF and RAFT columns only in verbose mode
-		if config.Verbose {
+		if config.Global.Verbose {
 			fmt.Fprintln(w, "ID\tNAME\tADDRESS\tSTATUS\tSERF\tRAFT\tLAST SEEN\tLEADER")
 		} else {
 			fmt.Fprintln(w, "ID\tNAME\tADDRESS\tSTATUS\tLAST SEEN")
@@ -971,7 +880,7 @@ func displayMembersFromAPI(members []ClusterMember) {
 				leader = "true"
 			}
 
-			if config.Verbose {
+			if config.Global.Verbose {
 				// Use the new three-state status values directly
 				serfStatus := member.SerfStatus
 				if serfStatus == "" {
@@ -1003,7 +912,7 @@ func displayMembersFromAPI(members []ClusterMember) {
 
 // displayClusterInfoFromAPI displays comprehensive cluster information from API response
 func displayClusterInfoFromAPI(info ClusterInfo) {
-	if config.Output == "json" {
+	if config.Global.Output == "json" {
 		// JSON output
 		encoder := json.NewEncoder(os.Stdout)
 		encoder.SetIndent("", "  ")
@@ -1034,7 +943,7 @@ func displayClusterInfoFromAPI(info ClusterInfo) {
 		fmt.Println()
 
 		// Show detailed member information in verbose mode
-		if config.Verbose && len(info.Members) > 0 {
+		if config.Global.Verbose && len(info.Members) > 0 {
 			fmt.Printf("Cluster Members:\n")
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 			defer w.Flush()
@@ -1065,7 +974,7 @@ func displayClusterInfoFromAPI(info ClusterInfo) {
 // displayClusterResourcesFromAPI displays cluster node information from API response
 func displayClusterResourcesFromAPI(resources []NodeResources) {
 	if len(resources) == 0 {
-		if config.Output == "json" {
+		if config.Global.Output == "json" {
 			fmt.Println("[]")
 		} else {
 			fmt.Println("No cluster node information found")
@@ -1078,7 +987,7 @@ func displayClusterResourcesFromAPI(resources []NodeResources) {
 		return resources[i].NodeName < resources[j].NodeName
 	})
 
-	if config.Output == "json" {
+	if config.Global.Output == "json" {
 		// JSON output
 		encoder := json.NewEncoder(os.Stdout)
 		encoder.SetIndent("", "  ")
@@ -1092,7 +1001,7 @@ func displayClusterResourcesFromAPI(resources []NodeResources) {
 		defer w.Flush()
 
 		// Header
-		if nodeConfig.Verbose {
+		if config.Node.Verbose {
 			fmt.Fprintln(w, "ID\tNAME\tCPU\tMEMORY\tJOBS\tUPTIME\tGOROUTINES")
 		} else {
 			fmt.Fprintln(w, "ID\tNAME\tCPU\tMEMORY\tJOBS\tUPTIME")
@@ -1106,7 +1015,7 @@ func displayClusterResourcesFromAPI(resources []NodeResources) {
 				resource.MemoryUsage)
 			jobs := fmt.Sprintf("%d/%d", resource.CurrentJobs, resource.MaxJobs)
 
-			if nodeConfig.Verbose {
+			if config.Node.Verbose {
 				fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%d\n",
 					resource.NodeID,
 					resource.NodeName,
@@ -1131,7 +1040,7 @@ func displayClusterResourcesFromAPI(resources []NodeResources) {
 // displayNodeInfo displays detailed information for a single node
 // isLeader indicates whether this node is the current Raft leader
 func displayNodeInfo(resource NodeResources, isLeader bool, health *NodeHealth, address string, tags map[string]string) {
-	if config.Output == "json" {
+	if config.Global.Output == "json" {
 		// JSON output
 		obj := map[string]interface{}{
 			"resource": resource,
@@ -1225,7 +1134,7 @@ func displayNodeInfo(resource NodeResources, isLeader bool, health *NodeHealth, 
 		fmt.Printf("  Available Slots: %d\n", resource.AvailableSlots)
 
 		// Only show Runtime and Health sections in verbose mode
-		if nodeConfig.Verbose {
+		if config.Node.Verbose {
 			fmt.Println()
 
 			// Runtime Information

@@ -118,3 +118,25 @@ func SetupNodeCommands() {
 func GetNodeCommands() (*cobra.Command, *cobra.Command, *cobra.Command) {
 	return nodeLsCmd, nodeTopCmd, nodeInfoCmd
 }
+
+// SetupNodeFlags configures flags for node commands
+func SetupNodeFlags(nodeLsCmd, nodeTopCmd, nodeInfoCmd *cobra.Command,
+	watchPtr *bool, statusFilterPtr *string, verbosePtr *bool) {
+	// Add flags to node ls command
+	nodeLsCmd.Flags().BoolVarP(watchPtr, "watch", "w", false,
+		"Watch for changes and continuously update the display")
+	nodeLsCmd.Flags().StringVar(statusFilterPtr, "status", "",
+		"Filter nodes by status (alive, failed, left)")
+
+	// Add flags to node top command
+	nodeTopCmd.Flags().BoolVarP(watchPtr, "watch", "w", false,
+		"Watch for changes and continuously update the display")
+	nodeTopCmd.Flags().StringVar(statusFilterPtr, "status", "",
+		"Filter nodes by status (alive, failed, left)")
+	nodeTopCmd.Flags().BoolVarP(verbosePtr, "verbose", "v", false,
+		"Show verbose output including goroutines")
+
+	// Add flags to node info command
+	nodeInfoCmd.Flags().BoolVarP(verbosePtr, "verbose", "v", false,
+		"Show verbose output including runtime and health checks")
+}
