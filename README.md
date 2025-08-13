@@ -36,6 +36,9 @@ Start the daemon:
 
 # Join second node to existing cluster
 ./bin/prismd --join=192.168.1.100:4200 --serf=0.0.0.0:4201 --name=second-node
+
+# Enable debug mode for development (verbose logging and detailed HTTP output)
+DEBUG=true ./bin/prismd --serf=0.0.0.0:4200 --bootstrap --name=first-node
 ```
 
 Use the CLI:
@@ -54,6 +57,9 @@ Use the CLI:
 
 # Connect to remote cluster
 ./bin/prismctl --api=127.0.0.1:8008 info
+
+# Enable debug output for CLI operations
+DEBUG=true ./bin/prismctl info
 ```
 
 ## Implementation Status

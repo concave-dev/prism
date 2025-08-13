@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/concave-dev/prism/internal/api/handlers"
@@ -51,10 +52,14 @@ type Server struct {
 // NewServer creates a new Server instance from the provided configuration.
 //
 // Initializes the HTTP API server with all required distributed system components
-// and configures Gin for production use to ensure optimal performance and logging.
+// and configures Gin mode based on DEBUG environment variable for optimal development experience.
 func NewServer(config *Config) *Server {
-	// Set Gin to release mode for production
-	gin.SetMode(gin.ReleaseMode)
+	// Set Gin mode based on DEBUG environment variable
+	if os.Getenv("DEBUG") == "true" {
+		gin.SetMode(gin.DebugMode)
+	} else {
+		gin.SetMode(gin.ReleaseMode)
+	}
 
 	return &Server{
 		serfManager:    config.SerfManager,
