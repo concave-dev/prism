@@ -17,12 +17,15 @@
 // SERF INTEGRATION:
 // Integrates with Serf's gossip protocol for automatic peer discovery and failure
 // detection. Uses Serf membership events to dynamically manage Raft cluster
-// composition, adding/removing peers as nodes join/leave the cluster.
+// composition, adding/removing peers as nodes join/leave the cluster. Includes
+// event-driven peer management plus periodic reconciliation for reliability.
 //
-// AUTOPILOT FUNCTIONALITY:
-// Implements autopilot cleanup to automatically remove dead peers detected by
-// Serf's SWIM protocol, preventing election deadlocks and maintaining cluster
-// health. Provides deadlock detection and resolution guidance for operators.
+// AUTOPILOT AND RECONCILIATION:
+// Implements dual-layer cluster health management through autopilot cleanup and
+// peer reconciliation. Autopilot removes dead peers detected by Serf's SWIM protocol
+// to prevent election deadlocks. Reconciliation adds missing alive peers to recover
+// from dropped Serf events, ensuring eventual consistency. Together they provide
+// comprehensive cluster health maintenance and deadlock prevention.
 //
 // BOOTSTRAP AND SCALING:
 // Supports single-node bootstrap for initial cluster formation and dynamic
