@@ -39,6 +39,7 @@ var config struct {
 var nodeConfig struct {
 	Watch        bool   // Enable watch mode for live updates
 	StatusFilter string // Filter nodes by status (alive, failed, left)
+	Verbose      bool   // Show verbose output including goroutines
 }
 
 // Root command
@@ -184,16 +185,14 @@ including CPU cores, memory usage, job capacity, and runtime statistics.`,
   # Filter nodes by status
   prismctl node top --status=alive
 
-
+  # Show verbose output including goroutines
+  prismctl node top --verbose
 
   # Show resource overview from specific API server
   prismctl --api=192.168.1.100:8008 node top
   
   # Output in JSON format
-  prismctl -o json node top
-  
-  # Show verbose output during connection
-  prismctl --verbose node top`,
+  prismctl -o json node top`,
 	Args: cobra.NoArgs,
 	RunE: handleNodeTop,
 }
@@ -212,14 +211,14 @@ for a single node specified by name or ID.`,
   # Show info for specific node by ID
   prismctl node info abc123def456
 
+  # Show verbose output including runtime and health checks
+  prismctl node info node1 --verbose
+
   # Show info from specific API server
   prismctl --api=192.168.1.100:8008 node info node1
   
   # Output in JSON format
-  prismctl --output=json node info node1
-  
-  # Show verbose output during connection
-  prismctl --verbose node info node1`,
+  prismctl --output=json node info node1`,
 	Args: func(cmd *cobra.Command, args []string) error {
 		if len(args) != 1 {
 			cmd.Help()
@@ -257,6 +256,12 @@ func init() {
 		"Watch for changes and continuously update the display")
 	nodeTopCmd.Flags().StringVar(&nodeConfig.StatusFilter, "status", "",
 		"Filter nodes by status (alive, failed, left)")
+	nodeTopCmd.Flags().BoolVarP(&nodeConfig.Verbose, "verbose", "v", false,
+		"Show verbose output including goroutines")
+
+	// Add flags to node info command
+	nodeInfoCmd.Flags().BoolVarP(&nodeConfig.Verbose, "verbose", "v", false,
+		"Show verbose output including runtime and health checks")
 
 	// Add subcommands to node command
 	nodeCmd.AddCommand(nodeLsCmd)
@@ -1416,7 +1421,11 @@ func displayClusterResourcesFromAPI(resources []NodeResources) {
 		defer w.Flush()
 
 		// Header
-		fmt.Fprintln(w, "ID\tNAME\tCPU\tMEMORY\tJOBS\tUPTIME\tGOROUTINES")
+		if nodeConfig.Verbose {
+			fmt.Fprintln(w, "ID\tNAME\tCPU\tMEMORY\tJOBS\tUPTIME\tGOROUTINES")
+		} else {
+			fmt.Fprintln(w, "ID\tNAME\tCPU\tMEMORY\tJOBS\tUPTIME")
+		}
 
 		// Display each node's resources
 		for _, resource := range resources {
@@ -1426,14 +1435,24 @@ func displayClusterResourcesFromAPI(resources []NodeResources) {
 				resource.MemoryUsage)
 			jobs := fmt.Sprintf("%d/%d", resource.CurrentJobs, resource.MaxJobs)
 
-			fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%d\n",
-				resource.NodeID,
-				resource.NodeName,
-				resource.CPUCores,
-				memoryWithPercent,
-				jobs,
-				resource.Uptime,
-				resource.GoRoutines)
+			if nodeConfig.Verbose {
+				fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%d\n",
+					resource.NodeID,
+					resource.NodeName,
+					resource.CPUCores,
+					memoryWithPercent,
+					jobs,
+					resource.Uptime,
+					resource.GoRoutines)
+			} else {
+				fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\n",
+					resource.NodeID,
+					resource.NodeName,
+					resource.CPUCores,
+					memoryWithPercent,
+					jobs,
+					resource.Uptime)
+			}
 		}
 	}
 }
@@ -1533,34 +1552,29 @@ func displayNodeInfo(resource NodeResources, isLeader bool, health *NodeHealth, 
 		fmt.Printf("  Max Jobs:        %d\n", resource.MaxJobs)
 		fmt.Printf("  Current Jobs:    %d\n", resource.CurrentJobs)
 		fmt.Printf("  Available Slots: %d\n", resource.AvailableSlots)
-		fmt.Println()
 
-		// Runtime Information
-		fmt.Printf("Runtime:\n")
-		fmt.Printf("  Uptime:     %s\n", resource.Uptime)
-		fmt.Printf("  Goroutines: %d\n", resource.GoRoutines)
-		fmt.Printf("  Go Memory:  %s allocated, %s from system\n",
-			humanize.IBytes(resource.GoMemAlloc), humanize.IBytes(resource.GoMemSys))
-		fmt.Printf("  GC Cycles:  %d (last pause: %.2fms)\n", resource.GoGCCycles, resource.GoGCPause)
-
-		if resource.Load1 > 0 || resource.Load5 > 0 || resource.Load15 > 0 {
-			fmt.Printf("  Load Avg:   %.2f, %.2f, %.2f\n", resource.Load1, resource.Load5, resource.Load15)
-		}
-
-		// Health checks (if available)
-		if health != nil && len(health.Checks) > 0 {
+		// Only show Runtime and Health sections in verbose mode
+		if nodeConfig.Verbose {
 			fmt.Println()
-			fmt.Printf("Health Checks:\n")
-			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-			defer w.Flush()
-			// Only show MESSAGE column when verbose is enabled
-			if config.Verbose {
-				fmt.Fprintln(w, "NAME\tSTATUS\tMESSAGE\tTIMESTAMP")
-				for _, chk := range health.Checks {
-					fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
-						chk.Name, strings.ToLower(chk.Status), chk.Message, chk.Timestamp.Format(time.RFC3339))
-				}
-			} else {
+
+			// Runtime Information
+			fmt.Printf("Runtime:\n")
+			fmt.Printf("  Uptime:     %s\n", resource.Uptime)
+			fmt.Printf("  Goroutines: %d\n", resource.GoRoutines)
+			fmt.Printf("  Go Memory:  %s allocated, %s from system\n",
+				humanize.IBytes(resource.GoMemAlloc), humanize.IBytes(resource.GoMemSys))
+			fmt.Printf("  GC Cycles:  %d (last pause: %.2fms)\n", resource.GoGCCycles, resource.GoGCPause)
+
+			if resource.Load1 > 0 || resource.Load5 > 0 || resource.Load15 > 0 {
+				fmt.Printf("  Load Avg:   %.2f, %.2f, %.2f\n", resource.Load1, resource.Load5, resource.Load15)
+			}
+
+			// Health checks (if available)
+			if health != nil && len(health.Checks) > 0 {
+				fmt.Println()
+				fmt.Printf("Health Checks:\n")
+				w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+				defer w.Flush()
 				fmt.Fprintln(w, "NAME\tSTATUS\tTIMESTAMP")
 				for _, chk := range health.Checks {
 					fmt.Fprintf(w, "%s\t%s\t%s\n",
