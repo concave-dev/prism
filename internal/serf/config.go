@@ -50,7 +50,7 @@ const (
 // Config holds configuration parameters for SerfManager cluster operations.
 //
 // This struct defines all the necessary settings for establishing and maintaining
-// a distributed cluster using HashiCorp's Serf gossip protocol. Configuration
+// a distributed cluster using Serf gossip protocol. Configuration
 // includes network binding settings, node identification, event processing
 // parameters, and optional service port advertisements for inter-node communication.
 //

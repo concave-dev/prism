@@ -237,7 +237,7 @@ func (csw *ColorfulSerfWriter) processLogs() {
 	}
 }
 
-// ColorfulRaftWriter captures HashiCorp Raft logs and routes them through our logging system
+// ColorfulRaftWriter captures Raft logs and routes them through our logging system
 // The Raft library typically emits lines like:
 //
 //	2024/01/02 15:04:05 [WARN] raft: heartbeat timeout reached, starting election

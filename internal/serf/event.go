@@ -1,7 +1,7 @@
 // Package serf provides event handling for Prism cluster membership operations.
 //
 // This package implements the event processing layer for Prism's distributed cluster
-// membership system using HashiCorp's Serf gossip protocol. It handles the complete
+// membership system using Serf gossip protocol. It handles the complete
 // event lifecycle from Serf event ingestion to cluster state management and optional
 // external event forwarding.
 //
