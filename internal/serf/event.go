@@ -1,4 +1,36 @@
-// Package serf provides event handling for Prism cluster membership
+// Package serf provides event handling for Prism cluster membership operations.
+//
+// This package implements the event processing layer for Prism's distributed cluster
+// membership system using Serf gossip protocol. It handles the complete
+// event lifecycle from Serf event ingestion to cluster state management and optional
+// external event forwarding.
+//
+// EVENT PROCESSING ARCHITECTURE:
+// The event system uses a dual-channel producer-consumer pattern to ensure cluster
+// stability and prevent blocking scenarios:
+//
+//   - Internal Processing: Always executes member tracking, failure detection, and
+//     cluster state updates regardless of external consumer availability
+//   - External Forwarding: Best-effort delivery to application consumers with
+//     non-blocking drops to prevent cluster operations from stalling
+//
+// EVENT TYPES HANDLED:
+//   - Member Events: Node join/leave/fail/update/reap for cluster topology management
+//   - User Events: Custom application-level events for inter-node communication
+//   - Query Events: Distributed request-response for cluster-wide operations
+//
+// THREAD SAFETY:
+// All event handlers use proper mutex synchronization to ensure concurrent access
+// to cluster member state is safe. Event processing runs in a dedicated goroutine
+// separate from the main Serf event loop to prevent deadlocks and ensure responsive
+// cluster membership operations even under high event load.
+//
+// FAILURE HANDLING:
+// The event system gracefully handles missing node metadata, malformed events, and
+// external consumer failures without affecting core cluster membership functionality.
+// Events that cannot be processed are logged and safely discarded to maintain
+// cluster stability.
+
 package serf
 
 import (
@@ -9,13 +41,14 @@ import (
 	"github.com/hashicorp/serf/serf"
 )
 
-// processEvents handles incoming Serf events in a separate goroutine
+// processEvents handles incoming Serf events in a dedicated goroutine using the
+// dual-channel producer-consumer pattern to ensure cluster stability.
+// Implements two-phase processing: mandatory internal state updates followed by
+// optional external event forwarding with non-blocking semantics.
 //
-// This implements the core of the producer-consumer decoupling pattern:
-// Phase 1: ALWAYS process events internally (update member lists, handle failures)
-// Phase 2: OPTIONALLY forward to external consumers (non-blocking)
-//
-// This ensures cluster membership operations never depend on external consumers.
+// Critical for maintaining cluster health as it decouples core membership operations
+// from potentially slow or absent external consumers, preventing deadlocks and
+// ensuring consistent cluster state regardless of application-level event handling.
 func (sm *SerfManager) processEvents() {
 	defer sm.wg.Done()
 
@@ -47,7 +80,13 @@ func (sm *SerfManager) processEvents() {
 	}
 }
 
-// handleEvent processes individual Serf events
+// handleEvent processes individual Serf events by dispatching them to specialized
+// handlers based on event type. Acts as the central event router that ensures
+// each event type receives appropriate handling for cluster state management.
+//
+// Essential for maintaining type safety and organized event processing logic,
+// allowing different event types to have dedicated handling strategies while
+// providing a unified entry point for all Serf events.
 func (sm *SerfManager) handleEvent(event serf.Event) {
 	switch e := event.(type) {
 	case serf.MemberEvent:
@@ -65,7 +104,13 @@ func (sm *SerfManager) handleEvent(event serf.Event) {
 // MEMBER EVENTS - Handle node join/leave/fail/update/reap
 // ============================================================================
 
-// handleMemberEvent processes Prism node join/leave/fail events from Serf
+// handleMemberEvent processes cluster membership changes including node joins,
+// leaves, failures, updates, and cleanup events. Maintains accurate cluster
+// topology by updating internal member tracking based on Serf member state changes.
+//
+// Critical for service discovery and cluster health monitoring as it ensures
+// the local view of cluster membership stays synchronized with actual cluster state.
+// Handles multiple member changes per event for batch processing efficiency.
 func (sm *SerfManager) handleMemberEvent(event serf.MemberEvent) {
 	for _, member := range event.Members {
 		switch event.EventType() {
@@ -98,7 +143,13 @@ func (sm *SerfManager) handleMemberEvent(event serf.MemberEvent) {
 	}
 }
 
-// addMember adds a newly discovered Prism node to the cluster tracking
+// addMember adds a newly discovered cluster node to internal member tracking.
+// Converts Serf member data to PrismNode format and stores it in the thread-safe
+// member map for service discovery and cluster management operations.
+//
+// Essential for maintaining accurate cluster topology and enabling other nodes
+// to be discovered for service routing, load balancing, and health monitoring.
+// Thread-safe operation that can be called concurrently during event processing.
 func (sm *SerfManager) addMember(member serf.Member) {
 	node := sm.memberFromSerf(member)
 
@@ -107,7 +158,13 @@ func (sm *SerfManager) addMember(member serf.Member) {
 	sm.memberLock.Unlock()
 }
 
-// updateMember updates an existing Prism node's information in the cluster
+// updateMember updates an existing cluster node's metadata and status information.
+// Preserves last-seen timestamps for alive nodes while updating all other member
+// data to reflect current node state and capabilities from Serf gossip updates.
+//
+// Critical for maintaining accurate node metadata used in service discovery and
+// routing decisions. Handles partial updates gracefully to prevent data corruption
+// during concurrent access scenarios in the distributed system.
 func (sm *SerfManager) updateMember(member serf.Member) {
 	node := sm.memberFromSerf(member)
 
@@ -124,7 +181,13 @@ func (sm *SerfManager) updateMember(member serf.Member) {
 	sm.memberLock.Unlock()
 }
 
-// updateMemberStatus updates a Prism node's status (alive/failed/left)
+// updateMemberStatus updates a cluster node's operational status for failure detection.
+// Modifies node status (alive/failed/left) and manages last-seen timestamps to
+// track node availability for health monitoring and service routing decisions.
+//
+// Essential for cluster health management and preventing requests from being
+// routed to failed or departed nodes. Handles graceful status transitions while
+// maintaining data consistency during concurrent cluster membership changes.
 func (sm *SerfManager) updateMemberStatus(member serf.Member, status serf.MemberStatus) {
 	nodeID := member.Tags["node_id"]
 	if nodeID == "" {
@@ -145,7 +208,13 @@ func (sm *SerfManager) updateMemberStatus(member serf.Member, status serf.Member
 	sm.memberLock.Unlock()
 }
 
-// removeMember removes a Prism node from the cluster tracking
+// removeMember removes a departed or failed node from cluster member tracking.
+// Cleans up internal state when nodes permanently leave the cluster or are
+// reaped after extended failure periods to prevent memory leaks and stale data.
+//
+// Critical for maintaining accurate cluster topology and preventing routing
+// to permanently unavailable nodes. Ensures cluster member maps don't grow
+// unbounded as nodes join and leave over time.
 func (sm *SerfManager) removeMember(member serf.Member) {
 	nodeID := member.Tags["node_id"]
 	if nodeID == "" {
@@ -159,9 +228,13 @@ func (sm *SerfManager) removeMember(member serf.Member) {
 	sm.memberLock.Unlock()
 }
 
-// memberFromSerf converts a serf.Member to a PrismNode struct
-// This is a pure conversion function that creates a new PrismNode from serf.Member data.
-// Thread-safe: Does not access sm.members map or any shared state - only converts data.
+// memberFromSerf converts a Serf member to PrismNode format for internal tracking.
+// Performs pure data transformation without accessing shared state, extracting
+// node metadata, network information, and tags for cluster management operations.
+//
+// Essential for maintaining consistent data structures across the Prism system
+// while isolating Serf-specific data types from higher-level cluster logic.
+// Thread-safe conversion that enables concurrent event processing.
 func (sm *SerfManager) memberFromSerf(member serf.Member) *PrismNode {
 	nodeID := member.Tags["node_id"]
 	if nodeID == "" {
@@ -187,7 +260,13 @@ func (sm *SerfManager) memberFromSerf(member serf.Member) *PrismNode {
 // USER EVENTS - Handle custom application-level events
 // ============================================================================
 
-// handleUserEvent processes custom user events sent between Prism nodes
+// handleUserEvent processes custom application-level events sent between cluster nodes.
+// Handles user-defined events for inter-node communication beyond basic membership,
+// enabling distributed workflows, coordination, and application-specific messaging.
+//
+// Provides the foundation for higher-level cluster coordination patterns while
+// maintaining separation from core membership operations. Currently logs events
+// for future extension by application-specific event handlers.
 func (sm *SerfManager) handleUserEvent(event serf.UserEvent) {
 	logging.Debug("Received user event: %s", event.Name)
 	// User events will be handled by higher-level Prism components
@@ -197,7 +276,13 @@ func (sm *SerfManager) handleUserEvent(event serf.UserEvent) {
 // QUERY EVENTS - Handle distributed queries across the cluster
 // ============================================================================
 
-// handleQuery processes Serf queries between Prism nodes
+// handleQuery processes distributed queries from other cluster nodes using Serf's
+// query-response mechanism. Routes queries to specialized handlers based on query
+// type to provide cluster-wide information gathering and coordination capabilities.
+//
+// Essential for distributed operations like resource discovery, health checks,
+// and cluster-wide status collection. Enables request-response patterns across
+// the cluster without requiring direct node-to-node connections.
 func (sm *SerfManager) handleQuery(query *serf.Query) {
 	logging.Debug("Received query: %s from %s", query.Name, query.SourceNode())
 
@@ -209,7 +294,13 @@ func (sm *SerfManager) handleQuery(query *serf.Query) {
 	}
 }
 
-// handleResourcesQuery handles get-resources query by gathering current node resources and responding
+// handleResourcesQuery handles cluster-wide resource discovery queries by gathering
+// local node resources and responding with JSON-serialized data. Enables other nodes
+// to discover available compute resources for scheduling and load balancing decisions.
+//
+// Critical for distributed orchestration as it provides the resource information
+// needed for intelligent workload placement across the cluster. Handles serialization
+// errors gracefully to maintain query responsiveness even during resource collection failures.
 func (sm *SerfManager) handleResourcesQuery(query *serf.Query) {
 	logging.Debug("Processing get-resources query from %s", query.SourceNode())
 

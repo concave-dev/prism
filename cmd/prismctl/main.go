@@ -7,321 +7,60 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/signal"
 	"sort"
 	"strings"
-	"syscall"
 	"text/tabwriter"
 	"time"
 
+	"github.com/concave-dev/prism/cmd/prismctl/commands"
+	"github.com/concave-dev/prism/cmd/prismctl/config"
+	"github.com/concave-dev/prism/cmd/prismctl/utils"
 	"github.com/concave-dev/prism/internal/logging"
-	"github.com/concave-dev/prism/internal/validate"
 	"github.com/dustin/go-humanize"
 	"github.com/go-resty/resty/v2"
 	"github.com/spf13/cobra"
 )
 
-const (
-	Version        = "0.1.0-dev"      // Version information
-	DefaultAPIAddr = "127.0.0.1:8008" // Default API server address (routable)
-)
-
-// Global configuration
-var config struct {
-	APIAddr  string // Address of Prism API server to connect to
-	LogLevel string // Log level for CLI operations
-	Timeout  int    // Connection timeout in seconds
-	Verbose  bool   // Show verbose output
-	Output   string // Output format: table, json
-}
-
-// Node command configuration
-var nodeConfig struct {
-	Watch        bool   // Enable watch mode for live updates
-	StatusFilter string // Filter nodes by status (alive, failed, left)
-	Verbose      bool   // Show verbose output including goroutines
-}
-
-// Root command
-var rootCmd = &cobra.Command{
-	Use:   "prismctl",
-	Short: "CLI tool for managing and deploying AI agents, MCP tools and workflows",
-	Long: `Prism CLI (prismctl) is a command-line tool for deploying and managing
-AI agents, MCP tools, and AI workflows in Prism clusters.
-
-Similar to kubectl for Kubernetes, prismctl lets you deploy agents, run 
-AI-generated code in sandboxes, manage workflows, and inspect cluster state.`,
-	Version:           Version,
-	SilenceUsage:      true, // Don't show usage on errors
-	PersistentPreRunE: validateGlobalFlags,
-	Example: `  # Show cluster information
-  prismctl info
-
-  # List cluster nodes
-  prismctl node ls
-
-  # Watch nodes with live updates
-  prismctl node ls --watch
-
-  # Filter nodes by status
-  prismctl node ls --status=alive
-
-  # Show node resource overview
-  prismctl node top
-
-  # Show detailed node information
-  prismctl node info node1
-
-  # Connect to remote API server
-  prismctl --api=192.168.1.100:8008 info
-  
-  # Output in JSON format
-  prismctl --output=json node top
-  prismctl -o json info
-  
-  # Show verbose output
-  prismctl --verbose node ls`,
-}
-
-// Peer command group
-var peerCmd = &cobra.Command{
-	Use:   "peer",
-	Short: "Inspect and manage Raft consensus peers",
-	Long:  "Commands for managing and inspecting Raft consensus peers in the cluster.",
-}
-
-// Peer list command
-var peerLsCmd = &cobra.Command{
-	Use:   "ls",
-	Short: "List Raft peers and connectivity",
-	Long:  "Show Raft peers from the consensus configuration and whether they are reachable.",
-	RunE:  handlePeerList,
-}
-
-// Peer info command
-var peerInfoCmd = &cobra.Command{
-	Use:   "info <peer-id>",
-	Short: "Show detailed information for a specific Raft peer",
-	Long:  "Display detailed information for a specific Raft peer by ID.",
-	Args:  cobra.ExactArgs(1),
-	RunE:  handlePeerInfo,
-}
-
-// Node command (parent command for node operations)
-var nodeCmd = &cobra.Command{
-	Use:   "node",
-	Short: "Manage and inspect cluster nodes",
-	Long: `Commands for managing and inspecting nodes in the Prism cluster.
-
-This command group provides operations for listing nodes, viewing node details,
-and managing node-specific resources.`,
-}
-
-// Node list command
-var nodeLsCmd = &cobra.Command{
-	Use:   "ls",
-	Short: "List all cluster nodes",
-	Long: `List all nodes in the Prism cluster.
-
-This command connects to the cluster and displays information about all
-known nodes including their status and last seen times.`,
-	Example: `  # List all nodes
-  prismctl node ls
-
-  # List nodes with live updates
-  prismctl node ls --watch
-
-  # Filter nodes by status
-  prismctl node ls --status=alive
-
-
-
-  # List nodes from specific API server
-  prismctl --api=192.168.1.100:8008 node ls
-  
-  # Show verbose output during connection
-  prismctl --verbose node ls`,
-	Args: cobra.NoArgs,
-	RunE: handleMembers,
-}
-
-// Info command (cluster information)
-var infoCmd = &cobra.Command{
-	Use:   "info",
-	Short: "Show comprehensive cluster information",
-	Long: `Show comprehensive cluster information including member details,
-uptime, version, and cluster health status.
-
-This provides a complete overview of cluster state, composition, and health.`,
-	Example: `  # Show cluster information
-  prismctl info
-
-  # Show cluster info from specific API server
-  prismctl --api=192.168.1.100:8008 info
-  
-  # Output in JSON format
-  prismctl -o json info
-  
-  # Show verbose output during connection
-  prismctl --verbose info`,
-	Args: cobra.NoArgs,
-	RunE: handleClusterInfo,
-}
-
-// Node top command (resource overview for all nodes)
-var nodeTopCmd = &cobra.Command{
-	Use:   "top",
-	Short: "Show resource overview for all cluster nodes",
-	Long: `Display resource overview including CPU, memory, and capacity for all cluster nodes.
-
-This command shows resource utilization similar to 'kubectl top nodes',
-including CPU cores, memory usage, job capacity, and runtime statistics.`,
-	Example: `  # Show resource overview for all nodes
-  prismctl node top
-
-  # Show live updates with watch
-  prismctl node top --watch
-
-  # Filter nodes by status
-  prismctl node top --status=alive
-
-  # Show verbose output including goroutines
-  prismctl node top --verbose
-
-  # Show resource overview from specific API server
-  prismctl --api=192.168.1.100:8008 node top
-  
-  # Output in JSON format
-  prismctl -o json node top`,
-	Args: cobra.NoArgs,
-	RunE: handleNodeTop,
-}
-
-// Node info command (detailed info for specific node)
-var nodeInfoCmd = &cobra.Command{
-	Use:   "info <node-name-or-id>",
-	Short: "Show detailed information for a specific node",
-	Long: `Display detailed information including CPU, memory, and capacity for a specific node.
-
-This command shows comprehensive resource details and runtime statistics
-for a single node specified by name or ID.`,
-	Example: `  # Show info for specific node by name
-  prismctl node info node1
-
-  # Show info for specific node by ID
-  prismctl node info abc123def456
-
-  # Show verbose output including runtime and health checks
-  prismctl node info node1 --verbose
-
-  # Show info from specific API server
-  prismctl --api=192.168.1.100:8008 node info node1
-  
-  # Output in JSON format
-  prismctl --output=json node info node1`,
-	Args: func(cmd *cobra.Command, args []string) error {
-		if len(args) != 1 {
-			cmd.Help()
-			return fmt.Errorf("requires exactly 1 argument (node name or ID)")
-		}
-		return nil
-	},
-	RunE: handleNodeInfo,
-}
-
 func init() {
-	// Global flags
-	rootCmd.PersistentFlags().StringVar(&config.APIAddr, "api", DefaultAPIAddr,
-		"Address of Prism API server to connect to")
-	rootCmd.PersistentFlags().StringVar(&config.LogLevel, "log-level", "ERROR",
-		"Log level: DEBUG, INFO, WARN, ERROR")
-	// PERFORMANCE FIX: Reduced HTTP timeout from 10s to 8s
-	// This allows Serf queries (3s) + response collection (3s) + buffer (2s) to complete
-	// before HTTP client times out, preventing false timeout errors
-	rootCmd.PersistentFlags().IntVar(&config.Timeout, "timeout", 8,
-		"Connection timeout in seconds")
-	rootCmd.PersistentFlags().BoolVarP(&config.Verbose, "verbose", "v", false,
-		"Show verbose output")
-	rootCmd.PersistentFlags().StringVarP(&config.Output, "output", "o", "table",
-		"Output format: table, json")
+	// Get root command from commands package
+	rootCmd := commands.RootCmd
 
-	// Add flags to node ls command
-	nodeLsCmd.Flags().BoolVarP(&nodeConfig.Watch, "watch", "w", false,
-		"Watch for changes and continuously update the display")
-	nodeLsCmd.Flags().StringVar(&nodeConfig.StatusFilter, "status", "",
-		"Filter nodes by status (alive, failed, left)")
+	// Set version and validation
+	rootCmd.Version = config.Version
+	rootCmd.PersistentPreRunE = config.ValidateGlobalFlags
 
-	// Add flags to node top command
-	nodeTopCmd.Flags().BoolVarP(&nodeConfig.Watch, "watch", "w", false,
-		"Watch for changes and continuously update the display")
-	nodeTopCmd.Flags().StringVar(&nodeConfig.StatusFilter, "status", "",
-		"Filter nodes by status (alive, failed, left)")
-	nodeTopCmd.Flags().BoolVarP(&nodeConfig.Verbose, "verbose", "v", false,
-		"Show verbose output including goroutines")
+	// Setup all command structures
+	commands.SetupCommands()
+	commands.SetupNodeCommands()
+	commands.SetupPeerCommands()
 
-	// Add flags to node info command
-	nodeInfoCmd.Flags().BoolVarP(&nodeConfig.Verbose, "verbose", "v", false,
-		"Show verbose output including runtime and health checks")
+	// Setup global flags
+	commands.SetupGlobalFlags(rootCmd, &config.Global.APIAddr, &config.Global.LogLevel,
+		&config.Global.Timeout, &config.Global.Verbose, &config.Global.Output, config.DefaultAPIAddr)
 
-	// Add subcommands to node command
-	nodeCmd.AddCommand(nodeLsCmd)
-	nodeCmd.AddCommand(nodeTopCmd)
-	nodeCmd.AddCommand(nodeInfoCmd)
+	// Setup node command flags
+	nodeLsCmd, nodeTopCmd, nodeInfoCmd := commands.GetNodeCommands()
+	commands.SetupNodeFlags(nodeLsCmd, nodeTopCmd, nodeInfoCmd,
+		&config.Node.Watch, &config.Node.StatusFilter, &config.Node.Verbose)
 
-	// Add subcommands to root
-	rootCmd.AddCommand(infoCmd)
-	rootCmd.AddCommand(nodeCmd)
-
-	// Peer
-	peerCmd.AddCommand(peerLsCmd)
-	peerCmd.AddCommand(peerInfoCmd)
-	rootCmd.AddCommand(peerCmd)
+	// Setup command handlers
+	setupCommandHandlers()
 }
 
-// validateGlobalFlags validates all global flags before running any command
-func validateGlobalFlags(cmd *cobra.Command, args []string) error {
-	if err := validateAPIAddress(); err != nil {
-		return err
-	}
+// setupCommandHandlers assigns RunE functions to commands
+func setupCommandHandlers() {
+	// Get command references
+	nodeLsCmd, nodeTopCmd, nodeInfoCmd := commands.GetNodeCommands()
+	peerLsCmd, peerInfoCmd := commands.GetPeerCommands()
+	infoCmd := commands.GetInfoCommand()
 
-	if err := validateOutputFormat(); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// validateAPIAddress validates the --api flag
-func validateAPIAddress() error {
-	// Parse and validate API server address
-	netAddr, err := validate.ParseBindAddress(config.APIAddr)
-	if err != nil {
-		return fmt.Errorf("invalid API server address '%s': %w", config.APIAddr, err)
-	}
-
-	// Reject unroutable 0.0.0.0 target for client connections
-	if netAddr.Host == "0.0.0.0" {
-		return fmt.Errorf("unroutable API address '0.0.0.0:%d'; use 127.0.0.1 or a specific IP address", netAddr.Port)
-	}
-
-	// Client must connect to specific port (not 0)
-	if err := validate.ValidateField(netAddr.Port, "required,min=1,max=65535"); err != nil {
-		return fmt.Errorf("API server port must be specific (not 0): %w", err)
-	}
-
-	return nil
-}
-
-// validateOutputFormat validates the --output flag
-func validateOutputFormat() error {
-	validOutputs := map[string]bool{
-		"table": true,
-		"json":  true,
-	}
-	if !validOutputs[config.Output] {
-		return fmt.Errorf("invalid output format '%s' (valid: table, json)", config.Output)
-	}
-	return nil
+	// Assign handlers
+	nodeLsCmd.RunE = handleMembers
+	nodeTopCmd.RunE = handleNodeTop
+	nodeInfoCmd.RunE = handleNodeInfo
+	peerLsCmd.RunE = handlePeerList
+	peerInfoCmd.RunE = handlePeerInfo
+	infoCmd.RunE = handleClusterInfo
 }
 
 // API response types that match the server responses
@@ -429,21 +168,6 @@ type HealthCheck struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
-// structuredLogger implements resty.Logger interface and routes logs through our structured logging
-type structuredLogger struct{}
-
-func (s structuredLogger) Errorf(format string, v ...interface{}) {
-	logging.Error(format, v...)
-}
-
-func (s structuredLogger) Warnf(format string, v ...interface{}) {
-	logging.Warn(format, v...)
-}
-
-func (s structuredLogger) Debugf(format string, v ...interface{}) {
-	logging.Debug(format, v...)
-}
-
 // PrismAPIClient wraps Resty client with Prism-specific functionality
 type PrismAPIClient struct {
 	client  *resty.Client
@@ -457,7 +181,7 @@ func NewPrismAPIClient(apiAddr string, timeout int) *PrismAPIClient {
 	baseURL := fmt.Sprintf("http://%s/api/v1", apiAddr)
 
 	// Route Resty's internal logging through our structured logging system
-	client.SetLogger(structuredLogger{})
+	client.SetLogger(utils.RestryLogger{})
 
 	// Configure client
 	client.
@@ -465,7 +189,7 @@ func NewPrismAPIClient(apiAddr string, timeout int) *PrismAPIClient {
 		SetBaseURL(baseURL).
 		SetHeader("Accept", "application/json").
 		SetHeader("Content-Type", "application/json").
-		SetHeader("User-Agent", fmt.Sprintf("prismctl/%s", Version))
+		SetHeader("User-Agent", fmt.Sprintf("prismctl/%s", config.Version))
 
 	// Add retry mechanism with custom retry conditions
 	client.
@@ -526,15 +250,15 @@ func (api *PrismAPIClient) GetMembers() ([]ClusterMember, error) {
 		for _, memberData := range membersData {
 			if memberMap, ok := memberData.(map[string]interface{}); ok {
 				member := ClusterMember{
-					ID:         getString(memberMap, "id"),
-					Name:       getString(memberMap, "name"),
-					Address:    getString(memberMap, "address"),
-					Status:     getString(memberMap, "status"),
-					Tags:       getStringMap(memberMap, "tags"),
-					LastSeen:   getTime(memberMap, "lastSeen"),
-					SerfStatus: getString(memberMap, "serfStatus"),
-					RaftStatus: getString(memberMap, "raftStatus"),
-					IsLeader:   getBool(memberMap, "isLeader"),
+					ID:         utils.GetString(memberMap, "id"),
+					Name:       utils.GetString(memberMap, "name"),
+					Address:    utils.GetString(memberMap, "address"),
+					Status:     utils.GetString(memberMap, "status"),
+					Tags:       utils.GetStringMap(memberMap, "tags"),
+					LastSeen:   utils.GetTime(memberMap, "lastSeen"),
+					SerfStatus: utils.GetString(memberMap, "serfStatus"),
+					RaftStatus: utils.GetString(memberMap, "raftStatus"),
+					IsLeader:   utils.GetBool(memberMap, "isLeader"),
 				}
 				members = append(members, member)
 			}
@@ -542,6 +266,30 @@ func (api *PrismAPIClient) GetMembers() ([]ClusterMember, error) {
 	}
 
 	return members, nil
+}
+
+// GetID returns the ID for MemberLike interface
+func (c ClusterMember) GetID() string {
+	return c.ID
+}
+
+// GetName returns the Name for MemberLike interface
+func (c ClusterMember) GetName() string {
+	return c.Name
+}
+
+// GetMembersForResolver adapts GetMembers for the resolver interface
+func (api *PrismAPIClient) GetMembersForResolver() ([]utils.MemberLike, error) {
+	members, err := api.GetMembers()
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]utils.MemberLike, len(members))
+	for i, member := range members {
+		result[i] = member
+	}
+	return result, nil
 }
 
 // GetClusterInfo fetches comprehensive cluster information from the API
@@ -568,8 +316,8 @@ func (api *PrismAPIClient) GetClusterInfo() (*ClusterInfo, error) {
 		// Parse status
 		statusData := infoData["status"].(map[string]interface{})
 		status := ClusterStatus{
-			TotalNodes:    getInt(statusData, "totalNodes"),
-			NodesByStatus: getIntMap(statusData, "nodesByStatus"),
+			TotalNodes:    utils.GetInt(statusData, "totalNodes"),
+			NodesByStatus: utils.GetIntMap(statusData, "nodesByStatus"),
 		}
 
 		// Parse members
@@ -578,15 +326,15 @@ func (api *PrismAPIClient) GetClusterInfo() (*ClusterInfo, error) {
 			for _, memberData := range membersData {
 				if memberMap, ok := memberData.(map[string]interface{}); ok {
 					member := ClusterMember{
-						ID:         getString(memberMap, "id"),
-						Name:       getString(memberMap, "name"),
-						Address:    getString(memberMap, "address"),
-						Status:     getString(memberMap, "status"),
-						Tags:       getStringMap(memberMap, "tags"),
-						LastSeen:   getTime(memberMap, "lastSeen"),
-						SerfStatus: getString(memberMap, "serfStatus"),
-						RaftStatus: getString(memberMap, "raftStatus"),
-						IsLeader:   getBool(memberMap, "isLeader"),
+						ID:         utils.GetString(memberMap, "id"),
+						Name:       utils.GetString(memberMap, "name"),
+						Address:    utils.GetString(memberMap, "address"),
+						Status:     utils.GetString(memberMap, "status"),
+						Tags:       utils.GetStringMap(memberMap, "tags"),
+						LastSeen:   utils.GetTime(memberMap, "lastSeen"),
+						SerfStatus: utils.GetString(memberMap, "serfStatus"),
+						RaftStatus: utils.GetString(memberMap, "raftStatus"),
+						IsLeader:   utils.GetBool(memberMap, "isLeader"),
 					}
 					members = append(members, member)
 				}
@@ -594,20 +342,20 @@ func (api *PrismAPIClient) GetClusterInfo() (*ClusterInfo, error) {
 		}
 
 		// Parse uptime
-		uptimeNs := int64(getFloat(infoData, "uptime"))
+		uptimeNs := int64(utils.GetFloat(infoData, "uptime"))
 		uptime := time.Duration(uptimeNs)
 
 		// Parse start time
-		startTime := getTime(infoData, "startTime")
+		startTime := utils.GetTime(infoData, "startTime")
 
 		return &ClusterInfo{
-			Version:    getString(infoData, "version"),
+			Version:    utils.GetString(infoData, "version"),
 			Status:     status,
 			Members:    members,
 			Uptime:     uptime,
 			StartTime:  startTime,
-			RaftLeader: getString(infoData, "raftLeader"),
-			ClusterID:  getString(infoData, "clusterId"),
+			RaftLeader: utils.GetString(infoData, "raftLeader"),
+			ClusterID:  utils.GetString(infoData, "clusterId"),
 		}, nil
 	}
 
@@ -635,16 +383,16 @@ func (api *PrismAPIClient) GetRaftPeers() (*RaftPeersResponse, error) {
 
 	if data, ok := response.Data.(map[string]interface{}); ok {
 		res := &RaftPeersResponse{
-			Leader: getString(data, "leader"),
+			Leader: utils.GetString(data, "leader"),
 		}
 		if peers, ok := data["peers"].([]interface{}); ok {
 			for _, p := range peers {
 				if pm, ok := p.(map[string]interface{}); ok {
 					res.Peers = append(res.Peers, RaftPeer{
-						ID:        getString(pm, "id"),
-						Name:      getString(pm, "name"),
-						Address:   getString(pm, "address"),
-						Reachable: getBool(pm, "reachable"),
+						ID:        utils.GetString(pm, "id"),
+						Name:      utils.GetString(pm, "name"),
+						Address:   utils.GetString(pm, "address"),
+						Reachable: utils.GetBool(pm, "reachable"),
 					})
 				}
 			}
@@ -680,31 +428,31 @@ func (api *PrismAPIClient) GetClusterResources() ([]NodeResources, error) {
 		for _, resourceData := range resourcesData {
 			if resourceMap, ok := resourceData.(map[string]interface{}); ok {
 				resource := NodeResources{
-					NodeID:            getString(resourceMap, "nodeId"),
-					NodeName:          getString(resourceMap, "nodeName"),
-					Timestamp:         getTime(resourceMap, "timestamp"),
-					CPUCores:          getInt(resourceMap, "cpuCores"),
-					CPUUsage:          getFloat(resourceMap, "cpuUsage"),
-					CPUAvailable:      getFloat(resourceMap, "cpuAvailable"),
-					MemoryTotal:       getUint64(resourceMap, "memoryTotal"),
-					MemoryUsed:        getUint64(resourceMap, "memoryUsed"),
-					MemoryAvailable:   getUint64(resourceMap, "memoryAvailable"),
-					MemoryUsage:       getFloat(resourceMap, "memoryUsage"),
-					GoRoutines:        getInt(resourceMap, "goRoutines"),
-					GoMemAlloc:        getUint64(resourceMap, "goMemAlloc"),
-					GoMemSys:          getUint64(resourceMap, "goMemSys"),
-					GoGCCycles:        getUint32(resourceMap, "goGcCycles"),
-					GoGCPause:         getFloat(resourceMap, "goGcPause"),
-					Uptime:            getString(resourceMap, "uptime"),
-					Load1:             getFloat(resourceMap, "load1"),
-					Load5:             getFloat(resourceMap, "load5"),
-					Load15:            getFloat(resourceMap, "load15"),
-					MaxJobs:           getInt(resourceMap, "maxJobs"),
-					CurrentJobs:       getInt(resourceMap, "currentJobs"),
-					AvailableSlots:    getInt(resourceMap, "availableSlots"),
-					MemoryTotalMB:     getInt(resourceMap, "memoryTotalMB"),
-					MemoryUsedMB:      getInt(resourceMap, "memoryUsedMB"),
-					MemoryAvailableMB: getInt(resourceMap, "memoryAvailableMB"),
+					NodeID:            utils.GetString(resourceMap, "nodeId"),
+					NodeName:          utils.GetString(resourceMap, "nodeName"),
+					Timestamp:         utils.GetTime(resourceMap, "timestamp"),
+					CPUCores:          utils.GetInt(resourceMap, "cpuCores"),
+					CPUUsage:          utils.GetFloat(resourceMap, "cpuUsage"),
+					CPUAvailable:      utils.GetFloat(resourceMap, "cpuAvailable"),
+					MemoryTotal:       utils.GetUint64(resourceMap, "memoryTotal"),
+					MemoryUsed:        utils.GetUint64(resourceMap, "memoryUsed"),
+					MemoryAvailable:   utils.GetUint64(resourceMap, "memoryAvailable"),
+					MemoryUsage:       utils.GetFloat(resourceMap, "memoryUsage"),
+					GoRoutines:        utils.GetInt(resourceMap, "goRoutines"),
+					GoMemAlloc:        utils.GetUint64(resourceMap, "goMemAlloc"),
+					GoMemSys:          utils.GetUint64(resourceMap, "goMemSys"),
+					GoGCCycles:        utils.GetUint32(resourceMap, "goGcCycles"),
+					GoGCPause:         utils.GetFloat(resourceMap, "goGcPause"),
+					Uptime:            utils.GetString(resourceMap, "uptime"),
+					Load1:             utils.GetFloat(resourceMap, "load1"),
+					Load5:             utils.GetFloat(resourceMap, "load5"),
+					Load15:            utils.GetFloat(resourceMap, "load15"),
+					MaxJobs:           utils.GetInt(resourceMap, "maxJobs"),
+					CurrentJobs:       utils.GetInt(resourceMap, "currentJobs"),
+					AvailableSlots:    utils.GetInt(resourceMap, "availableSlots"),
+					MemoryTotalMB:     utils.GetInt(resourceMap, "memoryTotalMB"),
+					MemoryUsedMB:      utils.GetInt(resourceMap, "memoryUsedMB"),
+					MemoryAvailableMB: utils.GetInt(resourceMap, "memoryAvailableMB"),
 				}
 				resources = append(resources, resource)
 			}
@@ -741,31 +489,31 @@ func (api *PrismAPIClient) GetNodeResources(nodeID string) (*NodeResources, erro
 	// Parse resource from the response data
 	if resourceMap, ok := response.Data.(map[string]interface{}); ok {
 		resource := &NodeResources{
-			NodeID:            getString(resourceMap, "nodeId"),
-			NodeName:          getString(resourceMap, "nodeName"),
-			Timestamp:         getTime(resourceMap, "timestamp"),
-			CPUCores:          getInt(resourceMap, "cpuCores"),
-			CPUUsage:          getFloat(resourceMap, "cpuUsage"),
-			CPUAvailable:      getFloat(resourceMap, "cpuAvailable"),
-			MemoryTotal:       getUint64(resourceMap, "memoryTotal"),
-			MemoryUsed:        getUint64(resourceMap, "memoryUsed"),
-			MemoryAvailable:   getUint64(resourceMap, "memoryAvailable"),
-			MemoryUsage:       getFloat(resourceMap, "memoryUsage"),
-			GoRoutines:        getInt(resourceMap, "goRoutines"),
-			GoMemAlloc:        getUint64(resourceMap, "goMemAlloc"),
-			GoMemSys:          getUint64(resourceMap, "goMemSys"),
-			GoGCCycles:        getUint32(resourceMap, "goGcCycles"),
-			GoGCPause:         getFloat(resourceMap, "goGcPause"),
-			Uptime:            getString(resourceMap, "uptime"),
-			Load1:             getFloat(resourceMap, "load1"),
-			Load5:             getFloat(resourceMap, "load5"),
-			Load15:            getFloat(resourceMap, "load15"),
-			MaxJobs:           getInt(resourceMap, "maxJobs"),
-			CurrentJobs:       getInt(resourceMap, "currentJobs"),
-			AvailableSlots:    getInt(resourceMap, "availableSlots"),
-			MemoryTotalMB:     getInt(resourceMap, "memoryTotalMB"),
-			MemoryUsedMB:      getInt(resourceMap, "memoryUsedMB"),
-			MemoryAvailableMB: getInt(resourceMap, "memoryAvailableMB"),
+			NodeID:            utils.GetString(resourceMap, "nodeId"),
+			NodeName:          utils.GetString(resourceMap, "nodeName"),
+			Timestamp:         utils.GetTime(resourceMap, "timestamp"),
+			CPUCores:          utils.GetInt(resourceMap, "cpuCores"),
+			CPUUsage:          utils.GetFloat(resourceMap, "cpuUsage"),
+			CPUAvailable:      utils.GetFloat(resourceMap, "cpuAvailable"),
+			MemoryTotal:       utils.GetUint64(resourceMap, "memoryTotal"),
+			MemoryUsed:        utils.GetUint64(resourceMap, "memoryUsed"),
+			MemoryAvailable:   utils.GetUint64(resourceMap, "memoryAvailable"),
+			MemoryUsage:       utils.GetFloat(resourceMap, "memoryUsage"),
+			GoRoutines:        utils.GetInt(resourceMap, "goRoutines"),
+			GoMemAlloc:        utils.GetUint64(resourceMap, "goMemAlloc"),
+			GoMemSys:          utils.GetUint64(resourceMap, "goMemSys"),
+			GoGCCycles:        utils.GetUint32(resourceMap, "goGcCycles"),
+			GoGCPause:         utils.GetFloat(resourceMap, "goGcPause"),
+			Uptime:            utils.GetString(resourceMap, "uptime"),
+			Load1:             utils.GetFloat(resourceMap, "load1"),
+			Load5:             utils.GetFloat(resourceMap, "load5"),
+			Load15:            utils.GetFloat(resourceMap, "load15"),
+			MaxJobs:           utils.GetInt(resourceMap, "maxJobs"),
+			CurrentJobs:       utils.GetInt(resourceMap, "currentJobs"),
+			AvailableSlots:    utils.GetInt(resourceMap, "availableSlots"),
+			MemoryTotalMB:     utils.GetInt(resourceMap, "memoryTotalMB"),
+			MemoryUsedMB:      utils.GetInt(resourceMap, "memoryUsedMB"),
+			MemoryAvailableMB: utils.GetInt(resourceMap, "memoryAvailableMB"),
 		}
 		return resource, nil
 	}
@@ -773,184 +521,21 @@ func (api *PrismAPIClient) GetNodeResources(nodeID string) (*NodeResources, erro
 	return nil, fmt.Errorf("unexpected response format for node resources")
 }
 
-// resolveNodeIdentifier resolves a node identifier (supports partial ID matching)
-func resolveNodeIdentifier(apiClient *PrismAPIClient, identifier string) (string, error) {
-	// Get all cluster members to check for partial ID matches
-	members, err := apiClient.GetMembers()
-	if err != nil {
-		return "", fmt.Errorf("failed to get cluster members for ID resolution: %w", err)
-	}
-
-	// Check for partial ID matches (only for identifiers that look like hex and have valid length)
-	if isHexString(identifier) && isValidPartialIDLength(identifier) {
-		var matches []ClusterMember
-		for _, member := range members {
-			if strings.HasPrefix(member.ID, identifier) {
-				matches = append(matches, member)
-			}
-		}
-
-		if len(matches) == 1 {
-			// Unique partial match found
-			logging.Info("Resolved partial ID '%s' to full ID '%s' (node: %s)",
-				identifier, matches[0].ID, matches[0].Name)
-			return matches[0].ID, nil
-		} else if len(matches) > 1 {
-			// Multiple matches - not unique
-			var matchIDs []string
-			for _, match := range matches {
-				matchIDs = append(matchIDs, fmt.Sprintf("%s (%s)", match.ID, match.Name))
-			}
-			logging.Error("Partial ID '%s' is not unique, matches multiple nodes:", identifier)
-			for _, matchID := range matchIDs {
-				logging.Error("  %s", matchID)
-			}
-			return "", fmt.Errorf("partial ID not unique")
-		}
-	}
-
-	// No partial match found, return original identifier
-	// (will be handled by the API as either full ID or node name)
-	return identifier, nil
-}
-
-// isHexString checks if a string contains only hexadecimal characters
-func isHexString(s string) bool {
-	if len(s) == 0 {
-		return false
-	}
-	for _, char := range s {
-		if !((char >= '0' && char <= '9') || (char >= 'a' && char <= 'f') || (char >= 'A' && char <= 'F')) {
-			return false
-		}
-	}
-	return true
-}
-
-// isValidPartialIDLength checks if a string has valid length for partial node ID matching
-func isValidPartialIDLength(s string) bool {
-	// Node IDs are 12 hex characters (6 bytes)
-	// Allow partial matching for inputs between 1-12 characters
-	// - Minimum 1 char (as requested)
-	// - Maximum 12 chars (full node ID length)
-	return len(s) >= 1 && len(s) <= 12
-}
-
-// getString safely extracts a string value from interface{} maps
-func getString(m map[string]interface{}, key string) string {
-	if val, ok := m[key].(string); ok {
-		return val
-	}
-	return ""
-}
-
-// getStringMap safely extracts a string map from interface{} maps
-func getStringMap(m map[string]interface{}, key string) map[string]string {
-	if val, ok := m[key].(map[string]interface{}); ok {
-		result := make(map[string]string)
-		for k, v := range val {
-			if str, ok := v.(string); ok {
-				result[k] = str
-			}
-		}
-		return result
-	}
-	return make(map[string]string)
-}
-
-// getIntMap safely extracts an int map from interface{} maps
-func getIntMap(m map[string]interface{}, key string) map[string]int {
-	if val, ok := m[key].(map[string]interface{}); ok {
-		result := make(map[string]int)
-		for k, v := range val {
-			if num, ok := v.(float64); ok {
-				result[k] = int(num)
-			}
-		}
-		return result
-	}
-	return make(map[string]int)
-}
-
-// getInt safely extracts an int value from interface{} maps
-func getInt(m map[string]interface{}, key string) int {
-	if val, ok := m[key].(float64); ok {
-		return int(val)
-	}
-	return 0
-}
-
-// getTime safely extracts a time value from interface{} maps
-func getTime(m map[string]interface{}, key string) time.Time {
-	if val, ok := m[key].(string); ok {
-		if t, err := time.Parse(time.RFC3339, val); err == nil {
-			return t
-		}
-	}
-	return time.Time{}
-}
-
-// getFloat safely extracts a float64 value from interface{} maps
-func getFloat(m map[string]interface{}, key string) float64 {
-	if val, ok := m[key].(float64); ok {
-		return val
-	}
-	return 0.0
-}
-
-// getUint64 safely extracts a uint64 value from interface{} maps
-func getUint64(m map[string]interface{}, key string) uint64 {
-	if val, ok := m[key].(float64); ok {
-		return uint64(val)
-	}
-	return 0
-}
-
-// getUint32 safely extracts a uint32 value from interface{} maps
-func getUint32(m map[string]interface{}, key string) uint32 {
-	if val, ok := m[key].(float64); ok {
-		return uint32(val)
-	}
-	return 0
-}
-
-// getBool safely extracts a bool value from interface{} maps
-func getBool(m map[string]interface{}, key string) bool {
-	if val, ok := m[key].(bool); ok {
-		return val
-	}
-	return false
-}
-
-// setupLogging sets up logging based on verbose flag and log level
-func setupLogging() {
-	if config.Verbose {
-		// Show verbose output - restore normal logging and enable DEBUG level
-		logging.RestoreOutput()
-		logging.SetLevel("DEBUG")
-	} else {
-		// Configure our application logging level first
-		logging.SetLevel(config.LogLevel)
-		// Suppress verbose output by default
-		logging.SuppressOutput()
-	}
-}
-
 // createAPIClient creates a new Prism API client
 func createAPIClient() *PrismAPIClient {
-	return NewPrismAPIClient(config.APIAddr, config.Timeout)
+	return NewPrismAPIClient(config.Global.APIAddr, config.Global.Timeout)
 }
 
 // filterMembers applies filters to a list of members
 func filterMembers(members []ClusterMember) []ClusterMember {
-	if nodeConfig.StatusFilter == "" {
+	if config.Node.StatusFilter == "" {
 		return members
 	}
 
 	var filtered []ClusterMember
 	for _, member := range members {
 		// Filter by status
-		if nodeConfig.StatusFilter != "" && member.Status != nodeConfig.StatusFilter {
+		if config.Node.StatusFilter != "" && member.Status != config.Node.StatusFilter {
 			continue
 		}
 
@@ -961,7 +546,7 @@ func filterMembers(members []ClusterMember) []ClusterMember {
 
 // filterResources applies filters to a list of node resources
 func filterResources(resources []NodeResources, members []ClusterMember) []NodeResources {
-	if nodeConfig.StatusFilter == "" {
+	if config.Node.StatusFilter == "" {
 		return resources
 	}
 
@@ -979,7 +564,7 @@ func filterResources(resources []NodeResources, members []ClusterMember) []NodeR
 		}
 
 		// Filter by status
-		if nodeConfig.StatusFilter != "" && member.Status != nodeConfig.StatusFilter {
+		if config.Node.StatusFilter != "" && member.Status != config.Node.StatusFilter {
 			continue
 		}
 
@@ -988,44 +573,9 @@ func filterResources(resources []NodeResources, members []ClusterMember) []NodeR
 	return filtered
 }
 
-// runWithWatch executes a function periodically until interrupted
-func runWithWatch(fn func() error) error {
-	if !nodeConfig.Watch {
-		return fn()
-	}
-
-	// Set up signal handling for graceful shutdown
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
-	// Create a ticker for periodic updates
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
-
-	// Clear screen and show initial data
-	fmt.Print("\033[2J\033[H") // Clear screen and move cursor to top
-	if err := fn(); err != nil {
-		return err
-	}
-
-	for {
-		select {
-		case <-ticker.C:
-			fmt.Print("\033[2J\033[H") // Clear screen and move cursor to top
-			if err := fn(); err != nil {
-				logging.Error("Error updating display: %v", err)
-				continue
-			}
-		case <-sigChan:
-			fmt.Println("\nWatch mode interrupted")
-			return nil
-		}
-	}
-}
-
 // handlePeerList handles peer ls command
 func handlePeerList(cmd *cobra.Command, args []string) error {
-	setupLogging()
+	utils.SetupLogging()
 
 	apiClient := createAPIClient()
 	resp, err := apiClient.GetRaftPeers()
@@ -1033,7 +583,7 @@ func handlePeerList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if config.Output == "json" {
+	if config.Global.Output == "json" {
 		encoder := json.NewEncoder(os.Stdout)
 		encoder.SetIndent("", "  ")
 		return encoder.Encode(resp)
@@ -1049,7 +599,7 @@ func handlePeerList(cmd *cobra.Command, args []string) error {
 	defer w.Flush()
 
 	// Header - show NAME column only in verbose mode, but always show LEADER
-	if config.Verbose {
+	if config.Global.Verbose {
 		fmt.Fprintln(w, "ID\tNAME\tADDRESS\tREACHABLE\tLEADER")
 	} else {
 		fmt.Fprintln(w, "ID\tADDRESS\tREACHABLE\tLEADER")
@@ -1063,7 +613,7 @@ func handlePeerList(cmd *cobra.Command, args []string) error {
 			leader = "true"
 		}
 
-		if config.Verbose {
+		if config.Global.Verbose {
 			fmt.Fprintf(w, "%s\t%s\t%s\t%t\t%s\n", p.ID, name, p.Address, p.Reachable, leader)
 		} else {
 			fmt.Fprintf(w, "%s\t%s\t%t\t%s\n", p.ID, p.Address, p.Reachable, leader)
@@ -1074,7 +624,7 @@ func handlePeerList(cmd *cobra.Command, args []string) error {
 
 // handlePeerInfo handles peer info command
 func handlePeerInfo(cmd *cobra.Command, args []string) error {
-	setupLogging()
+	utils.SetupLogging()
 
 	peerID := args[0]
 	apiClient := createAPIClient()
@@ -1096,7 +646,7 @@ func handlePeerInfo(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("peer '%s' not found in Raft configuration", peerID)
 	}
 
-	if config.Output == "json" {
+	if config.Global.Output == "json" {
 		encoder := json.NewEncoder(os.Stdout)
 		encoder.SetIndent("", "  ")
 		return encoder.Encode(targetPeer)
@@ -1126,10 +676,10 @@ func handlePeerInfo(cmd *cobra.Command, args []string) error {
 
 // handleMembers handles the node ls subcommand
 func handleMembers(cmd *cobra.Command, args []string) error {
-	setupLogging()
+	utils.SetupLogging()
 
 	fetchAndDisplayMembers := func() error {
-		logging.Info("Fetching cluster nodes from API server: %s", config.APIAddr)
+		logging.Info("Fetching cluster nodes from API server: %s", config.Global.APIAddr)
 
 		// Create API client and get members
 		apiClient := createAPIClient()
@@ -1142,20 +692,20 @@ func handleMembers(cmd *cobra.Command, args []string) error {
 		filtered := filterMembers(members)
 
 		displayMembersFromAPI(filtered)
-		if !nodeConfig.Watch {
+		if !config.Node.Watch {
 			logging.Success("Successfully retrieved %d cluster nodes (%d after filtering)", len(members), len(filtered))
 		}
 		return nil
 	}
 
-	return runWithWatch(fetchAndDisplayMembers)
+	return utils.RunWithWatch(fetchAndDisplayMembers, config.Node.Watch)
 }
 
 // handleClusterInfo handles the cluster info subcommand
 func handleClusterInfo(cmd *cobra.Command, args []string) error {
-	setupLogging()
+	utils.SetupLogging()
 
-	logging.Info("Fetching cluster information from API server: %s", config.APIAddr)
+	logging.Info("Fetching cluster information from API server: %s", config.Global.APIAddr)
 
 	// Create API client and get cluster info
 	apiClient := createAPIClient()
@@ -1171,10 +721,10 @@ func handleClusterInfo(cmd *cobra.Command, args []string) error {
 
 // handleNodeTop handles the node top subcommand (resource overview for all nodes)
 func handleNodeTop(cmd *cobra.Command, args []string) error {
-	setupLogging()
+	utils.SetupLogging()
 
 	fetchAndDisplayResources := func() error {
-		logging.Info("Fetching cluster node information from API server: %s", config.APIAddr)
+		logging.Info("Fetching cluster node information from API server: %s", config.Global.APIAddr)
 
 		// Create API client and get cluster resources
 		apiClient := createAPIClient()
@@ -1193,27 +743,27 @@ func handleNodeTop(cmd *cobra.Command, args []string) error {
 		filtered := filterResources(resources, members)
 
 		displayClusterResourcesFromAPI(filtered)
-		if !nodeConfig.Watch {
+		if !config.Node.Watch {
 			logging.Success("Successfully retrieved information for %d cluster nodes (%d after filtering)", len(resources), len(filtered))
 		}
 		return nil
 	}
 
-	return runWithWatch(fetchAndDisplayResources)
+	return utils.RunWithWatch(fetchAndDisplayResources, config.Node.Watch)
 }
 
 // handleNodeInfo handles the node info subcommand (detailed info for specific node)
 func handleNodeInfo(cmd *cobra.Command, args []string) error {
-	setupLogging()
+	utils.SetupLogging()
 
 	nodeIdentifier := args[0]
-	logging.Info("Fetching information for node '%s' from API server: %s", nodeIdentifier, config.APIAddr)
+	logging.Info("Fetching information for node '%s' from API server: %s", nodeIdentifier, config.Global.APIAddr)
 
 	// Create API client
 	apiClient := createAPIClient()
 
 	// Resolve partial ID if needed
-	resolvedNodeID, err := resolveNodeIdentifier(apiClient, nodeIdentifier)
+	resolvedNodeID, err := utils.ResolveNodeIdentifier(apiClient, nodeIdentifier)
 	if err != nil {
 		return err
 	}
@@ -1257,7 +807,7 @@ func handleNodeInfo(cmd *cobra.Command, args []string) error {
 // displayMembersFromAPI displays cluster nodes from API response, annotating the Raft leader
 func displayMembersFromAPI(members []ClusterMember) {
 	if len(members) == 0 {
-		if config.Output == "json" {
+		if config.Global.Output == "json" {
 			fmt.Println("[]")
 		} else {
 			fmt.Println("No cluster nodes found")
@@ -1270,7 +820,7 @@ func displayMembersFromAPI(members []ClusterMember) {
 		return members[i].Name < members[j].Name
 	})
 
-	if config.Output == "json" {
+	if config.Global.Output == "json" {
 		// JSON output
 		encoder := json.NewEncoder(os.Stdout)
 		encoder.SetIndent("", "  ")
@@ -1284,7 +834,7 @@ func displayMembersFromAPI(members []ClusterMember) {
 		defer w.Flush()
 
 		// Header - show SERF and RAFT columns only in verbose mode
-		if config.Verbose {
+		if config.Global.Verbose {
 			fmt.Fprintln(w, "ID\tNAME\tADDRESS\tSTATUS\tSERF\tRAFT\tLAST SEEN\tLEADER")
 		} else {
 			fmt.Fprintln(w, "ID\tNAME\tADDRESS\tSTATUS\tLAST SEEN")
@@ -1292,7 +842,7 @@ func displayMembersFromAPI(members []ClusterMember) {
 
 		// Display each member
 		for _, member := range members {
-			lastSeen := formatDuration(time.Since(member.LastSeen))
+			lastSeen := utils.FormatDuration(time.Since(member.LastSeen))
 			name := member.Name
 			leader := "false"
 			if member.IsLeader {
@@ -1300,7 +850,7 @@ func displayMembersFromAPI(members []ClusterMember) {
 				leader = "true"
 			}
 
-			if config.Verbose {
+			if config.Global.Verbose {
 				// Use the new three-state status values directly
 				serfStatus := member.SerfStatus
 				if serfStatus == "" {
@@ -1332,7 +882,7 @@ func displayMembersFromAPI(members []ClusterMember) {
 
 // displayClusterInfoFromAPI displays comprehensive cluster information from API response
 func displayClusterInfoFromAPI(info ClusterInfo) {
-	if config.Output == "json" {
+	if config.Global.Output == "json" {
 		// JSON output
 		encoder := json.NewEncoder(os.Stdout)
 		encoder.SetIndent("", "  ")
@@ -1347,7 +897,7 @@ func displayClusterInfoFromAPI(info ClusterInfo) {
 		if info.ClusterID != "" {
 			fmt.Printf("  Cluster ID:  %s\n", info.ClusterID)
 		}
-		fmt.Printf("  Uptime:      %s\n", formatDuration(info.Uptime))
+		fmt.Printf("  Uptime:      %s\n", utils.FormatDuration(info.Uptime))
 		if !info.StartTime.IsZero() {
 			fmt.Printf("  Started:     %s\n", info.StartTime.Format(time.RFC3339))
 		}
@@ -1363,7 +913,7 @@ func displayClusterInfoFromAPI(info ClusterInfo) {
 		fmt.Println()
 
 		// Show detailed member information in verbose mode
-		if config.Verbose && len(info.Members) > 0 {
+		if config.Global.Verbose && len(info.Members) > 0 {
 			fmt.Printf("Cluster Members:\n")
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 			defer w.Flush()
@@ -1371,7 +921,7 @@ func displayClusterInfoFromAPI(info ClusterInfo) {
 			fmt.Fprintln(w, "ID\tNAME\tADDRESS\tSTATUS\tSERF\tRAFT\tLAST SEEN")
 
 			for _, member := range info.Members {
-				lastSeen := formatDuration(time.Since(member.LastSeen))
+				lastSeen := utils.FormatDuration(time.Since(member.LastSeen))
 
 				serfStatus := member.SerfStatus
 				if serfStatus == "" {
@@ -1394,7 +944,7 @@ func displayClusterInfoFromAPI(info ClusterInfo) {
 // displayClusterResourcesFromAPI displays cluster node information from API response
 func displayClusterResourcesFromAPI(resources []NodeResources) {
 	if len(resources) == 0 {
-		if config.Output == "json" {
+		if config.Global.Output == "json" {
 			fmt.Println("[]")
 		} else {
 			fmt.Println("No cluster node information found")
@@ -1407,7 +957,7 @@ func displayClusterResourcesFromAPI(resources []NodeResources) {
 		return resources[i].NodeName < resources[j].NodeName
 	})
 
-	if config.Output == "json" {
+	if config.Global.Output == "json" {
 		// JSON output
 		encoder := json.NewEncoder(os.Stdout)
 		encoder.SetIndent("", "  ")
@@ -1421,7 +971,7 @@ func displayClusterResourcesFromAPI(resources []NodeResources) {
 		defer w.Flush()
 
 		// Header
-		if nodeConfig.Verbose {
+		if config.Node.Verbose {
 			fmt.Fprintln(w, "ID\tNAME\tCPU\tMEMORY\tJOBS\tUPTIME\tGOROUTINES")
 		} else {
 			fmt.Fprintln(w, "ID\tNAME\tCPU\tMEMORY\tJOBS\tUPTIME")
@@ -1435,7 +985,7 @@ func displayClusterResourcesFromAPI(resources []NodeResources) {
 				resource.MemoryUsage)
 			jobs := fmt.Sprintf("%d/%d", resource.CurrentJobs, resource.MaxJobs)
 
-			if nodeConfig.Verbose {
+			if config.Node.Verbose {
 				fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%d\n",
 					resource.NodeID,
 					resource.NodeName,
@@ -1460,7 +1010,7 @@ func displayClusterResourcesFromAPI(resources []NodeResources) {
 // displayNodeInfo displays detailed information for a single node
 // isLeader indicates whether this node is the current Raft leader
 func displayNodeInfo(resource NodeResources, isLeader bool, health *NodeHealth, address string, tags map[string]string) {
-	if config.Output == "json" {
+	if config.Global.Output == "json" {
 		// JSON output
 		obj := map[string]interface{}{
 			"resource": resource,
@@ -1554,7 +1104,7 @@ func displayNodeInfo(resource NodeResources, isLeader bool, health *NodeHealth, 
 		fmt.Printf("  Available Slots: %d\n", resource.AvailableSlots)
 
 		// Only show Runtime and Health sections in verbose mode
-		if nodeConfig.Verbose {
+		if config.Node.Verbose {
 			fmt.Println()
 
 			// Runtime Information
@@ -1611,19 +1161,19 @@ func (api *PrismAPIClient) GetNodeHealth(nodeID string) (*NodeHealth, error) {
 
 	if m, ok := response.Data.(map[string]interface{}); ok {
 		nh := &NodeHealth{
-			NodeID:    getString(m, "nodeId"),
-			NodeName:  getString(m, "nodeName"),
-			Timestamp: getTime(m, "timestamp"),
-			Status:    getString(m, "status"),
+			NodeID:    utils.GetString(m, "nodeId"),
+			NodeName:  utils.GetString(m, "nodeName"),
+			Timestamp: utils.GetTime(m, "timestamp"),
+			Status:    utils.GetString(m, "status"),
 		}
 		if arr, ok := m["checks"].([]interface{}); ok {
 			for _, it := range arr {
 				if cm, ok := it.(map[string]interface{}); ok {
 					nh.Checks = append(nh.Checks, HealthCheck{
-						Name:      getString(cm, "name"),
-						Status:    getString(cm, "status"),
-						Message:   getString(cm, "message"),
-						Timestamp: getTime(cm, "timestamp"),
+						Name:      utils.GetString(cm, "name"),
+						Status:    utils.GetString(cm, "status"),
+						Message:   utils.GetString(cm, "message"),
+						Timestamp: utils.GetTime(cm, "timestamp"),
 					})
 				}
 			}
@@ -1634,22 +1184,9 @@ func (api *PrismAPIClient) GetNodeHealth(nodeID string) (*NodeHealth, error) {
 	return nil, fmt.Errorf("unexpected response format for node health")
 }
 
-// formatDuration formats a duration in human-readable format
-func formatDuration(d time.Duration) string {
-	if d < time.Minute {
-		return fmt.Sprintf("%ds", int(d.Seconds()))
-	} else if d < time.Hour {
-		return fmt.Sprintf("%dm", int(d.Minutes()))
-	} else if d < 24*time.Hour {
-		return fmt.Sprintf("%dh", int(d.Hours()))
-	} else {
-		return fmt.Sprintf("%dd", int(d.Hours()/24))
-	}
-}
-
 // main is the main entry point
 func main() {
-	if err := rootCmd.Execute(); err != nil {
+	if err := commands.RootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
 }

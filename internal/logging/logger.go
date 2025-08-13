@@ -1,3 +1,26 @@
+// Package logging provides structured, colorful logging utilities for Prism cluster
+// operations, ensuring consistent log formatting and visual clarity across all
+// distributed system components.
+//
+// Implements a unified logging interface that standardizes log output from the
+// main application, CLI tools, and integrated third-party libraries (Serf, Raft).
+// Uses color-coded log levels and consistent timestamp formatting to improve
+// operational visibility and debugging efficiency.
+//
+// LOGGING FEATURES:
+//   - Color-coded levels: DEBUG (purple), INFO (blue), WARN (yellow), ERROR (red), SUCCESS (green)
+//   - Log interception: Intercepts and reformats Serf and Raft library logs with custom writers
+//   - Flexible output: Configurable log levels and output suppression for CLI tools
+//   - Standard redirection: Routes standard library logs through the unified system
+//
+// INTEGRATION SUPPORT:
+// Provides specialized writers for integrating external libraries that expect
+// io.Writer interfaces, ensuring all cluster components use consistent logging
+// formats and color schemes for improved operational experience.
+//
+// Used throughout the cluster for daemon operations, CLI commands, and all
+// internal components to maintain consistent logging across the distributed system.
+
 package logging
 
 import (
@@ -26,7 +49,8 @@ var (
 	cliConfigured = false
 )
 
-// setupCustomStyles configures custom colors for log levels
+// setupCustomStyles configures custom color schemes for log levels to improve
+// visual distinction during cluster monitoring and debugging.
 func setupCustomStyles() *log.Styles {
 	styles := log.DefaultStyles()
 
@@ -53,32 +77,30 @@ func setupCustomStyles() *log.Styles {
 	return styles
 }
 
-// init sets up custom colors on package initialization
+// init sets up custom color styling on package initialization for consistent
+// visual formatting across all cluster logging output.
 func init() {
 	logger.SetStyles(setupCustomStyles())
 }
 
-// Info logs an informational message in light blue
+// Info logs informational messages for cluster operations and status updates.
 func Info(format string, v ...interface{}) {
 	logger.Info(fmt.Sprintf(format, v...))
 }
 
-// Warn logs a warning message in light yellow
+// Warn logs warning messages for non-critical issues requiring attention.
 func Warn(format string, v ...interface{}) {
 	logger.Warn(fmt.Sprintf(format, v...))
 }
 
-// Error logs an error message in light red
+// Error logs error messages for failures and critical issues in cluster operations.
 func Error(format string, v ...interface{}) {
 	logger.Error(fmt.Sprintf(format, v...))
 }
 
-// Success logs a success message in light green (using Info level with custom styling)
-//
-// Since the logging library doesn't have a native SUCCESS level, we "fake" it by:
-// 1. Using INFO level internally (so SUCCESS respects INFO level filtering)
-// 2. Creating a temporary logger with custom styling to display "SUCCESS" in light green
-// 3. This ensures SUCCESS messages are suppressed when INFO is disabled
+// Success logs successful operations in green using INFO level with custom styling.
+// Implements a custom SUCCESS level that respects INFO level filtering by creating
+// a temporary logger with green styling while maintaining proper log level hierarchy.
 func Success(format string, v ...interface{}) {
 	// Check if INFO level logs are enabled (Success uses INFO level internally)
 	if logger.GetLevel() > log.InfoLevel {
@@ -102,12 +124,12 @@ func Success(format string, v ...interface{}) {
 	tempLogger.Info(fmt.Sprintf(format, v...))
 }
 
-// Debug logs a debug message in light purple
+// Debug logs detailed debugging information for development and troubleshooting.
 func Debug(format string, v ...interface{}) {
 	logger.Debug(fmt.Sprintf(format, v...))
 }
 
-// SetLevel configures the logging level
+// SetLevel configures the minimum logging level for filtering log output.
 func SetLevel(level string) {
 	switch level {
 	case "DEBUG":
@@ -123,8 +145,10 @@ func SetLevel(level string) {
 	}
 }
 
-// SetOutput configures where logs are written (for suppressing output).
-// SetOutput accepts nil or os.DevNull equivalent to suppress output.
+// SetOutput configures where logs are written, accepting nil to suppress output.
+// When nil is passed, sets logging level high to effectively disable output.
+//
+// Used by CLI tools to redirect logs to files or discard them completely.
 func SetOutput(w *os.File) {
 	if w == nil {
 		// Suppress output by setting level to a high value
@@ -138,13 +162,17 @@ func SetOutput(w *os.File) {
 	}
 }
 
-// SuppressOutput disables INFO/WARN/DEBUG logs but keeps ERROR logs visible
+// SuppressOutput disables INFO/WARN/DEBUG logs while keeping ERROR logs visible.
+// Used by CLI tools to reduce output noise during normal operations.
 func SuppressOutput() {
 	logger.SetLevel(log.ErrorLevel) // Only show ERROR level and above
 	cliConfigured = true
 }
 
-// RestoreOutput restores normal logging to stderr (INFO level and above)
+// RestoreOutput restores normal logging to stderr at INFO level and above.
+// Recreates the logger with default settings and custom color styling.
+//
+// Used by CLI tools to re-enable logging after suppression during operations.
 func RestoreOutput() {
 	logger = log.NewWithOptions(os.Stderr, log.Options{
 		ReportTimestamp: true,
@@ -155,19 +183,23 @@ func RestoreOutput() {
 	cliConfigured = true
 }
 
-// IsConfiguredByCLI returns true if logging has been explicitly configured by CLI tools
+// IsConfiguredByCLI returns true if logging has been explicitly configured by CLI tools.
 func IsConfiguredByCLI() bool {
 	return cliConfigured
 }
 
-// ColorfulSerfWriter is a custom writer that captures Serf library logs
-// and routes them through our colorful logging system
+// ============================================================================
+// SERF LOG INTEGRATION - Capture and reformat Serf library logs
+// ============================================================================
+
+// ColorfulSerfWriter captures Serf library logs and routes them through the
+// unified colorful logging system for consistent cluster log formatting.
 type ColorfulSerfWriter struct {
 	reader *io.PipeReader
 	writer *io.PipeWriter
 }
 
-// NewColorfulSerfWriter creates a new colorful writer for Serf logs
+// NewColorfulSerfWriter creates a new writer for capturing and reformatting Serf logs.
 func NewColorfulSerfWriter() *ColorfulSerfWriter {
 	r, w := io.Pipe()
 	csw := &ColorfulSerfWriter{
@@ -181,17 +213,21 @@ func NewColorfulSerfWriter() *ColorfulSerfWriter {
 	return csw
 }
 
-// Write implements io.Writer interface
+// Write implements io.Writer interface for capturing Serf log output.
 func (csw *ColorfulSerfWriter) Write(p []byte) (n int, err error) {
 	return csw.writer.Write(p)
 }
 
-// Close closes the writer
+// Close closes the writer and stops log processing.
 func (csw *ColorfulSerfWriter) Close() error {
 	return csw.writer.Close()
 }
 
-// processLogs reads from the pipe and routes logs through colorful logging
+// processLogs parses Serf log lines and routes them through the colorful logging system.
+// Runs in a background goroutine to continuously process logs from the Serf library.
+// Extracts log levels from Serf's format and re-emits through our colored logger with "serf:" prefix.
+//
+// Essential for maintaining consistent log formatting across all cluster components.
 func (csw *ColorfulSerfWriter) processLogs() {
 	scanner := bufio.NewScanner(csw.reader)
 
@@ -237,19 +273,18 @@ func (csw *ColorfulSerfWriter) processLogs() {
 	}
 }
 
-// ColorfulRaftWriter captures HashiCorp Raft logs and routes them through our logging system
-// The Raft library typically emits lines like:
-//
-//	2024/01/02 15:04:05 [WARN] raft: heartbeat timeout reached, starting election
-//
-// We parse the level token and re-emit via our colored logger.
-// TODO: Deduplicate with ColorfulSerfWriter by creating a generic component log writer.
+// ============================================================================
+// RAFT LOG INTEGRATION - Capture and reformat Raft library logs
+// ============================================================================
+
+// ColorfulRaftWriter captures Raft library logs and routes them through the
+// unified colorful logging system for consistent cluster log formatting.
 type ColorfulRaftWriter struct {
 	reader *io.PipeReader
 	writer *io.PipeWriter
 }
 
-// NewColorfulRaftWriter creates a new colorful writer for Raft logs
+// NewColorfulRaftWriter creates a new writer for capturing and reformatting Raft logs.
 func NewColorfulRaftWriter() *ColorfulRaftWriter {
 	r, w := io.Pipe()
 	crw := &ColorfulRaftWriter{
@@ -261,17 +296,21 @@ func NewColorfulRaftWriter() *ColorfulRaftWriter {
 	return crw
 }
 
-// Write implements io.Writer
+// Write implements io.Writer interface for capturing Raft log output.
 func (crw *ColorfulRaftWriter) Write(p []byte) (n int, err error) {
 	return crw.writer.Write(p)
 }
 
-// Close closes the writer
+// Close closes the writer and stops log processing.
 func (crw *ColorfulRaftWriter) Close() error {
 	return crw.writer.Close()
 }
 
-// processLogs parses and re-routes Raft logs
+// processLogs parses Raft log lines and routes them through the colorful logging system.
+// Runs in a background goroutine to continuously process logs from the Raft library.
+// Handles multiple Raft log formats and extracts levels to re-emit through our colored logger.
+//
+// Essential for maintaining consistent log formatting across all cluster components.
 func (crw *ColorfulRaftWriter) processLogs() {
 	scanner := bufio.NewScanner(crw.reader)
 
@@ -332,20 +371,27 @@ func (crw *ColorfulRaftWriter) processLogs() {
 	}
 }
 
-// LevelWriter is a simple io.Writer that forwards lines to a specific log level with an optional prefix
-// Useful for integrating third-party libraries (Gin, gRPC) that expect io.Writer sinks.
+// ============================================================================
+// GENERIC LOG INTEGRATION - General purpose writers for third-party libraries
+// ============================================================================
+
+// LevelWriter forwards log lines to a specific log level with optional prefix.
+// Useful for integrating third-party libraries that expect io.Writer interfaces.
 type LevelWriter struct {
 	level  string
 	prefix string
 }
 
-// NewLevelWriter creates a writer that logs each line at the specified level with a prefix.
+// NewLevelWriter creates a writer that logs each line at the specified level with prefix.
 // Valid levels: DEBUG, INFO, WARN, ERROR
 func NewLevelWriter(level, prefix string) io.Writer {
 	return &LevelWriter{level: strings.ToUpper(level), prefix: prefix}
 }
 
-// Write implements io.Writer by splitting input into lines and logging each
+// Write implements io.Writer by splitting input into lines and logging each at the configured level.
+// Processes each line separately and routes through the appropriate log level function.
+//
+// Essential for integrating external libraries into our unified logging system.
 func (w *LevelWriter) Write(p []byte) (int, error) {
 	text := string(p)
 	lines := strings.Split(text, "\n")
@@ -375,10 +421,8 @@ func (w *LevelWriter) Write(p []byte) (int, error) {
 }
 
 // RedirectStandardLog redirects Go's standard library logger output to the provided writer.
-// This helps capture logs from dependencies that use the global logger (e.g., raft-boltdb)
-// and route them through our logging pipeline.
-// Passing nil will discard standard log output.
-// TODO: Consider scoping redirection per component if needed in future.
+// Captures logs from dependencies that use the global logger and routes them through
+// the unified logging pipeline. Passing nil discards standard log output.
 func RedirectStandardLog(w io.Writer) {
 	if w == nil {
 		stdlog.SetOutput(io.Discard)

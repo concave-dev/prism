@@ -20,8 +20,8 @@ This aligns with [Concave's mission](https://concave.dev/) to build unified infr
 ## Build
 
 ```bash
-go build -o bin/prismd cmd/prismd/main.go
-go build -o bin/prismctl cmd/prismctl/main.go
+go build -o bin/prismd ./cmd/prismd
+go build -o bin/prismctl ./cmd/prismctl
 ```
 
 ## Usage
@@ -36,6 +36,9 @@ Start the daemon:
 
 # Join second node to existing cluster
 ./bin/prismd --join=192.168.1.100:4200 --serf=0.0.0.0:4201 --name=second-node
+
+# Enable debug mode for development (verbose logging and detailed HTTP output)
+DEBUG=true ./bin/prismd --serf=0.0.0.0:4200 --bootstrap --name=first-node
 ```
 
 Use the CLI:
@@ -54,6 +57,9 @@ Use the CLI:
 
 # Connect to remote cluster
 ./bin/prismctl --api=127.0.0.1:8008 info
+
+# Enable debug output for CLI operations
+DEBUG=true ./bin/prismctl info
 ```
 
 ## Implementation Status
@@ -89,18 +95,18 @@ Use the CLI:
 
 ## Known Issues
 
-- **Raft peer lifecycle vs Serf membership:** Peers are added/removed by the Raft leader in response to Serf events. If this node is not the leader or events are dropped, stale peers can remain after a node leaves/fails until the leader reconciles.
-- **Resource queries (gRPC-first):** Cluster resource aggregation now queries each node via gRPC for speed and consistency, with Serf `get-resources` as a fallback if gRPC fails. Gossip fallback can be slower and partial under timeouts; not a strongly consistent snapshot.
-- **Resource aggregation delays on failures:** Aggregation counts all known members; failed nodes are included until reaped, so calls may wait for timeout before returning.
 - **Security (no TLS/Auth):** HTTP API and gRPC are plaintext with no authentication/authorization; Serf gossip is unencrypted (no keyring configured).
-- **Metrics completeness:** CPU usage, load averages, and job accounting are placeholders; reported metrics are not yet suitable for scheduling decisions.
-- **Event backpressure risk:** External event forwarding can drop events when `ConsumerEventCh` is saturated, which may delay Raft peer reconciliation on non-leader nodes.
-- **Serf reap delay:** Reaping of dead members is time-based. Large `DeadNodeReclaimTime` can delay full cleanup and UI/CLI visibility.
-- **Tag drift risk:** Raft/gRPC peer discovery relies on Serf tags (`raft_port`, `grpc_port`). Misconfigured/missing tags prevent peer wiring and may require manual correction.
-- **Data at rest:** Raft logs/snapshots and local state are stored unencrypted by default in `./data`.
-- **Minimum 3+ Nodes Required:** Clusters with fewer than 3 nodes lose fault tolerance and behave unpredictably. With 1 node: no fault tolerance (if it dies, cluster is down). With 2 nodes: no fault tolerance (if either dies, cluster loses quorum). **Recommendation:** Always deploy 3+ nodes (preferably odd numbers: 3, 5, 7) for meaningful fault tolerance.
-- **Quorum Loss Recovery:** If majority of nodes fail, new nodes cannot join the cluster without manual intervention. The cluster will detect deadlock and provide recovery guidance, but operators must either restart dead nodes or rebuild from backup. Adding new nodes to a quorum-less cluster will fail with "rejecting pre-vote request since node is not in configuration" errors.
-- **Node Identity vs Data Persistence:** Killed nodes that restart with the same data directory get fresh identities (new ID/name) but recover Raft log state. This prevents split-brain but means node identity is ephemeral while consensus state persists.
-- **Split Brain Risk:** Network partitions can cause Raft leadership conflicts. Use odd-numbered clusters (3+) for proper quorum.
-- **Network Connectivity:** Nodes behind NAT or firewalls may fail to join. Ensure gossip ports are accessible between all nodes.
 - **Bootstrap Race Conditions:** The current `--bootstrap` flag creates single-node clusters that become leader immediately, risking split-brain scenarios if multiple nodes bootstrap. **Recommendation:** Adopt a bootstrap-expect-style approach where nodes wait for expected quorum before forming a cluster — planned; not yet implemented.
+- **Split Brain Risk:** Network partitions can cause Raft leadership conflicts. Use odd-numbered clusters (3+) for proper quorum.
+- **Quorum Loss Recovery:** If majority of nodes fail, new nodes cannot join the cluster without manual intervention. The cluster will detect deadlock and provide recovery guidance, but operators must either restart dead nodes or rebuild from backup. Adding new nodes to a quorum-less cluster will fail with "rejecting pre-vote request since node is not in configuration" errors.
+- **Minimum 3+ Nodes Required:** Clusters with fewer than 3 nodes lose fault tolerance and behave unpredictably. With 1 node: no fault tolerance (if it dies, cluster is down). With 2 nodes: no fault tolerance (if either dies, cluster loses quorum). **Recommendation:** Always deploy 3+ nodes (preferably odd numbers: 3, 5, 7) for meaningful fault tolerance.
+- **Event backpressure risk:** External event forwarding can drop events when `ConsumerEventCh` is saturated, which may delay Raft peer reconciliation on non-leader nodes.
+- **Raft peer lifecycle vs Serf membership:** Peers are added/removed by the Raft leader in response to Serf events. If this node is not the leader or events are dropped, stale peers can remain after a node leaves/fails until the leader reconciles.
+- **Tag drift risk:** Raft/gRPC peer discovery relies on Serf tags (`raft_port`, `grpc_port`). Misconfigured/missing tags prevent peer wiring and may require manual correction.
+- **Node Identity vs Data Persistence:** Killed nodes that restart with the same data directory get fresh identities (new ID/name) but recover Raft log state. This prevents split-brain but means node identity is ephemeral while consensus state persists.
+- **Resource aggregation delays on failures:** Aggregation counts all known members; failed nodes are included until reaped, so calls may wait for timeout before returning.
+- **Serf reap delay:** Reaping of dead members is time-based. Large `DeadNodeReclaimTime` can delay full cleanup and UI/CLI visibility.
+- **Resource queries (gRPC-first):** Cluster resource aggregation now queries each node via gRPC for speed and consistency, with Serf `get-resources` as a fallback if gRPC fails. Gossip fallback can be slower and partial under timeouts; not a strongly consistent snapshot.
+- **Network Connectivity:** Nodes behind NAT or firewalls may fail to join. Ensure gossip ports are accessible between all nodes.
+- **Metrics completeness:** CPU usage, load averages, and job accounting are placeholders; reported metrics are not yet suitable for scheduling decisions.
+- **0.0.0.0 Bind Address Limitation:** When `0.0.0.0` is specified as a bind address, the system doesn't truly bind to all network interfaces. Instead, it resolves to a single IP address by determining which local interface can reach external networks (via 8.8.8.8). This works for most setups but may bind to unexpected interfaces on multi-homed servers or fail in offline environments where it falls back to 127.0.0.1.

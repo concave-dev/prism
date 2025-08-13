@@ -1,6 +1,21 @@
-// Package api provides HTTP API server for Prism cluster management.
-// This server exposes cluster information via REST endpoints, allowing
-// CLI tools to query cluster state without joining as temporary nodes.
+// Package api provides HTTP API server implementation for Prism cluster management.
+//
+// This file implements the core HTTP server that exposes cluster information and
+// management capabilities through REST endpoints. The server acts as a bridge
+// between Prism's internal distributed system components and external management
+// tools, allowing CLI applications and monitoring systems to query cluster state
+// without requiring full cluster membership.
+//
+// The server integrates with multiple distributed system components:
+//   - Serf for cluster membership and node discovery
+//   - Raft for consensus protocol status and leader information
+//   - gRPC client pool for inter-node communication and resource queries
+//   - Structured logging system for observability and debugging
+//
+// Server lifecycle management includes graceful startup with binding validation,
+// middleware configuration for cross-cutting concerns, and clean shutdown handling
+// to ensure proper resource cleanup during daemon termination or restarts.
+
 package api
 
 import (
@@ -8,6 +23,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/concave-dev/prism/internal/api/handlers"
@@ -18,20 +34,32 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Represents the Prism API server
+// Server represents the HTTP API server for cluster management operations.
+//
+// This struct encapsulates all components required to run the REST API server
+// that provides external access to cluster state and distributed system information.
+// The server maintains references to core cluster services and HTTP configuration
+// needed for proper API operation and client request handling.
 type Server struct {
-	serfManager    *serf.SerfManager
-	raftManager    *raft.RaftManager
-	grpcClientPool *grpc.ClientPool
-	httpServer     *http.Server
-	bindAddr       string
-	bindPort       int
+	serfManager    *serf.SerfManager // Cluster membership and gossip protocol manager
+	raftManager    *raft.RaftManager // Consensus protocol and leader election manager
+	grpcClientPool *grpc.ClientPool  // Inter-node communication client pool
+	httpServer     *http.Server      // HTTP server instance for request handling
+	bindAddr       string            // Network address for HTTP server binding
+	bindPort       int               // Network port for HTTP server binding
 }
 
-// NewServer creates a new Prism API server instance
+// NewServer creates a new Server instance from the provided configuration.
+//
+// Initializes the HTTP API server with all required distributed system components
+// and configures Gin mode based on DEBUG environment variable for optimal development experience.
 func NewServer(config *Config) *Server {
-	// Set Gin to release mode for production
-	gin.SetMode(gin.ReleaseMode)
+	// Set Gin mode based on DEBUG environment variable
+	if os.Getenv("DEBUG") == "true" {
+		gin.SetMode(gin.DebugMode)
+	} else {
+		gin.SetMode(gin.ReleaseMode)
+	}
 
 	return &Server{
 		serfManager:    config.SerfManager,
@@ -42,7 +70,11 @@ func NewServer(config *Config) *Server {
 	}
 }
 
-// Start starts the Prism API server
+// Start initializes and starts the HTTP API server with middleware and routing.
+//
+// Configures the complete HTTP server stack including logging, CORS, recovery middleware,
+// and all REST endpoints. Performs binding validation before starting to catch configuration
+// errors early and prevent runtime failures during cluster operation.
 func (s *Server) Start() error {
 	logging.Info("Starting HTTP API server on %s:%d", s.bindAddr, s.bindPort)
 
@@ -92,7 +124,10 @@ func (s *Server) Start() error {
 	return nil
 }
 
-// Shutdown gracefully shuts down the HTTP server
+// Shutdown gracefully stops the HTTP server using the provided context.
+//
+// Ensures clean server shutdown to prevent connection leaks and allow in-flight
+// requests to complete before daemon termination.
 func (s *Server) Shutdown(ctx context.Context) error {
 	logging.Info("Shutting down HTTP API server...")
 
@@ -108,101 +143,101 @@ var (
 	version   = "0.1.0-dev" // Version information
 )
 
-// handleHealth delegates to handlers.HandleHealth
+// handleHealth provides server health status endpoint.
 func (s *Server) handleHealth(c *gin.Context) {
 	handler := s.getHandlerHealth()
 	handler(c)
 }
 
-// getHandlerHealth is a health endpoint handler factory
+// getHandlerHealth creates health endpoint handler with version and uptime data.
 func (s *Server) getHandlerHealth() gin.HandlerFunc {
 	return handlers.HandleHealth(version, startTime)
 }
 
-// handleMembers delegates to handlers.HandleMembers
+// handleMembers provides cluster membership information endpoint.
 func (s *Server) handleMembers(c *gin.Context) {
 	handler := s.getHandlerMembers()
 	handler(c)
 }
 
-// getHandlerMembers is a members endpoint handler factory
+// getHandlerMembers creates members endpoint handler with cluster managers.
 func (s *Server) getHandlerMembers() gin.HandlerFunc {
 	return handlers.HandleMembers(s.serfManager, s.raftManager)
 }
 
-// handleClusterInfo delegates to handlers.HandleClusterInfo
+// handleClusterInfo provides comprehensive cluster status endpoint.
 func (s *Server) handleClusterInfo(c *gin.Context) {
 	handler := s.getHandlerClusterInfo()
 	handler(c)
 }
 
-// getHandlerClusterInfo is a cluster info endpoint handler factory
+// getHandlerClusterInfo creates cluster info handler with all cluster data.
 func (s *Server) getHandlerClusterInfo() gin.HandlerFunc {
 	return handlers.HandleClusterInfo(s.serfManager, s.raftManager, version, startTime)
 }
 
-// handleNodes delegates to handlers.HandleNodes
+// handleNodes provides list of all cluster nodes endpoint.
 func (s *Server) handleNodes(c *gin.Context) {
 	handler := s.getHandlerNodes()
 	handler(c)
 }
 
-// getHandlerNodes is a nodes endpoint handler factory
+// getHandlerNodes creates nodes list handler with cluster managers.
 func (s *Server) getHandlerNodes() gin.HandlerFunc {
 	return handlers.HandleNodes(s.serfManager, s.raftManager)
 }
 
-// handleNodeByID delegates to handlers.HandleNodeByID
+// handleNodeByID provides individual node information endpoint.
 func (s *Server) handleNodeByID(c *gin.Context) {
 	handler := s.getHandlerNodeByID()
 	handler(c)
 }
 
-// getHandlerNodeByID is a node by ID endpoint handler factory
+// getHandlerNodeByID creates node detail handler with cluster managers.
 func (s *Server) getHandlerNodeByID() gin.HandlerFunc {
 	return handlers.HandleNodeByID(s.serfManager, s.raftManager)
 }
 
-// handleClusterResources delegates to handlers.HandleClusterResources
+// handleClusterResources provides aggregated cluster resource information endpoint.
 func (s *Server) handleClusterResources(c *gin.Context) {
 	handler := s.getHandlerClusterResources()
 	handler(c)
 }
 
-// getHandlerClusterResources is a cluster resources endpoint handler factory
+// getHandlerClusterResources creates cluster resources handler with gRPC and Serf.
 func (s *Server) getHandlerClusterResources() gin.HandlerFunc {
 	return handlers.HandleClusterResources(s.grpcClientPool, s.serfManager)
 }
 
-// handleNodeResources delegates to handlers.HandleNodeResources
+// handleNodeResources provides individual node resource information endpoint.
 func (s *Server) handleNodeResources(c *gin.Context) {
 	handler := s.getHandlerNodeResources()
 	handler(c)
 }
 
-// getHandlerNodeResources is a node resources endpoint handler factory
+// getHandlerNodeResources creates node resources handler with gRPC and Serf.
 func (s *Server) getHandlerNodeResources() gin.HandlerFunc {
 	return handlers.HandleNodeResources(s.grpcClientPool, s.serfManager)
 }
 
-// handleNodeHealth delegates to handlers.HandleNodeHealth
+// handleNodeHealth provides individual node health status endpoint.
 func (s *Server) handleNodeHealth(c *gin.Context) {
 	handler := s.getHandlerNodeHealth()
 	handler(c)
 }
 
-// getHandlerNodeHealth is a node health endpoint handler factory
+// getHandlerNodeHealth creates node health handler with gRPC and Serf.
 func (s *Server) getHandlerNodeHealth() gin.HandlerFunc {
 	return handlers.HandleNodeHealth(s.grpcClientPool, s.serfManager)
 }
 
-// handleRaftPeers delegates to handlers.HandleRaftPeers
+// handleRaftPeers provides Raft consensus peer information endpoint.
 func (s *Server) handleRaftPeers(c *gin.Context) {
 	handler := s.getHandlerRaftPeers()
 	handler(c)
 }
 
-// getHandlerRaftPeers is a raft peers endpoint handler factory
+// getHandlerRaftPeers creates Raft peers handler with cluster managers.
 func (s *Server) getHandlerRaftPeers() gin.HandlerFunc {
 	return handlers.HandleRaftPeers(s.serfManager, s.raftManager)
 }

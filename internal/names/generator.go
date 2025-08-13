@@ -1,7 +1,32 @@
-// Package names provides thematic name generation for Prism nodes.
-// Generates human-readable names in the format "adjective-noun" from multiple themes:
-// animals, space/astronomy, mythology, tech/computing, and elements/minerals.
+// Package names provides comprehensive thematic name generation for Prism cluster nodes
+// in distributed orchestration environments, delivering human-readable identifiers that
+// enhance cluster management and operational visibility.
+//
+// This package implements a robust naming system that generates memorable node identifiers
+// in Docker-style "adjective-noun" format, drawing from diverse thematic vocabularies to
+// ensure both uniqueness and semantic meaning. The naming system supports the operational
+// requirement for easily identifiable nodes in complex distributed deployments.
+//
+// THEMATIC VOCABULARY SOURCES:
+// The generator combines multiple themed word collections to create distinctive names:
+//
+//   - General Descriptive: Docker-inspired adjectives for familiar naming patterns
+//   - Space/Astronomical: Cosmic terminology for nodes handling compute workloads
+//   - Mythology: Legendary references for memorable identification in large clusters
+//   - Technology/Computing: Technical terms aligned with the orchestration domain
+//   - Elements/Minerals: Scientific nomenclature for systematic node classification
+//
+// NAME GENERATION STRATEGY:
+// Uses secure random selection for unpredictable name patterns. Implements collision
+// detection for bulk generation scenarios while maintaining performance for single requests.
+//
+// OPERATIONAL INTEGRATION:
+// Generated names serve as primary node identifiers in cluster communications, logging,
+// and administrative interfaces. The human-readable format reduces operational overhead
+// by enabling intuitive node recognition compared to UUID-based identification systems.
+//
 // Examples: "cosmic-dragon", "quantum-nebula", "divine-titanium", "neural-phoenix"
+
 package names
 
 import (
@@ -132,14 +157,24 @@ var nouns = []string{
 	"topaz", "amethyst", "garnet", "jade", "opal",
 }
 
-// Generate generates a random Docker-like name in "adjective-noun" format
+// Generate creates a random Docker-style name in "adjective-noun" format from
+// thematic word collections. Provides the primary interface for single node name
+// generation in cluster operations.
+//
+// Combines randomly selected adjectives and nouns from diverse thematic vocabularies
+// to create memorable, human-readable node identifiers. Returns names suitable for
+// immediate use as cluster node identifiers in orchestration systems.
+//
+// Returns names in the format: "adjective-noun" (e.g., "cosmic-dragon", "neural-phoenix")
 func Generate() string {
 	adjective := adjectives[randomIndex(len(adjectives))]
 	noun := nouns[randomIndex(len(nouns))]
 	return fmt.Sprintf("%s-%s", adjective, noun)
 }
 
-// randomIndex generates a cryptographically secure random index
+// randomIndex generates a random index within the specified range using crypto/rand
+// for unpredictable selection. Provides the core randomization primitive for name
+// generation with fallback mechanisms for reliable operation.
 func randomIndex(max int) int {
 	if max <= 0 {
 		return 0
@@ -154,7 +189,13 @@ func randomIndex(max int) int {
 	return int(n.Int64())
 }
 
-// GenerateMany generates multiple unique names, useful for testing or bulk operations
+// GenerateMany creates multiple unique node names with collision detection for bulk
+// operations in cluster provisioning and testing scenarios. Tracks generated names
+// to ensure uniqueness within the requested batch.
+//
+// Uses retry mechanisms with bounded attempts (100 max) to handle vocabulary exhaustion
+// gracefully while maintaining performance. Prevents infinite loops when vocabulary
+// space approaches exhaustion in large name generation requests.
 func GenerateMany(count int) []string {
 	if count <= 0 {
 		return []string{}

@@ -1,5 +1,18 @@
-// Package validate provides centralized validation utilities for names
-// and other common input validation needs across the Prism codebase.
+// Package validate provides input validation utilities for Prism cluster operations,
+// ensuring data integrity across node communications and configuration management.
+//
+// Implements validation rules for node names, network addresses, and configuration
+// parameters. Prevents malformed data from causing cluster coordination failures
+// or operational issues.
+//
+// VALIDATION COVERAGE:
+//   - Node Names: Format validation for cluster node identifiers
+//   - Network Addresses: IP and port validation for cluster communication
+//   - Configuration: Parameter validation for system settings
+//
+// Used throughout CLI tools, APIs, configuration processing, and cluster operations
+// to ensure consistent input validation across all system entry points.
+
 package validate
 
 import (
@@ -8,8 +21,11 @@ import (
 	"strings"
 )
 
-// NodeNameFormat validates that a node name conforms to the required format.
-// Names must be lowercase and contain only [a-z0-9] and - or _
+// NodeNameFormat validates node names against cluster naming requirements.
+// Ensures names contain only [a-z0-9_-] and don't start/end with special characters.
+//
+// Necessary for DNS compatibility, file system operations, and reliable network
+// communication across cluster nodes and administrative tools.
 func NodeNameFormat(name string) error {
 	if name == "" {
 		return fmt.Errorf("node name cannot be empty")

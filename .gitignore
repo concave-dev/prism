@@ -27,8 +27,8 @@ go.work.sum
 /build/
 
 # Executable binaries
-prismd
-prismctl
+/prismd
+/prismctl
 
 # IDE and editor files
 .vscode/
