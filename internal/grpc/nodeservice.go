@@ -117,20 +117,40 @@ func (n *NodeServiceImpl) GetHealth(ctx context.Context, req *proto.GetHealthReq
 	overallStatus := proto.HealthStatus_HEALTHY
 
 	// Check Serf membership status
-	serfCheck := n.checkSerfMembershipHealth(now)
+	serfCheck := n.checkSerfMembershipHealth(ctx, now)
 	checks = append(checks, serfCheck)
 
+	// Early return if context was cancelled
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
 	// Check Raft service if Raft manager is available
-	raftCheck := n.checkRaftServiceHealth(now)
+	raftCheck := n.checkRaftServiceHealth(ctx, now)
 	checks = append(checks, raftCheck)
 
+	// Early return if context was cancelled
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
 	// Check gRPC service health (local checks, no circular dependency)
-	grpcCheck := n.checkGRPCServiceHealth(now)
+	grpcCheck := n.checkGRPCServiceHealth(ctx, now)
 	checks = append(checks, grpcCheck)
 
+	// Early return if context was cancelled
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
 	// Check HTTP API service health using local HTTP request with short timeout
-	apiCheck := n.checkAPIServiceHealth(now)
+	apiCheck := n.checkAPIServiceHealth(ctx, now)
 	checks = append(checks, apiCheck)
+
+	// Early return if context was cancelled
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
 
 	// Count check statuses for better health reporting
 	healthyCount := 0
@@ -177,8 +197,8 @@ func (n *NodeServiceImpl) GetHealth(ctx context.Context, req *proto.GetHealthReq
 // checkAPIServiceHealth verifies that the local HTTP API service is reachable
 // and responding successfully. It attempts a fast HTTP GET to /api/v1/health
 // using the advertised API port from Serf tags. Tries localhost first, then
-// the node's IP address as a fallback. Uses a short timeout to avoid blocking.
-func (n *NodeServiceImpl) checkAPIServiceHealth(now time.Time) *proto.HealthCheck {
+// the node's IP address as a fallback. Respects context deadline and cancellation.
+func (n *NodeServiceImpl) checkAPIServiceHealth(ctx context.Context, now time.Time) *proto.HealthCheck {
 	member := n.serfManager.GetLocalMember()
 	if member == nil {
 		return &proto.HealthCheck{
@@ -207,10 +227,25 @@ func (n *NodeServiceImpl) checkAPIServiceHealth(now time.Time) *proto.HealthChec
 		candidates = append(candidates, fmt.Sprintf("%s:%s", member.Addr.String(), apiPort))
 	}
 
+	// Create HTTP client with context-aware request
 	client := &http.Client{Timeout: 750 * time.Millisecond}
 	for _, addr := range candidates {
+		// Check context before each attempt
+		if ctx.Err() != nil {
+			return &proto.HealthCheck{
+				Name:      "api_service",
+				Status:    proto.HealthStatus_UNKNOWN,
+				Message:   "Health check cancelled",
+				Timestamp: timestamppb.New(now),
+			}
+		}
+
 		url := fmt.Sprintf("http://%s/api/v1/health", addr)
-		resp, err := client.Get(url)
+		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+		if err != nil {
+			continue
+		}
+		resp, err := client.Do(req)
 		if err != nil {
 			continue
 		}
@@ -238,7 +273,16 @@ func (n *NodeServiceImpl) checkAPIServiceHealth(now time.Time) *proto.HealthChec
 // checkSerfMembershipHealth verifies that the Serf gossip service is properly
 // functioning including local membership status and cluster connectivity.
 // Returns detailed status for distributed cluster membership operations.
-func (n *NodeServiceImpl) checkSerfMembershipHealth(now time.Time) *proto.HealthCheck {
+func (n *NodeServiceImpl) checkSerfMembershipHealth(ctx context.Context, now time.Time) *proto.HealthCheck {
+	// Check context before starting
+	if ctx.Err() != nil {
+		return &proto.HealthCheck{
+			Name:      "serf_service",
+			Status:    proto.HealthStatus_UNKNOWN,
+			Message:   "Health check cancelled",
+			Timestamp: timestamppb.New(now),
+		}
+	}
 	if n.serfManager == nil {
 		return &proto.HealthCheck{
 			Name:      "serf_service",
@@ -312,7 +356,16 @@ func (n *NodeServiceImpl) checkSerfMembershipHealth(now time.Time) *proto.Health
 // checkRaftServiceHealth verifies that the Raft consensus service is properly
 // functioning including leadership status, peer connectivity, and cluster health.
 // Returns detailed status for distributed consensus operations.
-func (n *NodeServiceImpl) checkRaftServiceHealth(now time.Time) *proto.HealthCheck {
+func (n *NodeServiceImpl) checkRaftServiceHealth(ctx context.Context, now time.Time) *proto.HealthCheck {
+	// Check context before starting
+	if ctx.Err() != nil {
+		return &proto.HealthCheck{
+			Name:      "raft_service",
+			Status:    proto.HealthStatus_UNKNOWN,
+			Message:   "Health check cancelled",
+			Timestamp: timestamppb.New(now),
+		}
+	}
 	if n.raftManager == nil {
 		// Raft not configured - this might be normal for some deployments
 		return &proto.HealthCheck{
@@ -344,7 +397,16 @@ func (n *NodeServiceImpl) checkRaftServiceHealth(now time.Time) *proto.HealthChe
 // checkGRPCServiceHealth verifies that the gRPC inter-node communication service
 // is properly functioning including server state, port binding, and connectivity.
 // Returns detailed status for distributed gRPC operations without circular dependencies.
-func (n *NodeServiceImpl) checkGRPCServiceHealth(now time.Time) *proto.HealthCheck {
+func (n *NodeServiceImpl) checkGRPCServiceHealth(ctx context.Context, now time.Time) *proto.HealthCheck {
+	// Check context before starting
+	if ctx.Err() != nil {
+		return &proto.HealthCheck{
+			Name:      "grpc_service",
+			Status:    proto.HealthStatus_UNKNOWN,
+			Message:   "Health check cancelled",
+			Timestamp: timestamppb.New(now),
+		}
+	}
 	if n.grpcServer == nil {
 		// gRPC server reference not set
 		return &proto.HealthCheck{
