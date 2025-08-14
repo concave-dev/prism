@@ -5,7 +5,7 @@ Distributed runtime platform for AI agents and workflows.
 ![prismd screenshot](https://github.com/user-attachments/assets/f876bf59-616a-40a3-9a37-b1116a5655f2)
 
 > [!CAUTION]
-> The cluster is not yet stable. Use at your own risk. Test coverage: ~11%.
+> The cluster is not yet stable. Use at your own risk. Test coverage: ~9%.
 
 ## Overview
 
