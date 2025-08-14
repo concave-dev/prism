@@ -30,6 +30,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	stdlog "log"
@@ -277,22 +278,43 @@ func (csw *ColorfulSerfWriter) processLogs() {
 // RAFT LOG INTEGRATION - Capture and reformat Raft library logs
 // ============================================================================
 
+// logEntry represents a deduplicated log message with its count and timing
+type logEntry struct {
+	message   string
+	level     string
+	count     int
+	lastSeen  time.Time
+	firstSeen time.Time
+}
+
 // ColorfulRaftWriter captures Raft library logs and routes them through the
 // unified colorful logging system for consistent cluster log formatting.
+// Includes deduplication for repetitive messages to reduce log noise.
 type ColorfulRaftWriter struct {
 	reader *io.PipeReader
 	writer *io.PipeWriter
+
+	// Deduplication state
+	mu          sync.Mutex
+	pendingLogs map[string]*logEntry
+	flushTicker *time.Ticker
+	done        chan struct{}
 }
 
 // NewColorfulRaftWriter creates a new writer for capturing and reformatting Raft logs.
+// Includes automatic deduplication of repetitive messages to reduce log noise.
 func NewColorfulRaftWriter() *ColorfulRaftWriter {
 	r, w := io.Pipe()
 	crw := &ColorfulRaftWriter{
-		reader: r,
-		writer: w,
+		reader:      r,
+		writer:      w,
+		pendingLogs: make(map[string]*logEntry),
+		flushTicker: time.NewTicker(3 * time.Second), // Flush deduplicated logs every 3 seconds
+		done:        make(chan struct{}),
 	}
 
 	go crw.processLogs()
+	go crw.flushDuplicates()
 	return crw
 }
 
@@ -301,9 +323,139 @@ func (crw *ColorfulRaftWriter) Write(p []byte) (n int, err error) {
 	return crw.writer.Write(p)
 }
 
-// Close closes the writer and stops log processing.
+// Close closes the writer and stops log processing and deduplication.
 func (crw *ColorfulRaftWriter) Close() error {
+	close(crw.done)
+	crw.flushTicker.Stop()
+
+	// Flush any remaining deduplicated logs
+	crw.mu.Lock()
+	crw.flushPendingLogs()
+	crw.mu.Unlock()
+
 	return crw.writer.Close()
+}
+
+// flushDuplicates runs in a background goroutine to periodically flush deduplicated log entries.
+// This ensures that even repeated messages eventually get logged with their frequency count.
+func (crw *ColorfulRaftWriter) flushDuplicates() {
+	for {
+		select {
+		case <-crw.done:
+			return
+		case <-crw.flushTicker.C:
+			crw.mu.Lock()
+			crw.flushPendingLogs()
+			crw.mu.Unlock()
+		}
+	}
+}
+
+// flushPendingLogs outputs all pending deduplicated log entries and clears the map.
+// Must be called with mutex held.
+func (crw *ColorfulRaftWriter) flushPendingLogs() {
+	for key, entry := range crw.pendingLogs {
+		// Print aggregated count only, ignore time range to reduce noise
+		var formattedMessage string
+		if entry.count > 1 {
+			formattedMessage = fmt.Sprintf("%s (x%d)", entry.message, entry.count)
+		} else {
+			formattedMessage = entry.message
+		}
+
+		crw.outputMessage(entry.level, formattedMessage)
+		delete(crw.pendingLogs, key)
+	}
+}
+
+// outputMessage routes a message to the appropriate log level function.
+func (crw *ColorfulRaftWriter) outputMessage(level, message string) {
+	// Apply special handling for known noisy messages
+	adjustedLevel := crw.adjustLogLevel(level, message)
+
+	switch adjustedLevel {
+	case "DEBUG":
+		Debug("raft: %s", message)
+	case "INFO":
+		Info("raft: %s", message)
+	case "WARN", "WARNING":
+		Warn("raft: %s", message)
+	case "ERR", "ERROR":
+		Error("raft: %s", message)
+	default:
+		Info("raft[%s]: %s", adjustedLevel, message)
+	}
+}
+
+// adjustLogLevel downgrades certain noisy error messages to warnings.
+// This reduces log noise for expected failure scenarios during cluster operations.
+func (crw *ColorfulRaftWriter) adjustLogLevel(level, message string) string {
+	if level == "ERR" || level == "ERROR" {
+		// Downgrade heartbeat failures to warnings - these are expected during node failures
+		if strings.Contains(message, "failed to heartbeat to:") ||
+			strings.Contains(message, "failed to appendEntries to:") ||
+			strings.Contains(message, "failed to contact:") {
+			return "WARN"
+		}
+	}
+	return level
+}
+
+// shouldDeduplicate determines if a message should be deduplicated based on patterns.
+// Returns true for repetitive operational messages that can flood logs.
+func (crw *ColorfulRaftWriter) shouldDeduplicate(message string) bool {
+	// Deduplicate known repetitive patterns
+	patterns := []string{
+		"failed to heartbeat to:",
+		"failed to appendEntries to:",
+		"failed to contact:",
+		"connection refused",
+		"dial tcp",
+	}
+
+	for _, pattern := range patterns {
+		if strings.Contains(message, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+// createDeduplicationKey creates a unique key for grouping similar log messages.
+// Groups messages by their core content, ignoring timestamps and minor variations.
+func (crw *ColorfulRaftWriter) createDeduplicationKey(level, message string) string {
+	// For heartbeat/connection errors, group by peer address
+	if strings.Contains(message, "failed to heartbeat to:") ||
+		strings.Contains(message, "failed to appendEntries to:") ||
+		strings.Contains(message, "failed to contact:") {
+
+		// Extract peer address pattern like "192.168.0.204:6970"
+		re := regexp.MustCompile(`\d+\.\d+\.\d+\.\d+:\d+`)
+		if addr := re.FindString(message); addr != "" {
+			return fmt.Sprintf("%s:heartbeat_failure:%s", level, addr)
+		}
+	}
+
+	// Special-case grouping for "failed to contact: server-id=<hex> time=..." where time varies
+	if strings.Contains(message, "failed to contact:") {
+		// Try to extract server-id
+		idRe := regexp.MustCompile(`server-id=([0-9a-fA-F]+)`)
+		if m := idRe.FindStringSubmatch(message); len(m) == 2 {
+			return fmt.Sprintf("%s:failed_to_contact:%s", level, strings.ToLower(m[1]))
+		}
+		// Fallback: strip time=... to stabilize the key
+		noTime := regexp.MustCompile(` time=[^\s]+`).ReplaceAllString(message, "")
+		if len(noTime) > 80 {
+			noTime = noTime[:80]
+		}
+		return fmt.Sprintf("%s:%s", level, noTime)
+	}
+
+	// Default: use level + first 50 chars as key
+	if len(message) > 50 {
+		return fmt.Sprintf("%s:%s", level, message[:50])
+	}
+	return fmt.Sprintf("%s:%s", level, message)
 }
 
 // processLogs parses Raft log lines and routes them through the colorful logging system.
@@ -352,17 +504,30 @@ func (crw *ColorfulRaftWriter) processLogs() {
 				message = strings.TrimSpace(message[len("raft: "):])
 			}
 
-			switch level {
-			case "DEBUG":
-				Debug("raft: %s", message)
-			case "INFO":
-				Info("raft: %s", message)
-			case "WARN", "WARNING":
-				Warn("raft: %s", message)
-			case "ERR", "ERROR":
-				Error("raft: %s", message)
-			default:
-				Info("raft[%s]: %s", level, message)
+			// Check if this message should be deduplicated
+			if crw.shouldDeduplicate(message) {
+				crw.mu.Lock()
+				key := crw.createDeduplicationKey(level, message)
+
+				if entry, exists := crw.pendingLogs[key]; exists {
+					// Update existing entry
+					entry.count++
+					entry.lastSeen = time.Now()
+				} else {
+					// Create new entry
+					now := time.Now()
+					crw.pendingLogs[key] = &logEntry{
+						message:   message,
+						level:     level,
+						count:     1,
+						firstSeen: now,
+						lastSeen:  now,
+					}
+				}
+				crw.mu.Unlock()
+			} else {
+				// Output immediately for non-repetitive messages
+				crw.outputMessage(level, message)
 			}
 		} else {
 			// If we can't parse any timestamp format, log as-is
