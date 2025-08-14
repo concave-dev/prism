@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/concave-dev/prism/internal/grpc/proto"
+	"github.com/concave-dev/prism/internal/raft"
 	"github.com/concave-dev/prism/internal/resources"
 	"github.com/concave-dev/prism/internal/serf"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -18,12 +19,14 @@ import (
 type NodeServiceImpl struct {
 	proto.UnimplementedNodeServiceServer
 	serfManager *serf.SerfManager // Access to node resources via serf manager
+	raftManager *raft.RaftManager // Access to Raft consensus status for health checks
 }
 
 // NewNodeServiceImpl creates a new NodeService implementation
-func NewNodeServiceImpl(serfManager *serf.SerfManager) *NodeServiceImpl {
+func NewNodeServiceImpl(serfManager *serf.SerfManager, raftManager *raft.RaftManager) *NodeServiceImpl {
 	return &NodeServiceImpl{
 		serfManager: serfManager,
+		raftManager: raftManager,
 	}
 }
 
@@ -76,23 +79,61 @@ func (n *NodeServiceImpl) GetResources(ctx context.Context, req *proto.GetResour
 	return response, nil
 }
 
-// GetHealth returns health status for this node
-// TODO: Implement comprehensive health checks beyond basic status
+// GetHealth returns health status for this node including Serf membership
+// and Raft consensus connectivity checks for comprehensive cluster health monitoring.
 func (n *NodeServiceImpl) GetHealth(ctx context.Context, req *proto.GetHealthRequest) (*proto.GetHealthResponse, error) {
-	// Basic health implementation - can be extended later
+	now := time.Now()
+	var checks []*proto.HealthCheck
+	overallStatus := proto.HealthStatus_HEALTHY
+
+	// Check Serf membership status
+	serfCheck := &proto.HealthCheck{
+		Name:      "serf_membership",
+		Status:    proto.HealthStatus_HEALTHY,
+		Message:   "Node is active in cluster",
+		Timestamp: timestamppb.New(now),
+	}
+	checks = append(checks, serfCheck)
+
+	// Check Raft connectivity if Raft manager is available
+	if n.raftManager != nil {
+		raftHealth := n.raftManager.GetHealthStatus()
+
+		var raftStatus proto.HealthStatus
+		if raftHealth.IsHealthy {
+			raftStatus = proto.HealthStatus_HEALTHY
+		} else {
+			raftStatus = proto.HealthStatus_UNHEALTHY
+			// Update overall status if Raft is unhealthy
+			if overallStatus == proto.HealthStatus_HEALTHY {
+				overallStatus = proto.HealthStatus_UNHEALTHY
+			}
+		}
+
+		raftCheck := &proto.HealthCheck{
+			Name:      "raft_connectivity",
+			Status:    raftStatus,
+			Message:   raftHealth.Message,
+			Timestamp: timestamppb.New(now),
+		}
+		checks = append(checks, raftCheck)
+	} else {
+		// Raft not configured - this might be normal for some deployments
+		raftCheck := &proto.HealthCheck{
+			Name:      "raft_connectivity",
+			Status:    proto.HealthStatus_UNKNOWN,
+			Message:   "Raft consensus not configured",
+			Timestamp: timestamppb.New(now),
+		}
+		checks = append(checks, raftCheck)
+	}
+
 	response := &proto.GetHealthResponse{
 		NodeId:    n.serfManager.NodeID,
 		NodeName:  n.serfManager.NodeName,
-		Timestamp: timestamppb.New(time.Now()),
-		Status:    proto.HealthStatus_HEALTHY, // TODO: Implement actual health logic
-		Checks: []*proto.HealthCheck{
-			{
-				Name:      "serf_membership",
-				Status:    proto.HealthStatus_HEALTHY,
-				Message:   "Node is active in cluster",
-				Timestamp: timestamppb.New(time.Now()),
-			},
-		},
+		Timestamp: timestamppb.New(now),
+		Status:    overallStatus,
+		Checks:    checks,
 	}
 
 	return response, nil

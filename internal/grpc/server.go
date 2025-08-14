@@ -9,6 +9,7 @@ import (
 
 	"github.com/concave-dev/prism/internal/grpc/proto"
 	"github.com/concave-dev/prism/internal/logging"
+	"github.com/concave-dev/prism/internal/raft"
 	"github.com/concave-dev/prism/internal/serf"
 	grpcstd "google.golang.org/grpc"
 )
@@ -25,6 +26,7 @@ type Server struct {
 	mu          sync.RWMutex      // Mutex for thread-safe operations
 	shutdown    chan struct{}     // Channel to signal shutdown
 	serfManager *serf.SerfManager // Serf manager for resource gathering
+	raftManager *raft.RaftManager // Raft manager for consensus health checks
 
 	// Connection tracking for graceful draining
 	activeConns map[string]context.CancelFunc // Map of connection ID to cancel function
@@ -34,7 +36,7 @@ type Server struct {
 // NewServer creates a new gRPC server with the given configuration
 // TODO: Add support for TLS configuration
 // TODO: Implement custom interceptors for logging and metrics
-func NewServer(config *Config, serfManager *serf.SerfManager) (*Server, error) {
+func NewServer(config *Config, serfManager *serf.SerfManager, raftManager *raft.RaftManager) (*Server, error) {
 	if err := config.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid config: %w", err)
 	}
@@ -43,6 +45,7 @@ func NewServer(config *Config, serfManager *serf.SerfManager) (*Server, error) {
 		config:      config,
 		shutdown:    make(chan struct{}),
 		serfManager: serfManager,
+		raftManager: raftManager,
 		activeConns: make(map[string]context.CancelFunc),
 	}
 
@@ -86,7 +89,7 @@ func (s *Server) Start() error {
 	// TODO: attach interceptors for structured logging; gRPC itself does not use std logger by default.
 
 	// Register NodeService for resource and health queries
-	nodeService := NewNodeServiceImpl(s.serfManager)
+	nodeService := NewNodeServiceImpl(s.serfManager, s.raftManager)
 	proto.RegisterNodeServiceServer(s.grpcServer, nodeService)
 
 	// Start serving in a goroutine
