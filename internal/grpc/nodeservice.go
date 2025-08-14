@@ -134,14 +134,17 @@ func (n *NodeServiceImpl) GetHealth(ctx context.Context, req *proto.GetHealthReq
 
 	if len(requestedChecks) == 0 {
 		// Default: run all available health checks
-		selectedChecks = []string{"serf", "raft", "grpc", "api"}
+		selectedChecks = []string{"serf", "raft", "grpc", "api", "cpu", "memory", "disk"}
 	} else {
 		// Filter to only supported check types
 		supportedChecks := map[string]bool{
-			"serf": true,
-			"raft": true,
-			"grpc": true,
-			"api":  true,
+			"serf":   true,
+			"raft":   true,
+			"grpc":   true,
+			"api":    true,
+			"cpu":    true,
+			"memory": true,
+			"disk":   true,
 		}
 
 		for _, checkType := range requestedChecks {
@@ -161,7 +164,7 @@ func (n *NodeServiceImpl) GetHealth(ctx context.Context, req *proto.GetHealthReq
 					{
 						Name:      "invalid_request",
 						Status:    proto.HealthStatus_UNKNOWN,
-						Message:   fmt.Sprintf("No valid check types found in request: %v. Supported types: serf, raft, grpc, api", requestedChecks),
+						Message:   fmt.Sprintf("No valid check types found in request: %v. Supported types: serf, raft, grpc, api, cpu, memory, disk", requestedChecks),
 						Timestamp: timestamppb.New(now),
 					},
 				},
@@ -196,6 +199,18 @@ func (n *NodeServiceImpl) GetHealth(ctx context.Context, req *proto.GetHealthReq
 		case "api":
 			go func() {
 				checkChan <- checkResult{n.checkAPIServiceHealth(checkCtx, now), "api"}
+			}()
+		case "cpu":
+			go func() {
+				checkChan <- checkResult{n.checkCPUResourceHealth(checkCtx, now), "cpu"}
+			}()
+		case "memory":
+			go func() {
+				checkChan <- checkResult{n.checkMemoryResourceHealth(checkCtx, now), "memory"}
+			}()
+		case "disk":
+			go func() {
+				checkChan <- checkResult{n.checkDiskResourceHealth(checkCtx, now), "disk"}
 			}()
 		}
 	}
@@ -547,4 +562,229 @@ func (n *NodeServiceImpl) checkGRPCServiceHealth(ctx context.Context, now time.T
 		Message:   grpcHealth.Message,
 		Timestamp: timestamppb.New(now),
 	}
+}
+
+// ============================================================================
+// RESOURCE HEALTH CHECK IMPLEMENTATIONS - System resource health verification
+// ============================================================================
+
+// checkCPUResourceHealth monitors CPU usage levels and system load to detect
+// resource pressure that could impact workload performance. Uses configurable
+// thresholds to classify CPU health status for intelligent scheduling decisions.
+//
+// Health thresholds:
+// - HEALTHY: CPU usage < 80% and load average reasonable for core count
+// - DEGRADED: CPU usage 80-95% or elevated load but still functional
+// - UNHEALTHY: CPU usage > 95% or extremely high load indicating overload
+func (n *NodeServiceImpl) checkCPUResourceHealth(ctx context.Context, now time.Time) *proto.HealthCheck {
+	// Check context before starting
+	if ctx.Err() != nil {
+		return &proto.HealthCheck{
+			Name:      "cpu_resource",
+			Status:    proto.HealthStatus_UNKNOWN,
+			Message:   "Health check cancelled",
+			Timestamp: timestamppb.New(now),
+		}
+	}
+
+	// Gather current system resources including CPU metrics
+	nodeResources := resources.GatherSystemResources(
+		n.serfManager.NodeID,
+		n.serfManager.NodeName,
+		n.serfManager.GetStartTime(),
+	)
+
+	// Define health thresholds for CPU monitoring
+	const (
+		cpuHealthyThreshold  = 80.0 // Below this is healthy
+		cpuDegradedThreshold = 95.0 // Above this is unhealthy
+		loadHealthyRatio     = 2.0  // Load average should be < cores * ratio for healthy
+		loadDegradedRatio    = 4.0  // Load average above cores * ratio is unhealthy
+	)
+
+	cpuUsage := nodeResources.CPUUsage
+	load1 := nodeResources.Load1
+	cpuCores := float64(nodeResources.CPUCores)
+
+	var status proto.HealthStatus
+	var message string
+
+	// Determine health status based on CPU usage and load
+	if cpuUsage > cpuDegradedThreshold || (cpuCores > 0 && load1 > cpuCores*loadDegradedRatio) {
+		status = proto.HealthStatus_UNHEALTHY
+		if cpuUsage > cpuDegradedThreshold && load1 > cpuCores*loadDegradedRatio {
+			message = fmt.Sprintf("CPU critically overloaded: %.1f%% usage, load %.2f (%.0f cores)", cpuUsage, load1, cpuCores)
+		} else if cpuUsage > cpuDegradedThreshold {
+			message = fmt.Sprintf("CPU usage critically high: %.1f%% (threshold: %.0f%%)", cpuUsage, cpuDegradedThreshold)
+		} else {
+			message = fmt.Sprintf("System load critically high: %.2f (threshold: %.1f for %.0f cores)", load1, cpuCores*loadDegradedRatio, cpuCores)
+		}
+	} else if cpuUsage > cpuHealthyThreshold || (cpuCores > 0 && load1 > cpuCores*loadHealthyRatio) {
+		status = proto.HealthStatus_DEGRADED
+		if cpuUsage > cpuHealthyThreshold && load1 > cpuCores*loadHealthyRatio {
+			message = fmt.Sprintf("CPU under pressure: %.1f%% usage, load %.2f (%.0f cores)", cpuUsage, load1, cpuCores)
+		} else if cpuUsage > cpuHealthyThreshold {
+			message = fmt.Sprintf("CPU usage elevated: %.1f%% (threshold: %.0f%%)", cpuUsage, cpuHealthyThreshold)
+		} else {
+			message = fmt.Sprintf("System load elevated: %.2f (threshold: %.1f for %.0f cores)", load1, cpuCores*loadHealthyRatio, cpuCores)
+		}
+	} else {
+		status = proto.HealthStatus_HEALTHY
+		message = fmt.Sprintf("CPU healthy: %.1f%% usage, load %.2f (%.0f cores)", cpuUsage, load1, cpuCores)
+	}
+
+	return &proto.HealthCheck{
+		Name:      "cpu_resource",
+		Status:    status,
+		Message:   message,
+		Timestamp: timestamppb.New(now),
+	}
+}
+
+// checkMemoryResourceHealth monitors memory usage to detect potential out-of-memory
+// conditions that could impact workload stability. Uses progressive thresholds to
+// provide early warning of memory pressure before critical failures occur.
+//
+// Health thresholds:
+// - HEALTHY: Memory usage < 80%
+// - DEGRADED: Memory usage 80-95% (monitor closely, may impact performance)
+// - UNHEALTHY: Memory usage > 95% (high risk of OOM, avoid new workloads)
+func (n *NodeServiceImpl) checkMemoryResourceHealth(ctx context.Context, now time.Time) *proto.HealthCheck {
+	// Check context before starting
+	if ctx.Err() != nil {
+		return &proto.HealthCheck{
+			Name:      "memory_resource",
+			Status:    proto.HealthStatus_UNKNOWN,
+			Message:   "Health check cancelled",
+			Timestamp: timestamppb.New(now),
+		}
+	}
+
+	// Gather current system resources including memory metrics
+	nodeResources := resources.GatherSystemResources(
+		n.serfManager.NodeID,
+		n.serfManager.NodeName,
+		n.serfManager.GetStartTime(),
+	)
+
+	// Define health thresholds for memory monitoring
+	const (
+		memoryHealthyThreshold  = 80.0 // Below this is healthy
+		memoryDegradedThreshold = 95.0 // Above this is unhealthy
+	)
+
+	memoryUsage := nodeResources.MemoryUsage
+	memoryTotal := nodeResources.MemoryTotal
+	memoryAvailable := nodeResources.MemoryAvailable
+
+	var status proto.HealthStatus
+	var message string
+
+	// Determine health status based on memory usage
+	if memoryUsage > memoryDegradedThreshold {
+		status = proto.HealthStatus_UNHEALTHY
+		message = fmt.Sprintf("Memory critically low: %.1f%% used, %s available of %s total",
+			memoryUsage, formatBytes(memoryAvailable), formatBytes(memoryTotal))
+	} else if memoryUsage > memoryHealthyThreshold {
+		status = proto.HealthStatus_DEGRADED
+		message = fmt.Sprintf("Memory under pressure: %.1f%% used, %s available of %s total",
+			memoryUsage, formatBytes(memoryAvailable), formatBytes(memoryTotal))
+	} else {
+		status = proto.HealthStatus_HEALTHY
+		message = fmt.Sprintf("Memory healthy: %.1f%% used, %s available of %s total",
+			memoryUsage, formatBytes(memoryAvailable), formatBytes(memoryTotal))
+	}
+
+	return &proto.HealthCheck{
+		Name:      "memory_resource",
+		Status:    status,
+		Message:   message,
+		Timestamp: timestamppb.New(now),
+	}
+}
+
+// checkDiskResourceHealth monitors disk space usage to prevent storage exhaustion
+// that could cause workload failures or system instability. Focuses on root filesystem
+// where workloads and system files are typically stored.
+//
+// Health thresholds:
+// - HEALTHY: Disk usage < 85%
+// - DEGRADED: Disk usage 85-95% (monitor closely, may need cleanup)
+// - UNHEALTHY: Disk usage > 95% (high risk of disk full, avoid new workloads)
+func (n *NodeServiceImpl) checkDiskResourceHealth(ctx context.Context, now time.Time) *proto.HealthCheck {
+	// Check context before starting
+	if ctx.Err() != nil {
+		return &proto.HealthCheck{
+			Name:      "disk_resource",
+			Status:    proto.HealthStatus_UNKNOWN,
+			Message:   "Health check cancelled",
+			Timestamp: timestamppb.New(now),
+		}
+	}
+
+	// Gather current system resources including disk metrics
+	nodeResources := resources.GatherSystemResources(
+		n.serfManager.NodeID,
+		n.serfManager.NodeName,
+		n.serfManager.GetStartTime(),
+	)
+
+	// Define health thresholds for disk monitoring
+	const (
+		diskHealthyThreshold  = 85.0 // Below this is healthy
+		diskDegradedThreshold = 95.0 // Above this is unhealthy
+	)
+
+	diskUsage := nodeResources.DiskUsage
+	diskTotal := nodeResources.DiskTotal
+	diskAvailable := nodeResources.DiskAvailable
+
+	// Handle case where disk monitoring failed
+	if diskTotal == 0 {
+		return &proto.HealthCheck{
+			Name:      "disk_resource",
+			Status:    proto.HealthStatus_UNKNOWN,
+			Message:   "Unable to gather disk usage information",
+			Timestamp: timestamppb.New(now),
+		}
+	}
+
+	var status proto.HealthStatus
+	var message string
+
+	// Determine health status based on disk usage
+	if diskUsage > diskDegradedThreshold {
+		status = proto.HealthStatus_UNHEALTHY
+		message = fmt.Sprintf("Disk space critically low: %.1f%% used, %s available of %s total",
+			diskUsage, formatBytes(diskAvailable), formatBytes(diskTotal))
+	} else if diskUsage > diskHealthyThreshold {
+		status = proto.HealthStatus_DEGRADED
+		message = fmt.Sprintf("Disk space under pressure: %.1f%% used, %s available of %s total",
+			diskUsage, formatBytes(diskAvailable), formatBytes(diskTotal))
+	} else {
+		status = proto.HealthStatus_HEALTHY
+		message = fmt.Sprintf("Disk space healthy: %.1f%% used, %s available of %s total",
+			diskUsage, formatBytes(diskAvailable), formatBytes(diskTotal))
+	}
+
+	return &proto.HealthCheck{
+		Name:      "disk_resource",
+		Status:    status,
+		Message:   message,
+		Timestamp: timestamppb.New(now),
+	}
+}
+
+// formatBytes formats byte counts into human-readable strings for health check messages
+func formatBytes(bytes uint64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	div, exp := uint64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }

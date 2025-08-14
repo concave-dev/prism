@@ -87,7 +87,8 @@ message GetResourcesResponse {
 
 // GetHealthRequest allows selective execution of specific health checks.
 message GetHealthRequest {
-  // Optional: specific health check types to perform (e.g., "disk", "network", "services").
+  // Optional: specific health check types to perform.
+  // Available types: "serf", "raft", "grpc", "api", "cpu", "memory", "disk"
   // If empty, performs all available health checks.
   repeated string check_types = 1;
 }

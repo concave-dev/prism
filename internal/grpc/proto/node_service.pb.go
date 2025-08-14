@@ -382,7 +382,8 @@ func (x *GetResourcesResponse) GetAvailableSlots() int32 {
 // GetHealthRequest allows selective execution of specific health checks.
 type GetHealthRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Optional: specific health check types to perform (e.g., "disk", "network", "services").
+	// Optional: specific health check types to perform.
+	// Available types: "serf", "raft", "grpc", "api", "cpu", "memory", "disk"
 	// If empty, performs all available health checks.
 	CheckTypes    []string `protobuf:"bytes,1,rep,name=check_types,json=checkTypes,proto3" json:"check_types,omitempty"`
 	unknownFields protoimpl.UnknownFields
