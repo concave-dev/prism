@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	grpcpkg "github.com/concave-dev/prism/internal/grpc"
+	"github.com/concave-dev/prism/internal/grpc"
 	"github.com/concave-dev/prism/internal/logging"
 	"github.com/concave-dev/prism/internal/serf"
 	"github.com/gin-gonic/gin"
@@ -34,7 +34,7 @@ type HealthCheck struct {
 
 // HandleNodeHealth returns health from a specific node using gRPC
 // Falls back to name resolution using Serf membership if the ID isn't found.
-func HandleNodeHealth(clientPool *grpcpkg.ClientPool, serfManager *serf.SerfManager) gin.HandlerFunc {
+func HandleNodeHealth(clientPool *grpc.ClientPool, serfManager *serf.SerfManager) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		nodeID := c.Param("id")
 		if nodeID == "" {
