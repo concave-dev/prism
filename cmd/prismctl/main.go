@@ -1185,10 +1185,10 @@ func displayNodeInfo(resource NodeResources, isLeader bool, health *NodeHealth, 
 				fmt.Printf("Health Checks:\n")
 				w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 				defer w.Flush()
-				fmt.Fprintln(w, "NAME\tSTATUS\tTIMESTAMP")
+				fmt.Fprintln(w, "NAME\tSTATUS\tMESSAGE\tTIMESTAMP")
 				for _, chk := range health.Checks {
-					fmt.Fprintf(w, "%s\t%s\t%s\n",
-						chk.Name, strings.ToLower(chk.Status), chk.Timestamp.Format(time.RFC3339))
+					fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
+						chk.Name, strings.ToLower(chk.Status), chk.Message, chk.Timestamp.Format(time.RFC3339))
 				}
 			}
 		}

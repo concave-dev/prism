@@ -363,7 +363,7 @@ func (n *NodeServiceImpl) checkAPIServiceHealth(ctx context.Context, now time.Ti
 			return &proto.HealthCheck{
 				Name:      "api_service",
 				Status:    proto.HealthStatus_HEALTHY,
-				Message:   fmt.Sprintf("HTTP API is healthy (status: %d)", resp.StatusCode),
+				Message:   fmt.Sprintf("HTTP API healthy at %s (status: %d)", url, resp.StatusCode),
 				Timestamp: timestamppb.New(now),
 			}
 		}
@@ -446,38 +446,69 @@ func (n *NodeServiceImpl) checkSerfMembershipHealth(ctx context.Context, now tim
 		}
 	}
 
-	if memberCount == 1 {
-		// Single node cluster - this is valid
-		return &proto.HealthCheck{
-			Name:      "serf_service",
-			Status:    proto.HealthStatus_HEALTHY,
-			Message:   "Single-node cluster, Serf service healthy",
-			Timestamp: timestamppb.New(now),
+	// Count members by status for detailed reporting
+	aliveCount := 0
+	failedCount := 0
+	leftCount := 0
+
+	for _, member := range members {
+		switch member.Status {
+		case serfpkg.StatusAlive:
+			aliveCount++
+		case serfpkg.StatusFailed:
+			failedCount++
+		case serfpkg.StatusLeft:
+			leftCount++
 		}
 	}
 
-	// Multi-node cluster: check if we can see other alive members
-	aliveCount := 0
-	for _, member := range members {
-		if member.Status == serfpkg.StatusAlive {
-			aliveCount++
+	// Get local member role and address for reporting
+	localRole := "agent" // Default role
+	if localMember.Tags != nil {
+		if role, exists := localMember.Tags["role"]; exists {
+			localRole = role
+		}
+	}
+
+	localAddr := "unknown"
+	if localMember.Addr != nil {
+		localAddr = localMember.Addr.String()
+	}
+
+	if memberCount == 1 {
+		// Single node cluster - include role and address info
+		return &proto.HealthCheck{
+			Name:      "serf_service",
+			Status:    proto.HealthStatus_HEALTHY,
+			Message:   fmt.Sprintf("Single-node cluster (%s) at %s, gossip healthy", localRole, localAddr),
+			Timestamp: timestamppb.New(now),
 		}
 	}
 
 	if aliveCount < 2 {
 		// We're the only alive member in a multi-node cluster
+		statusDetail := ""
+		if failedCount > 0 || leftCount > 0 {
+			statusDetail = fmt.Sprintf(" (%d failed, %d left)", failedCount, leftCount)
+		}
 		return &proto.HealthCheck{
 			Name:      "serf_service",
 			Status:    proto.HealthStatus_UNHEALTHY,
-			Message:   fmt.Sprintf("Cluster isolation: only %d of %d members alive", aliveCount, memberCount),
+			Message:   fmt.Sprintf("Cluster isolation: %s at %s sees only %d of %d members alive%s", localRole, localAddr, aliveCount, memberCount, statusDetail),
 			Timestamp: timestamppb.New(now),
 		}
+	}
+
+	// Multi-node cluster with good connectivity
+	statusDetail := ""
+	if failedCount > 0 || leftCount > 0 {
+		statusDetail = fmt.Sprintf(", %d failed, %d left", failedCount, leftCount)
 	}
 
 	return &proto.HealthCheck{
 		Name:      "serf_service",
 		Status:    proto.HealthStatus_HEALTHY,
-		Message:   fmt.Sprintf("Cluster connectivity healthy: %d of %d members alive", aliveCount, memberCount),
+		Message:   fmt.Sprintf("Cluster gossip healthy: %s at %s sees %d of %d members alive%s", localRole, localAddr, aliveCount, memberCount, statusDetail),
 		Timestamp: timestamppb.New(now),
 	}
 }
@@ -509,16 +540,49 @@ func (n *NodeServiceImpl) checkRaftServiceHealth(ctx context.Context, now time.T
 	raftHealth := n.raftManager.GetHealthStatus()
 
 	var raftStatus proto.HealthStatus
+	var enhancedMessage string
+
 	if raftHealth.IsHealthy {
 		raftStatus = proto.HealthStatus_HEALTHY
+
+		// Enhanced healthy message with role and connectivity details
+		if raftHealth.PeerCount == 1 {
+			enhancedMessage = fmt.Sprintf("Single-node Raft cluster: %s healthy", raftHealth.State)
+		} else if raftHealth.IsLeader {
+			enhancedMessage = fmt.Sprintf("Raft %s: leading %d peers (%d reachable)",
+				raftHealth.State, raftHealth.PeerCount-1, raftHealth.ReachablePeers)
+		} else {
+			leaderInfo := "no leader"
+			if raftHealth.Leader != "" {
+				leaderInfo = fmt.Sprintf("leader: %s", raftHealth.Leader)
+			}
+			enhancedMessage = fmt.Sprintf("Raft %s: %d-node cluster, %s (%d reachable peers)",
+				raftHealth.State, raftHealth.PeerCount, leaderInfo, raftHealth.ReachablePeers)
+		}
 	} else {
-		raftStatus = proto.HealthStatus_UNHEALTHY
+		// Determine if this is degraded or unhealthy
+		if raftHealth.State == "Candidate" || (raftHealth.UnreachablePeers > 0 && raftHealth.ReachablePeers > 0) {
+			raftStatus = proto.HealthStatus_DEGRADED
+		} else {
+			raftStatus = proto.HealthStatus_UNHEALTHY
+		}
+
+		// Enhanced unhealthy/degraded message with specific details
+		if raftHealth.State == "Candidate" {
+			enhancedMessage = fmt.Sprintf("Raft election in progress: %d-node cluster, %d peers reachable",
+				raftHealth.PeerCount, raftHealth.ReachablePeers)
+		} else if raftHealth.UnreachablePeers > 0 {
+			enhancedMessage = fmt.Sprintf("Raft %s degraded: %d of %d peers unreachable",
+				raftHealth.State, raftHealth.UnreachablePeers, raftHealth.PeerCount)
+		} else {
+			enhancedMessage = raftHealth.Message // Fall back to original message
+		}
 	}
 
 	return &proto.HealthCheck{
 		Name:      "raft_service",
 		Status:    raftStatus,
-		Message:   raftHealth.Message,
+		Message:   enhancedMessage,
 		Timestamp: timestamppb.New(now),
 	}
 }
@@ -550,16 +614,37 @@ func (n *NodeServiceImpl) checkGRPCServiceHealth(ctx context.Context, now time.T
 	grpcHealth := n.grpcServer.GetHealthStatus()
 
 	var grpcStatus proto.HealthStatus
+	var enhancedMessage string
+
 	if grpcHealth.IsHealthy {
 		grpcStatus = proto.HealthStatus_HEALTHY
+
+		// Enhanced healthy message with connection and binding details
+		connInfo := ""
+		if grpcHealth.ActiveConns > 0 {
+			connInfo = fmt.Sprintf(", %d active connections", grpcHealth.ActiveConns)
+		}
+
+		enhancedMessage = fmt.Sprintf("gRPC service healthy at %s%s",
+			grpcHealth.ListenerAddress, connInfo)
 	} else {
 		grpcStatus = proto.HealthStatus_UNHEALTHY
+
+		// Enhanced unhealthy message with specific failure details
+		if !grpcHealth.IsRunning {
+			enhancedMessage = "gRPC server not running or not initialized"
+		} else if grpcHealth.ListenerAddress != "" {
+			enhancedMessage = fmt.Sprintf("gRPC server at %s not reachable (connectivity test failed)",
+				grpcHealth.ListenerAddress)
+		} else {
+			enhancedMessage = grpcHealth.Message // Fall back to original message
+		}
 	}
 
 	return &proto.HealthCheck{
 		Name:      "grpc_service",
 		Status:    grpcStatus,
-		Message:   grpcHealth.Message,
+		Message:   enhancedMessage,
 		Timestamp: timestamppb.New(now),
 	}
 }
