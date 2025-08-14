@@ -282,6 +282,7 @@ func (s *Server) GetHealthStatus() *GRPCHealthStatus {
 //
 // Essential for detecting scenarios where the server thinks it's running
 // but the port isn't actually accessible (firewall, bind issues, etc.).
+// Handles the 0.0.0.0 binding case by using 127.0.0.1 for self-connectivity tests.
 func (s *Server) isSelfReachable() bool {
 	if s.listener == nil {
 		return false
@@ -289,11 +290,22 @@ func (s *Server) isSelfReachable() bool {
 
 	// Get the actual listening address
 	addr := s.listener.Addr().String()
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		logging.Debug("gRPC health: Failed to parse listener address %s: %v", addr, err)
+		return false
+	}
+
+	// If bound to 0.0.0.0, use 127.0.0.1 for self-connectivity test
+	// since 0.0.0.0 is not a valid target address for client connections
+	if host == "0.0.0.0" {
+		addr = net.JoinHostPort("127.0.0.1", port)
+	}
 
 	// Use a very short timeout for health checks
 	conn, err := net.DialTimeout("tcp", addr, 500*time.Millisecond)
 	if err != nil {
-		logging.Debug("gRPC health: Self-connectivity check failed: %v", err)
+		logging.Debug("gRPC health: Self-connectivity check failed for %s: %v", addr, err)
 		return false
 	}
 	defer conn.Close()
