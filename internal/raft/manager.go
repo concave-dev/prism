@@ -621,7 +621,7 @@ func (m *RaftManager) setupTransport(logWriter io.Writer) error {
 	// Create the advertisable address for Raft
 	raftAddr := fmt.Sprintf("%s:%d", bindAddr, m.config.BindPort)
 
-	addr, err := net.ResolveTCPAddr("tcp", raftAddr)
+	addr, err := net.ResolveTCPAddr("tcp4", raftAddr)
 	if err != nil {
 		return fmt.Errorf("failed to resolve TCP address: %w", err)
 	}
@@ -1070,4 +1070,148 @@ func (m *RaftManager) performPeerReconciliation() {
 	// 2. Autopilot cleanup for failed/dead nodes
 	// This prevents accidental removal of temporarily partitioned nodes
 	// that are still part of the cluster but temporarily unreachable.
+}
+
+// ============================================================================
+// RAFT HEALTH CHECKS - Monitor consensus connectivity and cluster status
+// ============================================================================
+
+// RaftHealthStatus represents the health status of Raft connectivity
+type RaftHealthStatus struct {
+	IsHealthy        bool   `json:"is_healthy"`
+	State            string `json:"state"`
+	IsLeader         bool   `json:"is_leader"`
+	Leader           string `json:"leader"`
+	PeerCount        int    `json:"peer_count"`
+	ReachablePeers   int    `json:"reachable_peers"`
+	UnreachablePeers int    `json:"unreachable_peers"`
+	Message          string `json:"message"`
+}
+
+// GetHealthStatus performs comprehensive Raft health checks including
+// leadership status, peer connectivity, and cluster consensus health.
+// Returns detailed status for monitoring and diagnostics.
+//
+// Critical for determining if this node can participate in distributed
+// consensus operations and if the cluster has sufficient connectivity
+// for reliable leader election and log replication.
+func (m *RaftManager) GetHealthStatus() *RaftHealthStatus {
+	status := &RaftHealthStatus{
+		IsHealthy: true,
+		Message:   "Raft consensus is healthy",
+	}
+
+	// Check if Raft is initialized
+	if m.raft == nil {
+		status.IsHealthy = false
+		status.State = "Uninitialized"
+		status.Message = "Raft consensus not initialized"
+		return status
+	}
+
+	// Get basic Raft state
+	status.State = m.State()
+	status.IsLeader = m.IsLeader()
+	status.Leader = m.Leader()
+
+	// Get peer information
+	peers, err := m.GetPeers()
+	if err != nil {
+		status.IsHealthy = false
+		status.Message = fmt.Sprintf("Failed to get Raft peers: %v", err)
+		return status
+	}
+
+	status.PeerCount = len(peers)
+
+	// Check peer connectivity
+	reachableCount, unreachableCount := m.checkPeerConnectivity(peers)
+	status.ReachablePeers = reachableCount
+	status.UnreachablePeers = unreachableCount
+
+	// Evaluate overall health
+	if status.State == "Leader" || status.State == "Follower" {
+		// Normal states - check connectivity
+		if unreachableCount > 0 {
+			status.IsHealthy = false
+			status.Message = fmt.Sprintf("Raft consensus degraded: %d of %d peers unreachable",
+				unreachableCount, status.PeerCount)
+		}
+	} else if status.State == "Candidate" {
+		// Election in progress
+		status.IsHealthy = false
+		status.Message = "Raft leader election in progress"
+	} else {
+		// Unknown or problematic state
+		status.IsHealthy = false
+		status.Message = fmt.Sprintf("Raft in unexpected state: %s", status.State)
+	}
+
+	// Special case: single node cluster
+	if status.PeerCount == 1 && status.IsLeader {
+		status.IsHealthy = true
+		status.Message = "Single-node Raft cluster is healthy"
+	}
+
+	return status
+}
+
+// checkPeerConnectivity tests connectivity to all Raft peers and returns
+// counts of reachable and unreachable peers. Uses TCP connection tests
+// with short timeouts for fast health assessment.
+//
+// Essential for determining cluster connectivity health and detecting
+// network partitions that could affect consensus operations.
+func (m *RaftManager) checkPeerConnectivity(peers []string) (reachable, unreachable int) {
+	for _, peer := range peers {
+		// Parse peer format: "nodeID@address:port"
+		parts := strings.SplitN(peer, "@", 2)
+		if len(parts) != 2 {
+			unreachable++
+			continue
+		}
+
+		nodeID := parts[0]
+		address := parts[1]
+
+		// Skip ourselves
+		if nodeID == m.config.NodeID {
+			continue
+		}
+
+		// Test TCP connectivity with short timeout
+		if m.isRaftPeerReachable(address) {
+			reachable++
+		} else {
+			unreachable++
+			logging.Debug("Raft health: Peer %s (%s) is unreachable", nodeID, address)
+		}
+	}
+
+	return reachable, unreachable
+}
+
+// isRaftPeerReachable performs a TCP connectivity test to a Raft peer
+// address with a short timeout. Returns true if the peer is reachable.
+//
+// Used for health monitoring to detect network connectivity issues that
+// could impact Raft consensus operations without affecting performance.
+func (m *RaftManager) isRaftPeerReachable(address string) bool {
+	// Use a short timeout for health checks - force IPv4 for consistency
+	conn, err := net.DialTimeout("tcp4", address, 1*time.Second)
+	if err != nil {
+		return false
+	}
+	defer conn.Close()
+	return true
+}
+
+// IsRaftHealthy provides a simple boolean health check for Raft consensus.
+// Returns true if Raft is initialized, has a leader, and peers are reachable.
+//
+// Convenient method for quick health assessments when detailed status
+// information is not needed. Used by monitoring systems for simple alerts.
+func (m *RaftManager) IsRaftHealthy() bool {
+	status := m.GetHealthStatus()
+	return status.IsHealthy
 }

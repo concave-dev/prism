@@ -656,13 +656,13 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 
 	// Create SerfManager with correct port tags (all ports are now finalized)
 	serfConfig := buildSerfConfig()
-	manager, err := serf.NewSerfManager(serfConfig)
+	serfManager, err := serf.NewSerfManager(serfConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create serf manager: %w", err)
 	}
 
 	// Start SerfManager
-	if err := manager.Start(); err != nil {
+	if err := serfManager.Start(); err != nil {
 		return fmt.Errorf("failed to start serf manager: %w", err)
 	}
 
@@ -671,7 +671,7 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	// Create and start Raft manager immediately after port discovery
 	raftConfig := buildRaftConfig()
 	// Use the Serf node_id as Raft ServerID for consistency
-	raftConfig.NodeID = manager.NodeID
+	raftConfig.NodeID = serfManager.NodeID
 	raftManager, err = raft.NewRaftManager(raftConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create raft manager: %w", err)
@@ -684,17 +684,17 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	// Integrate Raft with Serf for automatic peer discovery
 	// When Serf discovers new members, Raft will automatically add them as peers
 	logging.Info("Integrating Raft with Serf for automatic peer discovery")
-	raftManager.IntegrateWithSerf(manager.ConsumerEventCh)
+	raftManager.IntegrateWithSerf(serfManager.ConsumerEventCh)
 
 	// Give Raft access to Serf member status for autopilot
-	raftManager.SetSerfManager(manager)
+	raftManager.SetSerfManager(serfManager)
 
 	logging.Info("Starting gRPC server on %s:%d", config.GRPCAddr, config.GRPCPort)
 
 	// Create and start gRPC server
 	var grpcServer *grpc.Server
 	grpcConfig := buildGRPCConfig()
-	grpcServer, err = grpc.NewServer(grpcConfig, manager)
+	grpcServer, err = grpc.NewServer(grpcConfig, serfManager, raftManager)
 	if err != nil {
 		return fmt.Errorf("failed to create gRPC server: %w", err)
 	}
@@ -704,7 +704,7 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create gRPC client pool for inter-node communication
-	grpcClientPool := grpc.NewClientPool(manager, config.GRPCPort)
+	grpcClientPool := grpc.NewClientPool(serfManager, config.GRPCPort, grpcConfig)
 
 	logging.Info("Starting HTTP API server on %s:%d", config.APIAddr, config.APIPort)
 
@@ -714,7 +714,7 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	apiConfig := api.DefaultConfig()
 	apiConfig.BindAddr = config.APIAddr
 	apiConfig.BindPort = config.APIPort
-	apiConfig.SerfManager = manager
+	apiConfig.SerfManager = serfManager
 	apiConfig.RaftManager = raftManager
 	apiConfig.GRPCClientPool = grpcClientPool
 
@@ -727,7 +727,7 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	// Serf will try each address in order until one succeeds (fault tolerance)
 	if len(config.JoinAddrs) > 0 {
 		logging.Info("Joining cluster via %v", config.JoinAddrs)
-		if err := manager.Join(config.JoinAddrs); err != nil {
+		if err := serfManager.Join(config.JoinAddrs); err != nil {
 			logging.Error("Failed to join cluster: %v", err)
 
 			// Provide helpful context for connection issues
@@ -809,7 +809,7 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	}
 
 	// Shutdown SerfManager
-	if err := manager.Shutdown(); err != nil {
+	if err := serfManager.Shutdown(); err != nil {
 		logging.Error("Error shutting down serf manager: %v", err)
 	}
 

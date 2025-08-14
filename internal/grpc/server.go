@@ -9,6 +9,7 @@ import (
 
 	"github.com/concave-dev/prism/internal/grpc/proto"
 	"github.com/concave-dev/prism/internal/logging"
+	"github.com/concave-dev/prism/internal/raft"
 	"github.com/concave-dev/prism/internal/serf"
 	grpcstd "google.golang.org/grpc"
 )
@@ -25,6 +26,7 @@ type Server struct {
 	mu          sync.RWMutex      // Mutex for thread-safe operations
 	shutdown    chan struct{}     // Channel to signal shutdown
 	serfManager *serf.SerfManager // Serf manager for resource gathering
+	raftManager *raft.RaftManager // Raft manager for consensus health checks
 
 	// Connection tracking for graceful draining
 	activeConns map[string]context.CancelFunc // Map of connection ID to cancel function
@@ -34,7 +36,7 @@ type Server struct {
 // NewServer creates a new gRPC server with the given configuration
 // TODO: Add support for TLS configuration
 // TODO: Implement custom interceptors for logging and metrics
-func NewServer(config *Config, serfManager *serf.SerfManager) (*Server, error) {
+func NewServer(config *Config, serfManager *serf.SerfManager, raftManager *raft.RaftManager) (*Server, error) {
 	if err := config.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid config: %w", err)
 	}
@@ -43,6 +45,7 @@ func NewServer(config *Config, serfManager *serf.SerfManager) (*Server, error) {
 		config:      config,
 		shutdown:    make(chan struct{}),
 		serfManager: serfManager,
+		raftManager: raftManager,
 		activeConns: make(map[string]context.CancelFunc),
 	}
 
@@ -64,9 +67,9 @@ func (s *Server) Start() error {
 		logging.SetLevel(s.config.LogLevel)
 	}
 
-	// Create network listener
+	// Create network listener - force IPv4 for consistent behavior
 	addr := fmt.Sprintf("%s:%d", s.config.BindAddr, s.config.BindPort)
-	listener, err := net.Listen("tcp", addr)
+	listener, err := net.Listen("tcp4", addr)
 	if err != nil {
 		return fmt.Errorf("failed to listen on %s: %w", addr, err)
 	}
@@ -86,7 +89,8 @@ func (s *Server) Start() error {
 	// TODO: attach interceptors for structured logging; gRPC itself does not use std logger by default.
 
 	// Register NodeService for resource and health queries
-	nodeService := NewNodeServiceImpl(s.serfManager)
+	nodeService := NewNodeServiceImpl(s.serfManager, s.raftManager, s.config)
+	nodeService.SetGRPCServer(s) // Set server reference after creation to avoid circular dependency
 	proto.RegisterNodeServiceServer(s.grpcServer, nodeService)
 
 	// Start serving in a goroutine
@@ -215,4 +219,106 @@ func (s *Server) IsRunning() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.grpcServer != nil && s.listener != nil
+}
+
+// ============================================================================
+// GRPC HEALTH CHECKS - Monitor gRPC service status without relying on gRPC calls
+// ============================================================================
+
+// GRPCHealthStatus represents the health status of the gRPC service itself
+type GRPCHealthStatus struct {
+	IsHealthy       bool   `json:"is_healthy"`
+	IsRunning       bool   `json:"is_running"`
+	ListenerAddress string `json:"listener_address"`
+	ActiveConns     int    `json:"active_connections"`
+	Message         string `json:"message"`
+}
+
+// GetHealthStatus performs local health checks on the gRPC service without
+// making gRPC calls. Checks server state, port binding, and basic connectivity.
+//
+// Critical for avoiding the chicken-and-egg problem where we use gRPC to check
+// if gRPC is working. These checks are performed locally and don't depend on
+// the gRPC service being functional.
+func (s *Server) GetHealthStatus() *GRPCHealthStatus {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	status := &GRPCHealthStatus{
+		IsHealthy: true,
+		Message:   "gRPC service is healthy",
+	}
+
+	// Check if server components are initialized
+	status.IsRunning = s.grpcServer != nil && s.listener != nil
+	if !status.IsRunning {
+		status.IsHealthy = false
+		status.Message = "gRPC server not running or not properly initialized"
+		return status
+	}
+
+	// Get listener address for verification
+	if s.listener != nil {
+		status.ListenerAddress = s.listener.Addr().String()
+	}
+
+	// Count active connections
+	s.connMu.Lock()
+	status.ActiveConns = len(s.activeConns)
+	s.connMu.Unlock()
+
+	// Perform basic TCP connectivity check to our own port
+	if !s.isSelfReachable() {
+		status.IsHealthy = false
+		status.Message = "gRPC server is running but not reachable on configured port"
+	}
+
+	return status
+}
+
+// isSelfReachable performs a basic TCP connection test to the gRPC server's
+// own port to verify it's actually accepting connections. Uses a very short
+// timeout to avoid blocking health checks.
+//
+// Essential for detecting scenarios where the server thinks it's running
+// but the port isn't actually accessible (firewall, bind issues, etc.).
+// Handles the 0.0.0.0 binding case by using 127.0.0.1 for self-connectivity tests.
+func (s *Server) isSelfReachable() bool {
+	if s.listener == nil {
+		return false
+	}
+
+	// Get the actual listening address
+	addr := s.listener.Addr().String()
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		logging.Debug("gRPC health: Failed to parse listener address %s: %v", addr, err)
+		return false
+	}
+
+	// If bound to 0.0.0.0, use 127.0.0.1 for self-connectivity test
+	// since 0.0.0.0 is not a valid target address for client connections
+	if host == "0.0.0.0" {
+		addr = net.JoinHostPort("127.0.0.1", port)
+	}
+
+	// Use a very short timeout for health checks - force IPv4 for consistency
+	conn, err := net.DialTimeout("tcp4", addr, 500*time.Millisecond)
+	if err != nil {
+		logging.Debug("gRPC health: Self-connectivity check failed for %s: %v", addr, err)
+		return false
+	}
+	defer conn.Close()
+
+	return true
+}
+
+// IsGRPCHealthy provides a simple boolean health check for the gRPC service.
+// Returns true if the service is running and reachable.
+//
+// Convenient method for quick health assessments without detailed status.
+// Used by other components to verify gRPC service availability.
+func (s *Server) IsGRPCHealthy() bool {
+	status := s.GetHealthStatus()
+	return status.IsHealthy
 }

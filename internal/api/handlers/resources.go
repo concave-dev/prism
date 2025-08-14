@@ -32,6 +32,12 @@ type NodeResourcesResponse struct {
 	MemoryAvailable uint64  `json:"memoryAvailable"`
 	MemoryUsage     float64 `json:"memoryUsage"`
 
+	// Disk Information (in bytes)
+	DiskTotal     uint64  `json:"diskTotal"`
+	DiskUsed      uint64  `json:"diskUsed"`
+	DiskAvailable uint64  `json:"diskAvailable"`
+	DiskUsage     float64 `json:"diskUsage"`
+
 	// Go Runtime Information
 	GoRoutines int     `json:"goRoutines"`
 	GoMemAlloc uint64  `json:"goMemAlloc"`
@@ -54,6 +60,9 @@ type NodeResourcesResponse struct {
 	MemoryTotalMB     int `json:"memoryTotalMB"`
 	MemoryUsedMB      int `json:"memoryUsedMB"`
 	MemoryAvailableMB int `json:"memoryAvailableMB"`
+	DiskTotalMB       int `json:"diskTotalMB"`
+	DiskUsedMB        int `json:"diskUsedMB"`
+	DiskAvailableMB   int `json:"diskAvailableMB"`
 }
 
 // convertToAPIResponse converts resources.NodeResources to API response format
@@ -73,6 +82,12 @@ func convertToAPIResponse(nodeRes *resources.NodeResources) NodeResourcesRespons
 		MemoryUsed:      nodeRes.MemoryUsed,
 		MemoryAvailable: nodeRes.MemoryAvailable,
 		MemoryUsage:     nodeRes.MemoryUsage,
+
+		// Disk Information
+		DiskTotal:     nodeRes.DiskTotal,
+		DiskUsed:      nodeRes.DiskUsed,
+		DiskAvailable: nodeRes.DiskAvailable,
+		DiskUsage:     nodeRes.DiskUsage,
 
 		// Go Runtime Information
 		GoRoutines: nodeRes.GoRoutines,
@@ -96,6 +111,9 @@ func convertToAPIResponse(nodeRes *resources.NodeResources) NodeResourcesRespons
 		MemoryTotalMB:     int(nodeRes.MemoryTotal / (1024 * 1024)),
 		MemoryUsedMB:      int(nodeRes.MemoryUsed / (1024 * 1024)),
 		MemoryAvailableMB: int(nodeRes.MemoryAvailable / (1024 * 1024)),
+		DiskTotalMB:       int(nodeRes.DiskTotal / (1024 * 1024)),
+		DiskUsedMB:        int(nodeRes.DiskUsed / (1024 * 1024)),
+		DiskAvailableMB:   int(nodeRes.DiskAvailable / (1024 * 1024)),
 	}
 }
 
@@ -252,6 +270,12 @@ func convertFromGRPCResponse(grpcRes *proto.GetResourcesResponse) NodeResourcesR
 		MemoryAvailable: grpcRes.MemoryAvailable,
 		MemoryUsage:     grpcRes.MemoryUsage,
 
+		// Disk Information
+		DiskTotal:     grpcRes.DiskTotal,
+		DiskUsed:      grpcRes.DiskUsed,
+		DiskAvailable: grpcRes.DiskAvailable,
+		DiskUsage:     grpcRes.DiskUsage,
+
 		// Go Runtime Information
 		GoRoutines: int(grpcRes.GoRoutines),
 		GoMemAlloc: grpcRes.GoMemAlloc,
@@ -274,5 +298,8 @@ func convertFromGRPCResponse(grpcRes *proto.GetResourcesResponse) NodeResourcesR
 		MemoryTotalMB:     int(grpcRes.MemoryTotal / (1024 * 1024)),
 		MemoryUsedMB:      int(grpcRes.MemoryUsed / (1024 * 1024)),
 		MemoryAvailableMB: int(grpcRes.MemoryAvailable / (1024 * 1024)),
+		DiskTotalMB:       int(grpcRes.DiskTotal / (1024 * 1024)),
+		DiskUsedMB:        int(grpcRes.DiskUsed / (1024 * 1024)),
+		DiskAvailableMB:   int(grpcRes.DiskAvailable / (1024 * 1024)),
 	}
 }

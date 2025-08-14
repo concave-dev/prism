@@ -33,6 +33,9 @@ import (
 	"time"
 
 	"github.com/concave-dev/prism/internal/logging"
+	"github.com/shirou/gopsutil/v3/cpu"
+	"github.com/shirou/gopsutil/v3/disk"
+	"github.com/shirou/gopsutil/v3/load"
 	"github.com/shirou/gopsutil/v3/mem"
 )
 
@@ -59,6 +62,12 @@ type NodeResources struct {
 	MemoryUsed      uint64  `json:"memoryUsed"`      // Currently used system memory
 	MemoryAvailable uint64  `json:"memoryAvailable"` // Available system memory for new processes
 	MemoryUsage     float64 `json:"memoryUsage"`     // System memory usage percentage (0-100)
+
+	// Disk Information (in bytes) - system disk usage for workload storage planning
+	DiskTotal     uint64  `json:"diskTotal"`     // Total disk space available to the system
+	DiskUsed      uint64  `json:"diskUsed"`      // Currently used disk space
+	DiskAvailable uint64  `json:"diskAvailable"` // Available disk space for new workloads
+	DiskUsage     float64 `json:"diskUsage"`     // Disk usage percentage (0-100)
 
 	// Go Runtime Information
 	GoRoutines int     `json:"goRoutines"` // Number of active goroutines
@@ -109,22 +118,75 @@ func GatherSystemResources(nodeID, nodeName string, startTime time.Time) *NodeRe
 		}
 	}
 
+	// Gather CPU usage information with short sampling period for responsive monitoring
+	// Uses 100ms sampling to balance accuracy with collection speed for real-time decisions
+	cpuPercent, err := cpu.Percent(100*time.Millisecond, false)
+	var cpuUsage float64
+	if err != nil || len(cpuPercent) == 0 {
+		logging.Warn("Failed to get CPU usage stats: %v", err)
+		cpuUsage = 0.0 // Fallback to unknown CPU usage
+	} else {
+		cpuUsage = cpuPercent[0] // Overall CPU usage across all cores
+	}
+
+	// Gather disk usage information for root filesystem where workloads will be stored
+	// Essential for capacity planning and preventing disk space exhaustion during scheduling
+	diskUsage, err := disk.Usage("/")
+	if err != nil {
+		logging.Error("Failed to get disk usage stats: %v", err)
+		// Graceful degradation: provide zero values when disk monitoring fails
+		diskUsage = &disk.UsageStat{
+			Total: 0,
+			Used:  0,
+			Free:  0,
+		}
+	}
+
+	// Gather system load averages for workload capacity assessment
+	// Load averages indicate system stress and are critical for scheduling decisions
+	loadAvg, err := load.Avg()
+	var load1, load5, load15 float64
+	if err != nil {
+		logging.Warn("Failed to get load average stats: %v", err)
+		load1, load5, load15 = 0.0, 0.0, 0.0 // Fallback to zero when unavailable
+	} else {
+		load1, load5, load15 = loadAvg.Load1, loadAvg.Load5, loadAvg.Load15
+	}
+
+	// Calculate available CPU percentage based on current usage
+	cpuAvailable := 100.0 - cpuUsage
+	if cpuAvailable < 0 {
+		cpuAvailable = 0.0 // Guard against negative values
+	}
+
+	// Calculate disk usage percentage
+	var diskUsagePercent float64
+	if diskUsage.Total > 0 {
+		diskUsagePercent = (float64(diskUsage.Used) / float64(diskUsage.Total)) * 100.0
+	}
+
 	// Calculate basic resource metrics
 	resources := &NodeResources{
 		NodeID:    nodeID,
 		NodeName:  nodeName,
 		Timestamp: now,
 
-		// CPU Information
+		// CPU Information - now with actual monitoring
 		CPUCores:     runtime.NumCPU(),
-		CPUUsage:     0.0,   // TODO: Implement actual CPU monitoring
-		CPUAvailable: 100.0, // TODO: Calculate based on current load
+		CPUUsage:     cpuUsage,
+		CPUAvailable: cpuAvailable,
 
 		// Memory Information (actual system memory)
 		MemoryTotal:     virtualMem.Total,
 		MemoryUsed:      virtualMem.Used,
 		MemoryAvailable: virtualMem.Available,
 		MemoryUsage:     virtualMem.UsedPercent,
+
+		// Disk Information (root filesystem for workload storage)
+		DiskTotal:     diskUsage.Total,
+		DiskUsed:      diskUsage.Used,
+		DiskAvailable: diskUsage.Free,
+		DiskUsage:     diskUsagePercent,
 
 		// Go Runtime Information
 		GoRoutines: runtime.NumGoroutine(),
@@ -133,11 +195,11 @@ func GatherSystemResources(nodeID, nodeName string, startTime time.Time) *NodeRe
 		GoGCCycles: memStats.NumGC,
 		GoGCPause:  float64(memStats.PauseNs[(memStats.NumGC+255)%256]) / 1000000, // Convert to milliseconds
 
-		// Node Status
+		// Node Status - now with actual load monitoring
 		Uptime: time.Since(startTime),
-		Load1:  0.0, // TODO: Implement load average monitoring
-		Load5:  0.0,
-		Load15: 0.0,
+		Load1:  load1,
+		Load5:  load5,
+		Load15: load15,
 
 		// Capacity (initial simple implementation)
 		MaxJobs:        10, // TODO: Make configurable
@@ -145,8 +207,9 @@ func GatherSystemResources(nodeID, nodeName string, startTime time.Time) *NodeRe
 		AvailableSlots: 10, // TODO: Calculate based on current load
 	}
 
-	logging.Debug("Gathered resources for node %s: CPU=%d, Memory=%dMB, Goroutines=%d",
-		nodeID, resources.CPUCores, resources.MemoryTotal/(1024*1024), resources.GoRoutines)
+	logging.Debug("Gathered resources for node %s: CPU=%.1f%%, Memory=%dMB (%.1f%%), Disk=%dMB (%.1f%%), Load=%.2f, Goroutines=%d",
+		nodeID, resources.CPUUsage, resources.MemoryTotal/(1024*1024), resources.MemoryUsage,
+		resources.DiskTotal/(1024*1024), resources.DiskUsage, resources.Load1, resources.GoRoutines)
 
 	return resources
 }

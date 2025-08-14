@@ -128,6 +128,12 @@ type NodeResources struct {
 	MemoryAvailable uint64  `json:"memoryAvailable"`
 	MemoryUsage     float64 `json:"memoryUsage"`
 
+	// Disk Information (in bytes)
+	DiskTotal     uint64  `json:"diskTotal"`
+	DiskUsed      uint64  `json:"diskUsed"`
+	DiskAvailable uint64  `json:"diskAvailable"`
+	DiskUsage     float64 `json:"diskUsage"`
+
 	// Go Runtime Information
 	GoRoutines int     `json:"goRoutines"`
 	GoMemAlloc uint64  `json:"goMemAlloc"`
@@ -150,6 +156,9 @@ type NodeResources struct {
 	MemoryTotalMB     int `json:"memoryTotalMB"`
 	MemoryUsedMB      int `json:"memoryUsedMB"`
 	MemoryAvailableMB int `json:"memoryAvailableMB"`
+	DiskTotalMB       int `json:"diskTotalMB"`
+	DiskUsedMB        int `json:"diskUsedMB"`
+	DiskAvailableMB   int `json:"diskAvailableMB"`
 }
 
 // NodeHealth represents node health information from the API
@@ -438,6 +447,10 @@ func (api *PrismAPIClient) GetClusterResources() ([]NodeResources, error) {
 					MemoryUsed:        utils.GetUint64(resourceMap, "memoryUsed"),
 					MemoryAvailable:   utils.GetUint64(resourceMap, "memoryAvailable"),
 					MemoryUsage:       utils.GetFloat(resourceMap, "memoryUsage"),
+					DiskTotal:         utils.GetUint64(resourceMap, "diskTotal"),
+					DiskUsed:          utils.GetUint64(resourceMap, "diskUsed"),
+					DiskAvailable:     utils.GetUint64(resourceMap, "diskAvailable"),
+					DiskUsage:         utils.GetFloat(resourceMap, "diskUsage"),
 					GoRoutines:        utils.GetInt(resourceMap, "goRoutines"),
 					GoMemAlloc:        utils.GetUint64(resourceMap, "goMemAlloc"),
 					GoMemSys:          utils.GetUint64(resourceMap, "goMemSys"),
@@ -453,6 +466,9 @@ func (api *PrismAPIClient) GetClusterResources() ([]NodeResources, error) {
 					MemoryTotalMB:     utils.GetInt(resourceMap, "memoryTotalMB"),
 					MemoryUsedMB:      utils.GetInt(resourceMap, "memoryUsedMB"),
 					MemoryAvailableMB: utils.GetInt(resourceMap, "memoryAvailableMB"),
+					DiskTotalMB:       utils.GetInt(resourceMap, "diskTotalMB"),
+					DiskUsedMB:        utils.GetInt(resourceMap, "diskUsedMB"),
+					DiskAvailableMB:   utils.GetInt(resourceMap, "diskAvailableMB"),
 				}
 				resources = append(resources, resource)
 			}
@@ -499,6 +515,10 @@ func (api *PrismAPIClient) GetNodeResources(nodeID string) (*NodeResources, erro
 			MemoryUsed:        utils.GetUint64(resourceMap, "memoryUsed"),
 			MemoryAvailable:   utils.GetUint64(resourceMap, "memoryAvailable"),
 			MemoryUsage:       utils.GetFloat(resourceMap, "memoryUsage"),
+			DiskTotal:         utils.GetUint64(resourceMap, "diskTotal"),
+			DiskUsed:          utils.GetUint64(resourceMap, "diskUsed"),
+			DiskAvailable:     utils.GetUint64(resourceMap, "diskAvailable"),
+			DiskUsage:         utils.GetFloat(resourceMap, "diskUsage"),
 			GoRoutines:        utils.GetInt(resourceMap, "goRoutines"),
 			GoMemAlloc:        utils.GetUint64(resourceMap, "goMemAlloc"),
 			GoMemSys:          utils.GetUint64(resourceMap, "goMemSys"),
@@ -514,6 +534,9 @@ func (api *PrismAPIClient) GetNodeResources(nodeID string) (*NodeResources, erro
 			MemoryTotalMB:     utils.GetInt(resourceMap, "memoryTotalMB"),
 			MemoryUsedMB:      utils.GetInt(resourceMap, "memoryUsedMB"),
 			MemoryAvailableMB: utils.GetInt(resourceMap, "memoryAvailableMB"),
+			DiskTotalMB:       utils.GetInt(resourceMap, "diskTotalMB"),
+			DiskUsedMB:        utils.GetInt(resourceMap, "diskUsedMB"),
+			DiskAvailableMB:   utils.GetInt(resourceMap, "diskAvailableMB"),
 		}
 		return resource, nil
 	}
@@ -972,9 +995,9 @@ func displayClusterResourcesFromAPI(resources []NodeResources) {
 
 		// Header
 		if config.Node.Verbose {
-			fmt.Fprintln(w, "ID\tNAME\tCPU\tMEMORY\tJOBS\tUPTIME\tGOROUTINES")
+			fmt.Fprintln(w, "ID\tNAME\tCPU\tMEMORY\tDISK\tJOBS\tUPTIME\tGOROUTINES")
 		} else {
-			fmt.Fprintln(w, "ID\tNAME\tCPU\tMEMORY\tJOBS\tUPTIME")
+			fmt.Fprintln(w, "ID\tNAME\tCPU\tMEMORY\tDISK\tJOBS\tUPTIME")
 		}
 
 		// Display each node's resources
@@ -983,23 +1006,29 @@ func displayClusterResourcesFromAPI(resources []NodeResources) {
 				humanize.IBytes(uint64(resource.MemoryUsedMB)*1024*1024),
 				humanize.IBytes(uint64(resource.MemoryTotalMB)*1024*1024),
 				resource.MemoryUsage)
+			diskWithPercent := fmt.Sprintf("%s/%s (%.1f%%)",
+				humanize.IBytes(uint64(resource.DiskUsedMB)*1024*1024),
+				humanize.IBytes(uint64(resource.DiskTotalMB)*1024*1024),
+				resource.DiskUsage)
 			jobs := fmt.Sprintf("%d/%d", resource.CurrentJobs, resource.MaxJobs)
 
 			if config.Node.Verbose {
-				fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%d\n",
+				fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%s\t%d\n",
 					resource.NodeID,
 					resource.NodeName,
 					resource.CPUCores,
 					memoryWithPercent,
+					diskWithPercent,
 					jobs,
 					resource.Uptime,
 					resource.GoRoutines)
 			} else {
-				fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\n",
+				fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%s\n",
 					resource.NodeID,
 					resource.NodeName,
 					resource.CPUCores,
 					memoryWithPercent,
+					diskWithPercent,
 					jobs,
 					resource.Uptime)
 			}
@@ -1041,7 +1070,30 @@ func displayNodeInfo(resource NodeResources, isLeader bool, health *NodeHealth, 
 		fmt.Printf("Leader: %t\n", isLeader)
 		fmt.Printf("Timestamp: %s\n", resource.Timestamp.Format(time.RFC3339))
 		if health != nil {
-			fmt.Printf("Status: %s\n", strings.ToLower(health.Status))
+			// Count check statuses for detailed health reporting
+			healthyCount := 0
+			unhealthyCount := 0
+			unknownCount := 0
+			totalChecks := len(health.Checks)
+
+			for _, check := range health.Checks {
+				switch strings.ToLower(check.Status) {
+				case "healthy":
+					healthyCount++
+				case "unhealthy":
+					unhealthyCount++
+				case "unknown":
+					unknownCount++
+				}
+			}
+
+			// Display status with check counts
+			status := strings.ToLower(health.Status)
+			if totalChecks > 0 {
+				fmt.Printf("Status: %s (%d/%d)\n", status, healthyCount, totalChecks)
+			} else {
+				fmt.Printf("Status: %s\n", status)
+			}
 		}
 		// Network information (best-effort based on Serf tags)
 		// TODO: Add explicit api_port and serf_port tags in the future for clarity
@@ -1097,6 +1149,14 @@ func displayNodeInfo(resource NodeResources, isLeader bool, health *NodeHealth, 
 		fmt.Printf("  Usage:     %.1f%%\n", resource.MemoryUsage)
 		fmt.Println()
 
+		// Disk Information
+		fmt.Printf("Disk:\n")
+		fmt.Printf("  Total:     %s\n", humanize.IBytes(uint64(resource.DiskTotalMB)*1024*1024))
+		fmt.Printf("  Used:      %s\n", humanize.IBytes(uint64(resource.DiskUsedMB)*1024*1024))
+		fmt.Printf("  Available: %s\n", humanize.IBytes(uint64(resource.DiskAvailableMB)*1024*1024))
+		fmt.Printf("  Usage:     %.1f%%\n", resource.DiskUsage)
+		fmt.Println()
+
 		// Job Capacity
 		fmt.Printf("Capacity:\n")
 		fmt.Printf("  Max Jobs:        %d\n", resource.MaxJobs)
@@ -1125,10 +1185,10 @@ func displayNodeInfo(resource NodeResources, isLeader bool, health *NodeHealth, 
 				fmt.Printf("Health Checks:\n")
 				w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 				defer w.Flush()
-				fmt.Fprintln(w, "NAME\tSTATUS\tTIMESTAMP")
+				fmt.Fprintln(w, "NAME\tSTATUS\tMESSAGE\tTIMESTAMP")
 				for _, chk := range health.Checks {
-					fmt.Fprintf(w, "%s\t%s\t%s\n",
-						chk.Name, strings.ToLower(chk.Status), chk.Timestamp.Format(time.RFC3339))
+					fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
+						chk.Name, strings.ToLower(chk.Status), chk.Message, chk.Timestamp.Format(time.RFC3339))
 				}
 			}
 		}

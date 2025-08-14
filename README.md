@@ -5,7 +5,7 @@ Distributed runtime platform for AI agents and workflows.
 ![prismd screenshot](https://github.com/user-attachments/assets/f876bf59-616a-40a3-9a37-b1116a5655f2)
 
 > [!CAUTION]
-> The cluster is not yet stable. Use at your own risk. Test coverage: ~11%.
+> The cluster is not yet stable. Use at your own risk. Test coverage: ~9%.
 
 ## Overview
 
@@ -106,3 +106,4 @@ DEBUG=true ./bin/prismctl info
 - **Network Connectivity:** Nodes behind NAT or firewalls may fail to join. Ensure gossip ports are accessible between all nodes.
 - **Metrics completeness:** CPU usage, load averages, and job accounting are placeholders; reported metrics are not yet suitable for scheduling decisions.
 - **0.0.0.0 Bind Address Limitation:** When `0.0.0.0` is specified as a bind address, the system doesn't truly bind to all network interfaces. Instead, it resolves to a single IP address by determining which local interface can reach external networks (via 8.8.8.8). This works for most setups but may bind to unexpected interfaces on multi-homed servers or fail in offline environments where it falls back to 127.0.0.1.
+- **IPv6 Not Supported:** The system currently only supports IPv4 addresses. IPv6 addresses, dual-stack configurations, and IPv6-only environments are not supported. All network components (Serf, Raft, gRPC, HTTP API) assume IPv4 addressing.

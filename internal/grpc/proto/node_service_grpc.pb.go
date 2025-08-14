@@ -4,6 +4,9 @@
 // - protoc             v5.29.3
 // source: internal/grpc/proto/node_service.proto
 
+// Package prism.node.v1 defines the gRPC service for inter-node communication
+// in the Prism cluster, enabling resource discovery and health monitoring.
+
 package proto
 
 import (
@@ -27,13 +30,18 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// NodeService provides resource information and health status for cluster nodes
-// TODO: Add authentication for secure inter-node communication
+// NodeService provides resource information and health status for cluster nodes.
+// Supports the agent mesh architecture for AI workload scheduling and monitoring.
+//
+// TODO: Add authentication for secure inter-node communication using mTLS
 // TODO: Add streaming methods for real-time resource monitoring
+// TODO: Add job scheduling and placement methods for agent workloads
 type NodeServiceClient interface {
-	// GetResources returns current resource utilization for this node
+	// GetResources returns current resource utilization and capacity for this node.
+	// Used by scheduler nodes for AI agent workload placement decisions.
 	GetResources(ctx context.Context, in *GetResourcesRequest, opts ...grpc.CallOption) (*GetResourcesResponse, error)
-	// GetHealth returns health status for this node
+	// GetHealth returns comprehensive health status for this node.
+	// Used by the cluster for failure detection and load balancing decisions.
 	GetHealth(ctx context.Context, in *GetHealthRequest, opts ...grpc.CallOption) (*GetHealthResponse, error)
 }
 
@@ -69,13 +77,18 @@ func (c *nodeServiceClient) GetHealth(ctx context.Context, in *GetHealthRequest,
 // All implementations must embed UnimplementedNodeServiceServer
 // for forward compatibility.
 //
-// NodeService provides resource information and health status for cluster nodes
-// TODO: Add authentication for secure inter-node communication
+// NodeService provides resource information and health status for cluster nodes.
+// Supports the agent mesh architecture for AI workload scheduling and monitoring.
+//
+// TODO: Add authentication for secure inter-node communication using mTLS
 // TODO: Add streaming methods for real-time resource monitoring
+// TODO: Add job scheduling and placement methods for agent workloads
 type NodeServiceServer interface {
-	// GetResources returns current resource utilization for this node
+	// GetResources returns current resource utilization and capacity for this node.
+	// Used by scheduler nodes for AI agent workload placement decisions.
 	GetResources(context.Context, *GetResourcesRequest) (*GetResourcesResponse, error)
-	// GetHealth returns health status for this node
+	// GetHealth returns comprehensive health status for this node.
+	// Used by the cluster for failure detection and load balancing decisions.
 	GetHealth(context.Context, *GetHealthRequest) (*GetHealthResponse, error)
 	mustEmbedUnimplementedNodeServiceServer()
 }

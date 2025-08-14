@@ -60,28 +60,35 @@ message GetResourcesResponse {
   uint64 memory_available = 9;   // Available memory for new allocations
   double memory_usage = 10;      // Memory utilization percentage (0.0-100.0)
   
+  // Disk Information (bytes) - root filesystem for workload storage
+  uint64 disk_total = 11;        // Total disk space available
+  uint64 disk_used = 12;         // Currently used disk space
+  uint64 disk_available = 13;    // Available disk space for new workloads
+  double disk_usage = 14;        // Disk utilization percentage (0.0-100.0)
+  
   // Go Runtime Information
-  int32 go_routines = 11;        // Active goroutines in prismd process
-  uint64 go_mem_alloc = 12;      // Heap memory allocated by Go runtime (bytes)
-  uint64 go_mem_sys = 13;        // Memory obtained from OS by Go runtime (bytes)
-  uint32 go_gc_cycles = 14;      // Completed garbage collection cycles
-  double go_gc_pause = 15;       // Average GC pause time (milliseconds)
+  int32 go_routines = 15;        // Active goroutines in prismd process
+  uint64 go_mem_alloc = 16;      // Heap memory allocated by Go runtime (bytes)
+  uint64 go_mem_sys = 17;        // Memory obtained from OS by Go runtime (bytes)
+  uint32 go_gc_cycles = 18;      // Completed garbage collection cycles
+  double go_gc_pause = 19;       // Average GC pause time (milliseconds)
   
   // Node Status and Load
-  int64 uptime_seconds = 16;     // Node uptime since prismd started
-  double load1 = 17;             // System load average (1 minute)
-  double load5 = 18;             // System load average (5 minutes)
-  double load15 = 19;            // System load average (15 minutes)
+  int64 uptime_seconds = 20;     // Node uptime since prismd started
+  double load1 = 21;             // System load average (1 minute)
+  double load5 = 22;             // System load average (5 minutes)
+  double load15 = 23;            // System load average (15 minutes)
   
   // Job Capacity and Utilization
-  int32 max_jobs = 20;           // Maximum concurrent AI agent jobs
-  int32 current_jobs = 21;       // Currently running AI agent jobs
-  int32 available_slots = 22;    // Available job slots (max_jobs - current_jobs)
+  int32 max_jobs = 24;           // Maximum concurrent AI agent jobs
+  int32 current_jobs = 25;       // Currently running AI agent jobs
+  int32 available_slots = 26;    // Available job slots (max_jobs - current_jobs)
 }
 
 // GetHealthRequest allows selective execution of specific health checks.
 message GetHealthRequest {
-  // Optional: specific health check types to perform (e.g., "disk", "network", "services").
+  // Optional: specific health check types to perform.
+  // Available types: "serf", "raft", "grpc", "api", "cpu", "memory", "disk"
   // If empty, performs all available health checks.
   repeated string check_types = 1;
 }
