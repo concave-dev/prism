@@ -24,4 +24,8 @@ func TestDefaultsValidation(t *testing.T) {
 	if DefaultLogLevel != "INFO" {
 		t.Errorf("DefaultLogLevel = %q, expected INFO", DefaultLogLevel)
 	}
+
+	if DefaultDataDir != "./data" {
+		t.Errorf("DefaultDataDir = %q, expected ./data", DefaultDataDir)
+	}
 }

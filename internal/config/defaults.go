@@ -13,4 +13,8 @@ const (
 	// INFO provides good balance of visibility without verbose debug output
 	// TODO: Make log level configurable per component (serf, raft, api)
 	DefaultLogLevel = "INFO"
+
+	// DefaultDataDir is the default data directory for persistent storage
+	// Auto-configures to ./data/timestamp when not explicitly set
+	DefaultDataDir = "./data"
 )

@@ -89,6 +89,7 @@ var config struct {
 	raftAddrExplicitlySet bool
 	grpcAddrExplicitlySet bool
 	apiAddrExplicitlySet  bool
+	dataDirExplicitlySet  bool
 }
 
 // Root command
@@ -98,20 +99,22 @@ var rootCmd = &cobra.Command{
 	Long: `Prism daemon (prismd) provides distributed runtime infrastructure for AI agents.
 
 Think Kubernetes for AI agents - with isolated VMs, sandboxed execution, 
-serverless functions, native memory, workflows, and other AI-first primitives.`,
+serverless functions, native memory, workflows, and other AI-first primitives.
+
+Auto-configures network addresses and data directory when not explicitly specified.`,
 	Version:      Version,
 	SilenceUsage: true, // Don't show usage on errors
-	Example: `  	  # Start first node in cluster (bootstrap)
-	  prismd --serf=` + DefaultSerf + ` --bootstrap
+	Example: `  	  # Start first node in cluster (bootstrap) - auto-configures ports and data directory
+	  prismd --bootstrap
 
 	  # Start second node and join existing cluster  
-	  prismd --serf=0.0.0.0:4201 --join=127.0.0.1:4200 --name=second-node
+	  prismd --join=127.0.0.1:4200 --name=second-node
 
-	  # Start with API accessible from external hosts (first node)
-	  prismd --serf=` + DefaultSerf + ` --api=` + DefaultAPI + ` --bootstrap
+	  # Explicit configuration (advanced usage)
+	  prismd --serf=0.0.0.0:4200 --api=0.0.0.0:8008 --data-dir=/var/lib/prism --bootstrap
 
 	  # Join with multiple addresses for fault tolerance
-	  prismd --serf=0.0.0.0:4202 --join=node1:4200,node2:4200,node3:4200`,
+	  prismd --join=node1:4200,node2:4200,node3:4200`,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		// Display logo first, before any validation or logging
 		displayLogo()
@@ -136,8 +139,8 @@ func init() {
 	rootCmd.Flags().StringVar(&config.RaftAddr, "raft", DefaultRaft,
 		"Address and port for Raft consensus (e.g., "+DefaultRaft+")\n"+
 			"If not specified, defaults to "+DefaultRaft)
-	rootCmd.Flags().StringVar(&config.DataDir, "data-dir", "./data",
-		"Directory for persistent data storage (logs, snapshots)")
+	rootCmd.Flags().StringVar(&config.DataDir, "data-dir", configDefaults.DefaultDataDir,
+		"Directory for persistent data storage (auto-configures to ./data/timestamp when not specified)")
 
 	// TODO: Replace --bootstrap with --bootstrap-expect for safer cluster formation
 	// The current --bootstrap flag has race condition risks during cluster startup:
@@ -172,6 +175,7 @@ func checkExplicitFlags(cmd *cobra.Command) {
 	config.apiAddrExplicitlySet = cmd.Flags().Changed("api")
 	config.raftAddrExplicitlySet = cmd.Flags().Changed("raft")
 	config.grpcAddrExplicitlySet = cmd.Flags().Changed("grpc")
+	config.dataDirExplicitlySet = cmd.Flags().Changed("data-dir")
 }
 
 // findAvailablePort finds an available port starting from the given port on the specified address.
@@ -369,6 +373,20 @@ func validateConfig(cmd *cobra.Command, args []string) error {
 	// This would allow nodes to wait for expected quorum before starting the cluster
 	if config.Bootstrap && len(config.JoinAddrs) > 0 {
 		return fmt.Errorf("cannot use --bootstrap and --join together: bootstrap creates a new cluster, join connects to existing cluster")
+	}
+
+	// Handle data directory configuration
+	// Auto-configure data directory when not explicitly set (similar to other services)
+	if !config.dataDirExplicitlySet {
+		// Generate timestamped data directory to avoid conflicts between runs
+		timestamp := time.Now().Format("20060102-150405")
+		config.DataDir = fmt.Sprintf("./data/%s", timestamp)
+		logging.Info("Data directory auto-configured: %s", config.DataDir)
+	}
+
+	// Validate data directory is not empty (whether explicitly set or auto-configured)
+	if config.DataDir == "" {
+		return fmt.Errorf("data directory cannot be empty")
 	}
 
 	return nil

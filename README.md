@@ -56,18 +56,20 @@ go build -o bin/prismctl ./cmd/prismctl
 
 Start the daemon:
 ```bash
-# First node (bootstrap new cluster)
-./bin/prismd --serf=0.0.0.0:4200 --bootstrap --name=first-node
+# First node (bootstrap new cluster) - auto-configures ports and data directory
+./bin/prismd --bootstrap --name=first-node
 
-# For production with remote API access (first node)
-./bin/prismd --serf=0.0.0.0:4200 --api=0.0.0.0:8008 --bootstrap --name=first-node
+# Join second node to existing cluster - auto-configures ports and data directory  
+./bin/prismd --join=192.168.1.100:4200 --name=second-node
 
-# Join second node to existing cluster
-./bin/prismd --join=192.168.1.100:4200 --serf=0.0.0.0:4201 --name=second-node
+# Explicit configuration for production (advanced usage)
+./bin/prismd --serf=0.0.0.0:4200 --api=0.0.0.0:8008 --data-dir=/var/lib/prism --bootstrap --name=first-node
 
 # Enable debug mode for development (verbose logging and detailed HTTP output)
-DEBUG=true ./bin/prismd --serf=0.0.0.0:4200 --bootstrap --name=first-node
+DEBUG=true ./bin/prismd --bootstrap --name=first-node
 ```
+
+**Auto-Configuration**: Network addresses (`--serf`, `--raft`, `--grpc`, `--api`) and data directory (`--data-dir`) are automatically configured when not explicitly specified, using available ports and timestamped directories like `./data/20240115-143022` for storage.
 
 Use the CLI:
 ```bash
