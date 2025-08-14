@@ -226,7 +226,7 @@ func (csw *ColorfulSerfWriter) Close() error {
 
 // processLogs parses Serf log lines and routes them through the colorful logging system.
 // Runs in a background goroutine to continuously process logs from the Serf library.
-// Extracts log levels from Serf's format and re-emits through our colored logger with "serf:" prefix.
+// Extracts log levels from Serf's format and re-emits through our colored logger with "(serf)" prefix.
 //
 // Essential for maintaining consistent log formatting across all cluster components.
 func (csw *ColorfulSerfWriter) processLogs() {
@@ -255,21 +255,21 @@ func (csw *ColorfulSerfWriter) processLogs() {
 			// Route through appropriate colorful logging function based on level
 			switch level {
 			case "DEBUG":
-				Debug("serf: %s", message)
+				Debug("(serf) %s", message)
 			case "INFO":
-				Info("serf: %s", message)
+				Info("(serf) %s", message)
 			case "WARN", "WARNING":
-				Warn("serf: %s", message)
+				Warn("(serf) %s", message)
 			case "ERR", "ERROR":
-				Error("serf: %s", message)
+				Error("(serf) %s", message)
 			default:
 				// For unknown levels, use info but preserve original level
-				Info("serf[%s]: %s", level, message)
+				Info("(serf)[%s]: %s", level, message)
 			}
 		} else {
 			// If we can't parse it, still route through colorful logging
 			// This handles any malformed logs or different formats
-			Info("serf: %s", line)
+			Info("(serf) %s", line)
 		}
 	}
 }
@@ -375,15 +375,15 @@ func (crw *ColorfulRaftWriter) outputMessage(level, message string) {
 
 	switch adjustedLevel {
 	case "DEBUG":
-		Debug("raft: %s", message)
+		Debug("(raft) %s", message)
 	case "INFO":
-		Info("raft: %s", message)
+		Info("(raft) %s", message)
 	case "WARN", "WARNING":
-		Warn("raft: %s", message)
+		Warn("(raft) %s", message)
 	case "ERR", "ERROR":
-		Error("raft: %s", message)
+		Error("(raft) %s", message)
 	default:
-		Info("raft[%s]: %s", adjustedLevel, message)
+		Info("(raft)[%s]: %s", adjustedLevel, message)
 	}
 }
 
@@ -531,7 +531,7 @@ func (crw *ColorfulRaftWriter) processLogs() {
 			}
 		} else {
 			// If we can't parse any timestamp format, log as-is
-			Info("raft: %s", line)
+			Info("(raft) %s", line)
 		}
 	}
 }
