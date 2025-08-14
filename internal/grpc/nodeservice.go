@@ -95,6 +95,10 @@ func (n *NodeServiceImpl) GetResources(ctx context.Context, req *proto.GetResour
 func (n *NodeServiceImpl) GetHealth(ctx context.Context, req *proto.GetHealthRequest) (*proto.GetHealthResponse, error) {
 	now := time.Now()
 
+	// Set a shared timeout for all health checks to prevent excessive latency
+	checkCtx, cancel := context.WithTimeout(ctx, 1*time.Second)
+	defer cancel()
+
 	// Guard against nil serfManager - required for node identity
 	if n.serfManager == nil {
 		return &proto.GetHealthResponse{
@@ -113,44 +117,50 @@ func (n *NodeServiceImpl) GetHealth(ctx context.Context, req *proto.GetHealthReq
 		}, nil
 	}
 
+	// Run health checks concurrently to reduce tail latency
+	type checkResult struct {
+		check *proto.HealthCheck
+		name  string
+	}
+
+	checkChan := make(chan checkResult, 4)
+
+	// Launch concurrent health checks
+	go func() {
+		checkChan <- checkResult{n.checkSerfMembershipHealth(checkCtx, now), "serf"}
+	}()
+	go func() {
+		checkChan <- checkResult{n.checkRaftServiceHealth(checkCtx, now), "raft"}
+	}()
+	go func() {
+		checkChan <- checkResult{n.checkGRPCServiceHealth(checkCtx, now), "grpc"}
+	}()
+	go func() {
+		checkChan <- checkResult{n.checkAPIServiceHealth(checkCtx, now), "api"}
+	}()
+
+	// Collect results or handle timeout
 	var checks []*proto.HealthCheck
-	overallStatus := proto.HealthStatus_HEALTHY
+	completed := 0
+	expectedChecks := 4
 
-	// Check Serf membership status
-	serfCheck := n.checkSerfMembershipHealth(ctx, now)
-	checks = append(checks, serfCheck)
-
-	// Early return if context was cancelled
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
+	for completed < expectedChecks {
+		select {
+		case result := <-checkChan:
+			checks = append(checks, result.check)
+			completed++
+		case <-checkCtx.Done():
+			// Add a timeout check for any remaining uncompleted checks
+			checks = append(checks, &proto.HealthCheck{
+				Name:      "health_check_timeout",
+				Status:    proto.HealthStatus_UNKNOWN,
+				Message:   fmt.Sprintf("Health check timed out (%d/%d checks completed)", completed, expectedChecks),
+				Timestamp: timestamppb.New(now),
+			})
+			goto done
+		}
 	}
-
-	// Check Raft service if Raft manager is available
-	raftCheck := n.checkRaftServiceHealth(ctx, now)
-	checks = append(checks, raftCheck)
-
-	// Early return if context was cancelled
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-
-	// Check gRPC service health (local checks, no circular dependency)
-	grpcCheck := n.checkGRPCServiceHealth(ctx, now)
-	checks = append(checks, grpcCheck)
-
-	// Early return if context was cancelled
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-
-	// Check HTTP API service health using local HTTP request with short timeout
-	apiCheck := n.checkAPIServiceHealth(ctx, now)
-	checks = append(checks, apiCheck)
-
-	// Early return if context was cancelled
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
+done:
 
 	// Count check statuses for better health reporting
 	healthyCount := 0
@@ -171,6 +181,7 @@ func (n *NodeServiceImpl) GetHealth(ctx context.Context, req *proto.GetHealthReq
 	// Any unhealthy check makes the node unhealthy
 	// All unknown checks make the node unknown
 	// Otherwise healthy
+	var overallStatus proto.HealthStatus
 	if unhealthyCount > 0 {
 		overallStatus = proto.HealthStatus_UNHEALTHY
 	} else if unknownCount == len(checks) {
@@ -227,8 +238,11 @@ func (n *NodeServiceImpl) checkAPIServiceHealth(ctx context.Context, now time.Ti
 		candidates = append(candidates, fmt.Sprintf("%s:%s", member.Addr.String(), apiPort))
 	}
 
-	// Create HTTP client with context-aware request
-	client := &http.Client{Timeout: 750 * time.Millisecond}
+	// Create HTTP client without timeout since we're using context deadline
+	client := &http.Client{}
+	var lastErr error
+	var lastStatusCode int
+
 	for _, addr := range candidates {
 		// Check context before each attempt
 		if ctx.Err() != nil {
@@ -241,31 +255,49 @@ func (n *NodeServiceImpl) checkAPIServiceHealth(ctx context.Context, now time.Ti
 		}
 
 		url := fmt.Sprintf("http://%s/api/v1/health", addr)
-		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		if err != nil {
+			lastErr = err
 			continue
 		}
+
 		resp, err := client.Do(req)
 		if err != nil {
+			lastErr = err
 			continue
 		}
+
 		if resp != nil {
 			_ = resp.Body.Close()
+			lastStatusCode = resp.StatusCode
 		}
+
 		if resp.StatusCode == http.StatusOK {
 			return &proto.HealthCheck{
 				Name:      "api_service",
 				Status:    proto.HealthStatus_HEALTHY,
-				Message:   "HTTP API is healthy",
+				Message:   fmt.Sprintf("HTTP API is healthy (status: %d)", resp.StatusCode),
 				Timestamp: timestamppb.New(now),
 			}
 		}
 	}
 
+	// Build detailed error message based on what we observed
+	var message string
+	if lastErr != nil && lastStatusCode > 0 {
+		message = fmt.Sprintf("HTTP API unhealthy (last status: %d, last error: %v)", lastStatusCode, lastErr)
+	} else if lastStatusCode > 0 {
+		message = fmt.Sprintf("HTTP API returned non-200 status: %d", lastStatusCode)
+	} else if lastErr != nil {
+		message = fmt.Sprintf("HTTP API unreachable: %v", lastErr)
+	} else {
+		message = "HTTP API unreachable or unhealthy"
+	}
+
 	return &proto.HealthCheck{
 		Name:      "api_service",
 		Status:    proto.HealthStatus_UNHEALTHY,
-		Message:   "HTTP API unreachable or unhealthy",
+		Message:   message,
 		Timestamp: timestamppb.New(now),
 	}
 }
@@ -316,6 +348,16 @@ func (n *NodeServiceImpl) checkSerfMembershipHealth(ctx context.Context, now tim
 	// Additional check: verify we can see other cluster members (if any)
 	members := n.serfManager.GetMembers()
 	memberCount := len(members)
+
+	// Handle edge case where no members are visible
+	if memberCount == 0 {
+		return &proto.HealthCheck{
+			Name:      "serf_service",
+			Status:    proto.HealthStatus_UNKNOWN,
+			Message:   "No cluster members visible (Serf membership may be initializing)",
+			Timestamp: timestamppb.New(now),
+		}
+	}
 
 	if memberCount == 1 {
 		// Single node cluster - this is valid
