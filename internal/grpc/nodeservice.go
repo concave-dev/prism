@@ -94,6 +94,7 @@ func (n *NodeServiceImpl) GetResources(ctx context.Context, req *proto.GetResour
 
 // GetHealth returns health status for this node including Serf membership
 // and Raft consensus connectivity checks for comprehensive cluster health monitoring.
+// Supports selective health checks via the check_types parameter.
 func (n *NodeServiceImpl) GetHealth(ctx context.Context, req *proto.GetHealthRequest) (*proto.GetHealthResponse, error) {
 	now := time.Now()
 
@@ -120,32 +121,82 @@ func (n *NodeServiceImpl) GetHealth(ctx context.Context, req *proto.GetHealthReq
 		}, nil
 	}
 
+	// Determine which health checks to run based on request
+	// Default to all checks if no specific types requested
+	requestedChecks := req.GetCheckTypes()
+	var selectedChecks []string
+
+	if len(requestedChecks) == 0 {
+		// Default: run all available health checks
+		selectedChecks = []string{"serf", "raft", "grpc", "api"}
+	} else {
+		// Filter to only supported check types
+		supportedChecks := map[string]bool{
+			"serf": true,
+			"raft": true,
+			"grpc": true,
+			"api":  true,
+		}
+
+		for _, checkType := range requestedChecks {
+			if supportedChecks[checkType] {
+				selectedChecks = append(selectedChecks, checkType)
+			}
+		}
+
+		// If no valid check types were requested, return error
+		if len(selectedChecks) == 0 {
+			return &proto.GetHealthResponse{
+				NodeId:    n.serfManager.NodeID,
+				NodeName:  n.serfManager.NodeName,
+				Timestamp: timestamppb.New(now),
+				Status:    proto.HealthStatus_UNKNOWN,
+				Checks: []*proto.HealthCheck{
+					{
+						Name:      "invalid_request",
+						Status:    proto.HealthStatus_UNKNOWN,
+						Message:   fmt.Sprintf("No valid check types found in request: %v. Supported types: serf, raft, grpc, api", requestedChecks),
+						Timestamp: timestamppb.New(now),
+					},
+				},
+			}, nil
+		}
+	}
+
 	// Run health checks concurrently to reduce tail latency
 	type checkResult struct {
 		check *proto.HealthCheck
 		name  string
 	}
 
-	checkChan := make(chan checkResult, 4)
+	expectedChecks := len(selectedChecks)
+	checkChan := make(chan checkResult, expectedChecks)
 
-	// Launch concurrent health checks
-	go func() {
-		checkChan <- checkResult{n.checkSerfMembershipHealth(checkCtx, now), "serf"}
-	}()
-	go func() {
-		checkChan <- checkResult{n.checkRaftServiceHealth(checkCtx, now), "raft"}
-	}()
-	go func() {
-		checkChan <- checkResult{n.checkGRPCServiceHealth(checkCtx, now), "grpc"}
-	}()
-	go func() {
-		checkChan <- checkResult{n.checkAPIServiceHealth(checkCtx, now), "api"}
-	}()
+	// Launch only the selected health checks
+	for _, checkType := range selectedChecks {
+		switch checkType {
+		case "serf":
+			go func() {
+				checkChan <- checkResult{n.checkSerfMembershipHealth(checkCtx, now), "serf"}
+			}()
+		case "raft":
+			go func() {
+				checkChan <- checkResult{n.checkRaftServiceHealth(checkCtx, now), "raft"}
+			}()
+		case "grpc":
+			go func() {
+				checkChan <- checkResult{n.checkGRPCServiceHealth(checkCtx, now), "grpc"}
+			}()
+		case "api":
+			go func() {
+				checkChan <- checkResult{n.checkAPIServiceHealth(checkCtx, now), "api"}
+			}()
+		}
+	}
 
 	// Collect results or handle timeout
 	var checks []*proto.HealthCheck
 	completed := 0
-	expectedChecks := 4
 
 	for completed < expectedChecks {
 		select {

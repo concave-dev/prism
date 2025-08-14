@@ -172,9 +172,14 @@ func (cp *ClientPool) GetResourcesFromNode(nodeID string) (*proto.GetResourcesRe
 // GetHealthFromNode queries health information from a specific node via gRPC.
 // Uses configured client call timeout which is greater than server health check timeout
 // to prevent race conditions and ensure proper error handling.
-//
-// TODO: Enrich request with specific check types when implemented server-side
 func (cp *ClientPool) GetHealthFromNode(nodeID string) (*proto.GetHealthResponse, error) {
+	return cp.GetHealthFromNodeWithTypes(nodeID, nil)
+}
+
+// GetHealthFromNodeWithTypes queries specific health check types from a node via gRPC.
+// If checkTypes is nil or empty, performs all available health checks.
+// Supported check types: "serf", "raft", "grpc", "api"
+func (cp *ClientPool) GetHealthFromNodeWithTypes(nodeID string, checkTypes []string) (*proto.GetHealthResponse, error) {
 	client, err := cp.GetClient(nodeID)
 	if err != nil {
 		return nil, err
@@ -183,7 +188,9 @@ func (cp *ClientPool) GetHealthFromNode(nodeID string) (*proto.GetHealthResponse
 	ctx, cancel := context.WithTimeout(context.Background(), cp.config.ClientCallTimeout)
 	defer cancel()
 
-	req := &proto.GetHealthRequest{}
+	req := &proto.GetHealthRequest{
+		CheckTypes: checkTypes,
+	}
 	return client.GetHealth(ctx, req)
 }
 
