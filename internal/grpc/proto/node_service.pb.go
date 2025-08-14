@@ -4,6 +4,9 @@
 // 	protoc        v5.29.3
 // source: internal/grpc/proto/node_service.proto
 
+// Package prism.node.v1 defines the gRPC service for inter-node communication
+// in the Prism cluster, enabling resource discovery and health monitoring.
+
 package proto
 
 import (
@@ -22,14 +25,14 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// HealthStatus represents the overall health of a node
+// HealthStatus represents the overall health state of a node for workload placement decisions.
 type HealthStatus int32
 
 const (
-	HealthStatus_UNKNOWN   HealthStatus = 0
-	HealthStatus_HEALTHY   HealthStatus = 1
-	HealthStatus_DEGRADED  HealthStatus = 2
-	HealthStatus_UNHEALTHY HealthStatus = 3
+	HealthStatus_UNKNOWN   HealthStatus = 0 // Unknown health state or health checks failed
+	HealthStatus_HEALTHY   HealthStatus = 1 // Fully operational and ready for new workloads
+	HealthStatus_DEGRADED  HealthStatus = 2 // Operational with minor issues, monitor closely
+	HealthStatus_UNHEALTHY HealthStatus = 3 // Serious issues, should not receive new workloads
 )
 
 // Enum value maps for HealthStatus.
@@ -75,10 +78,11 @@ func (HealthStatus) EnumDescriptor() ([]byte, []int) {
 	return file_internal_grpc_proto_node_service_proto_rawDescGZIP(), []int{0}
 }
 
-// GetResourcesRequest is the request message for resource queries
+// GetResourcesRequest allows selective querying of specific resource types.
 type GetResourcesRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Optional: specific resource types to query (empty = all)
+	// Optional: specific resource types to query (e.g., "cpu", "memory", "jobs").
+	// If empty, returns all available resource information.
 	ResourceTypes []string `protobuf:"bytes,1,rep,name=resource_types,json=resourceTypes,proto3" json:"resource_types,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -121,36 +125,44 @@ func (x *GetResourcesRequest) GetResourceTypes() []string {
 	return nil
 }
 
-// GetResourcesResponse contains node resource information
+// GetResourcesResponse contains node resource information for workload placement decisions.
 type GetResourcesResponse struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	NodeId    string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
-	NodeName  string                 `protobuf:"bytes,2,opt,name=node_name,json=nodeName,proto3" json:"node_name,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Unique identifier for this node (12-character hex string)
+	NodeId string `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	// Human-readable name for this node
+	NodeName string `protobuf:"bytes,2,opt,name=node_name,json=nodeName,proto3" json:"node_name,omitempty"`
+	// Timestamp when these resource metrics were captured
 	Timestamp *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
 	// CPU Information
-	CpuCores     int32   `protobuf:"varint,4,opt,name=cpu_cores,json=cpuCores,proto3" json:"cpu_cores,omitempty"`
-	CpuUsage     float64 `protobuf:"fixed64,5,opt,name=cpu_usage,json=cpuUsage,proto3" json:"cpu_usage,omitempty"`
-	CpuAvailable float64 `protobuf:"fixed64,6,opt,name=cpu_available,json=cpuAvailable,proto3" json:"cpu_available,omitempty"`
-	// Memory Information (in bytes)
-	MemoryTotal     uint64  `protobuf:"varint,7,opt,name=memory_total,json=memoryTotal,proto3" json:"memory_total,omitempty"`
-	MemoryUsed      uint64  `protobuf:"varint,8,opt,name=memory_used,json=memoryUsed,proto3" json:"memory_used,omitempty"`
-	MemoryAvailable uint64  `protobuf:"varint,9,opt,name=memory_available,json=memoryAvailable,proto3" json:"memory_available,omitempty"`
-	MemoryUsage     float64 `protobuf:"fixed64,10,opt,name=memory_usage,json=memoryUsage,proto3" json:"memory_usage,omitempty"`
+	CpuCores     int32   `protobuf:"varint,4,opt,name=cpu_cores,json=cpuCores,proto3" json:"cpu_cores,omitempty"`              // Total CPU cores available
+	CpuUsage     float64 `protobuf:"fixed64,5,opt,name=cpu_usage,json=cpuUsage,proto3" json:"cpu_usage,omitempty"`             // Current CPU utilization percentage (0.0-100.0)
+	CpuAvailable float64 `protobuf:"fixed64,6,opt,name=cpu_available,json=cpuAvailable,proto3" json:"cpu_available,omitempty"` // Available CPU capacity percentage
+	// Memory Information (bytes)
+	MemoryTotal     uint64  `protobuf:"varint,7,opt,name=memory_total,json=memoryTotal,proto3" json:"memory_total,omitempty"`             // Total physical memory
+	MemoryUsed      uint64  `protobuf:"varint,8,opt,name=memory_used,json=memoryUsed,proto3" json:"memory_used,omitempty"`                // Currently used memory
+	MemoryAvailable uint64  `protobuf:"varint,9,opt,name=memory_available,json=memoryAvailable,proto3" json:"memory_available,omitempty"` // Available memory for new allocations
+	MemoryUsage     float64 `protobuf:"fixed64,10,opt,name=memory_usage,json=memoryUsage,proto3" json:"memory_usage,omitempty"`           // Memory utilization percentage (0.0-100.0)
+	// Disk Information (bytes) - root filesystem for workload storage
+	DiskTotal     uint64  `protobuf:"varint,11,opt,name=disk_total,json=diskTotal,proto3" json:"disk_total,omitempty"`             // Total disk space available
+	DiskUsed      uint64  `protobuf:"varint,12,opt,name=disk_used,json=diskUsed,proto3" json:"disk_used,omitempty"`                // Currently used disk space
+	DiskAvailable uint64  `protobuf:"varint,13,opt,name=disk_available,json=diskAvailable,proto3" json:"disk_available,omitempty"` // Available disk space for new workloads
+	DiskUsage     float64 `protobuf:"fixed64,14,opt,name=disk_usage,json=diskUsage,proto3" json:"disk_usage,omitempty"`            // Disk utilization percentage (0.0-100.0)
 	// Go Runtime Information
-	GoRoutines int32   `protobuf:"varint,11,opt,name=go_routines,json=goRoutines,proto3" json:"go_routines,omitempty"`
-	GoMemAlloc uint64  `protobuf:"varint,12,opt,name=go_mem_alloc,json=goMemAlloc,proto3" json:"go_mem_alloc,omitempty"`
-	GoMemSys   uint64  `protobuf:"varint,13,opt,name=go_mem_sys,json=goMemSys,proto3" json:"go_mem_sys,omitempty"`
-	GoGcCycles uint32  `protobuf:"varint,14,opt,name=go_gc_cycles,json=goGcCycles,proto3" json:"go_gc_cycles,omitempty"`
-	GoGcPause  float64 `protobuf:"fixed64,15,opt,name=go_gc_pause,json=goGcPause,proto3" json:"go_gc_pause,omitempty"`
-	// Node Status
-	UptimeSeconds int64   `protobuf:"varint,16,opt,name=uptime_seconds,json=uptimeSeconds,proto3" json:"uptime_seconds,omitempty"`
-	Load1         float64 `protobuf:"fixed64,17,opt,name=load1,proto3" json:"load1,omitempty"`
-	Load5         float64 `protobuf:"fixed64,18,opt,name=load5,proto3" json:"load5,omitempty"`
-	Load15        float64 `protobuf:"fixed64,19,opt,name=load15,proto3" json:"load15,omitempty"`
-	// Capacity Limits
-	MaxJobs        int32 `protobuf:"varint,20,opt,name=max_jobs,json=maxJobs,proto3" json:"max_jobs,omitempty"`
-	CurrentJobs    int32 `protobuf:"varint,21,opt,name=current_jobs,json=currentJobs,proto3" json:"current_jobs,omitempty"`
-	AvailableSlots int32 `protobuf:"varint,22,opt,name=available_slots,json=availableSlots,proto3" json:"available_slots,omitempty"`
+	GoRoutines int32   `protobuf:"varint,15,opt,name=go_routines,json=goRoutines,proto3" json:"go_routines,omitempty"`   // Active goroutines in prismd process
+	GoMemAlloc uint64  `protobuf:"varint,16,opt,name=go_mem_alloc,json=goMemAlloc,proto3" json:"go_mem_alloc,omitempty"` // Heap memory allocated by Go runtime (bytes)
+	GoMemSys   uint64  `protobuf:"varint,17,opt,name=go_mem_sys,json=goMemSys,proto3" json:"go_mem_sys,omitempty"`       // Memory obtained from OS by Go runtime (bytes)
+	GoGcCycles uint32  `protobuf:"varint,18,opt,name=go_gc_cycles,json=goGcCycles,proto3" json:"go_gc_cycles,omitempty"` // Completed garbage collection cycles
+	GoGcPause  float64 `protobuf:"fixed64,19,opt,name=go_gc_pause,json=goGcPause,proto3" json:"go_gc_pause,omitempty"`   // Average GC pause time (milliseconds)
+	// Node Status and Load
+	UptimeSeconds int64   `protobuf:"varint,20,opt,name=uptime_seconds,json=uptimeSeconds,proto3" json:"uptime_seconds,omitempty"` // Node uptime since prismd started
+	Load1         float64 `protobuf:"fixed64,21,opt,name=load1,proto3" json:"load1,omitempty"`                                     // System load average (1 minute)
+	Load5         float64 `protobuf:"fixed64,22,opt,name=load5,proto3" json:"load5,omitempty"`                                     // System load average (5 minutes)
+	Load15        float64 `protobuf:"fixed64,23,opt,name=load15,proto3" json:"load15,omitempty"`                                   // System load average (15 minutes)
+	// Job Capacity and Utilization
+	MaxJobs        int32 `protobuf:"varint,24,opt,name=max_jobs,json=maxJobs,proto3" json:"max_jobs,omitempty"`                      // Maximum concurrent AI agent jobs
+	CurrentJobs    int32 `protobuf:"varint,25,opt,name=current_jobs,json=currentJobs,proto3" json:"current_jobs,omitempty"`          // Currently running AI agent jobs
+	AvailableSlots int32 `protobuf:"varint,26,opt,name=available_slots,json=availableSlots,proto3" json:"available_slots,omitempty"` // Available job slots (max_jobs - current_jobs)
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -255,6 +267,34 @@ func (x *GetResourcesResponse) GetMemoryUsage() float64 {
 	return 0
 }
 
+func (x *GetResourcesResponse) GetDiskTotal() uint64 {
+	if x != nil {
+		return x.DiskTotal
+	}
+	return 0
+}
+
+func (x *GetResourcesResponse) GetDiskUsed() uint64 {
+	if x != nil {
+		return x.DiskUsed
+	}
+	return 0
+}
+
+func (x *GetResourcesResponse) GetDiskAvailable() uint64 {
+	if x != nil {
+		return x.DiskAvailable
+	}
+	return 0
+}
+
+func (x *GetResourcesResponse) GetDiskUsage() float64 {
+	if x != nil {
+		return x.DiskUsage
+	}
+	return 0
+}
+
 func (x *GetResourcesResponse) GetGoRoutines() int32 {
 	if x != nil {
 		return x.GoRoutines
@@ -339,10 +379,11 @@ func (x *GetResourcesResponse) GetAvailableSlots() int32 {
 	return 0
 }
 
-// GetHealthRequest is the request message for health checks
+// GetHealthRequest allows selective execution of specific health checks.
 type GetHealthRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Optional: specific health checks to perform
+	// Optional: specific health check types to perform (e.g., "disk", "network", "services").
+	// If empty, performs all available health checks.
 	CheckTypes    []string `protobuf:"bytes,1,rep,name=check_types,json=checkTypes,proto3" json:"check_types,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -385,15 +426,18 @@ func (x *GetHealthRequest) GetCheckTypes() []string {
 	return nil
 }
 
-// GetHealthResponse contains node health information
+// GetHealthResponse contains node health information for failure detection and routing decisions.
 type GetHealthResponse struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	NodeId    string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
-	NodeName  string                 `protobuf:"bytes,2,opt,name=node_name,json=nodeName,proto3" json:"node_name,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Unique identifier for this node (12-character hex string)
+	NodeId string `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	// Human-readable name for this node
+	NodeName string `protobuf:"bytes,2,opt,name=node_name,json=nodeName,proto3" json:"node_name,omitempty"`
+	// Timestamp when this health assessment was performed
 	Timestamp *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
-	// Overall health status
+	// Overall health status (most severe status from all checks)
 	Status HealthStatus `protobuf:"varint,4,opt,name=status,proto3,enum=prism.node.v1.HealthStatus" json:"status,omitempty"`
-	// Individual health checks
+	// Detailed results from individual health checks
 	Checks        []*HealthCheck `protobuf:"bytes,5,rep,name=checks,proto3" json:"checks,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -464,12 +508,16 @@ func (x *GetHealthResponse) GetChecks() []*HealthCheck {
 	return nil
 }
 
-// HealthCheck represents an individual health check result
+// HealthCheck represents the result of an individual health check operation.
 type HealthCheck struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Status        HealthStatus           `protobuf:"varint,2,opt,name=status,proto3,enum=prism.node.v1.HealthStatus" json:"status,omitempty"`
-	Message       string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Name of the health check (e.g., "disk_space", "api_connectivity", "memory_pressure")
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// Status result of this specific health check
+	Status HealthStatus `protobuf:"varint,2,opt,name=status,proto3,enum=prism.node.v1.HealthStatus" json:"status,omitempty"`
+	// Human-readable message with metrics, errors, or diagnostic information
+	Message string `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
+	// Timestamp when this health check was executed
 	Timestamp     *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -539,7 +587,7 @@ const file_internal_grpc_proto_node_service_proto_rawDesc = "" +
 	"\n" +
 	"&internal/grpc/proto/node_service.proto\x12\rprism.node.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"<\n" +
 	"\x13GetResourcesRequest\x12%\n" +
-	"\x0eresource_types\x18\x01 \x03(\tR\rresourceTypes\"\xec\x05\n" +
+	"\x0eresource_types\x18\x01 \x03(\tR\rresourceTypes\"\xee\x06\n" +
 	"\x14GetResourcesResponse\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1b\n" +
 	"\tnode_name\x18\x02 \x01(\tR\bnodeName\x128\n" +
@@ -552,23 +600,29 @@ const file_internal_grpc_proto_node_service_proto_rawDesc = "" +
 	"memoryUsed\x12)\n" +
 	"\x10memory_available\x18\t \x01(\x04R\x0fmemoryAvailable\x12!\n" +
 	"\fmemory_usage\x18\n" +
-	" \x01(\x01R\vmemoryUsage\x12\x1f\n" +
-	"\vgo_routines\x18\v \x01(\x05R\n" +
+	" \x01(\x01R\vmemoryUsage\x12\x1d\n" +
+	"\n" +
+	"disk_total\x18\v \x01(\x04R\tdiskTotal\x12\x1b\n" +
+	"\tdisk_used\x18\f \x01(\x04R\bdiskUsed\x12%\n" +
+	"\x0edisk_available\x18\r \x01(\x04R\rdiskAvailable\x12\x1d\n" +
+	"\n" +
+	"disk_usage\x18\x0e \x01(\x01R\tdiskUsage\x12\x1f\n" +
+	"\vgo_routines\x18\x0f \x01(\x05R\n" +
 	"goRoutines\x12 \n" +
-	"\fgo_mem_alloc\x18\f \x01(\x04R\n" +
+	"\fgo_mem_alloc\x18\x10 \x01(\x04R\n" +
 	"goMemAlloc\x12\x1c\n" +
 	"\n" +
-	"go_mem_sys\x18\r \x01(\x04R\bgoMemSys\x12 \n" +
-	"\fgo_gc_cycles\x18\x0e \x01(\rR\n" +
+	"go_mem_sys\x18\x11 \x01(\x04R\bgoMemSys\x12 \n" +
+	"\fgo_gc_cycles\x18\x12 \x01(\rR\n" +
 	"goGcCycles\x12\x1e\n" +
-	"\vgo_gc_pause\x18\x0f \x01(\x01R\tgoGcPause\x12%\n" +
-	"\x0euptime_seconds\x18\x10 \x01(\x03R\ruptimeSeconds\x12\x14\n" +
-	"\x05load1\x18\x11 \x01(\x01R\x05load1\x12\x14\n" +
-	"\x05load5\x18\x12 \x01(\x01R\x05load5\x12\x16\n" +
-	"\x06load15\x18\x13 \x01(\x01R\x06load15\x12\x19\n" +
-	"\bmax_jobs\x18\x14 \x01(\x05R\amaxJobs\x12!\n" +
-	"\fcurrent_jobs\x18\x15 \x01(\x05R\vcurrentJobs\x12'\n" +
-	"\x0favailable_slots\x18\x16 \x01(\x05R\x0eavailableSlots\"3\n" +
+	"\vgo_gc_pause\x18\x13 \x01(\x01R\tgoGcPause\x12%\n" +
+	"\x0euptime_seconds\x18\x14 \x01(\x03R\ruptimeSeconds\x12\x14\n" +
+	"\x05load1\x18\x15 \x01(\x01R\x05load1\x12\x14\n" +
+	"\x05load5\x18\x16 \x01(\x01R\x05load5\x12\x16\n" +
+	"\x06load15\x18\x17 \x01(\x01R\x06load15\x12\x19\n" +
+	"\bmax_jobs\x18\x18 \x01(\x05R\amaxJobs\x12!\n" +
+	"\fcurrent_jobs\x18\x19 \x01(\x05R\vcurrentJobs\x12'\n" +
+	"\x0favailable_slots\x18\x1a \x01(\x05R\x0eavailableSlots\"3\n" +
 	"\x10GetHealthRequest\x12\x1f\n" +
 	"\vcheck_types\x18\x01 \x03(\tR\n" +
 	"checkTypes\"\xec\x01\n" +

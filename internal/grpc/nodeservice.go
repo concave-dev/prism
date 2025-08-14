@@ -70,6 +70,12 @@ func (n *NodeServiceImpl) GetResources(ctx context.Context, req *proto.GetResour
 		MemoryAvailable: nodeResources.MemoryAvailable,
 		MemoryUsage:     nodeResources.MemoryUsage,
 
+		// Disk Information (in bytes)
+		DiskTotal:     nodeResources.DiskTotal,
+		DiskUsed:      nodeResources.DiskUsed,
+		DiskAvailable: nodeResources.DiskAvailable,
+		DiskUsage:     nodeResources.DiskUsage,
+
 		// Go Runtime Information
 		GoRoutines: int32(nodeResources.GoRoutines),
 		GoMemAlloc: nodeResources.GoMemAlloc,
