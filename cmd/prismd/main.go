@@ -704,7 +704,7 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create gRPC client pool for inter-node communication
-	grpcClientPool := grpc.NewClientPool(serfManager, config.GRPCPort)
+	grpcClientPool := grpc.NewClientPool(serfManager, config.GRPCPort, grpcConfig)
 
 	logging.Info("Starting HTTP API server on %s:%d", config.APIAddr, config.APIPort)
 

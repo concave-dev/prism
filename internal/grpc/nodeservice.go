@@ -24,14 +24,16 @@ type NodeServiceImpl struct {
 	serfManager *serf.SerfManager // Access to node resources via serf manager
 	raftManager *raft.RaftManager // Access to Raft consensus status for health checks
 	grpcServer  *Server           // Reference to gRPC server for health checks
+	config      *Config           // gRPC configuration for timeout values
 }
 
 // NewNodeServiceImpl creates a new NodeService implementation
-func NewNodeServiceImpl(serfManager *serf.SerfManager, raftManager *raft.RaftManager) *NodeServiceImpl {
+func NewNodeServiceImpl(serfManager *serf.SerfManager, raftManager *raft.RaftManager, config *Config) *NodeServiceImpl {
 	return &NodeServiceImpl{
 		serfManager: serfManager,
 		raftManager: raftManager,
 		grpcServer:  nil, // Will be set after server creation to avoid circular dependency
+		config:      config,
 	}
 }
 
@@ -96,7 +98,8 @@ func (n *NodeServiceImpl) GetHealth(ctx context.Context, req *proto.GetHealthReq
 	now := time.Now()
 
 	// Set a shared timeout for all health checks to prevent excessive latency
-	checkCtx, cancel := context.WithTimeout(ctx, 1*time.Second)
+	// Uses configured timeout to ensure consistency with client expectations
+	checkCtx, cancel := context.WithTimeout(ctx, n.config.HealthCheckTimeout)
 	defer cancel()
 
 	// Guard against nil serfManager - required for node identity

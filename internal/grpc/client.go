@@ -26,7 +26,6 @@ import (
 	"fmt"
 	"strconv"
 	"sync"
-	"time"
 
 	"github.com/concave-dev/prism/internal/grpc/proto"
 	"github.com/concave-dev/prism/internal/logging"
@@ -50,17 +49,19 @@ type ClientPool struct {
 	serfManager *serf.SerfManager                  // For discovering node addresses
 	grpcPort    int                                // Default gRPC port
 	dialGroup   singleflight.Group                 // Prevents duplicate dials to same node
+	config      *Config                            // gRPC configuration for timeout values
 }
 
 // NewClientPool creates a new gRPC client pool with lazy connection creation.
 // Uses serfManager for node discovery and grpcPort as the default port
 // (nodes can override via "grpc_port" Serf tag).
-func NewClientPool(serfManager *serf.SerfManager, grpcPort int) *ClientPool {
+func NewClientPool(serfManager *serf.SerfManager, grpcPort int, config *Config) *ClientPool {
 	return &ClientPool{
 		connections: make(map[string]*grpcstd.ClientConn),
 		clients:     make(map[string]proto.NodeServiceClient),
 		serfManager: serfManager,
 		grpcPort:    grpcPort,
+		config:      config,
 	}
 }
 
@@ -154,14 +155,14 @@ func (cp *ClientPool) GetClient(nodeID string) (proto.NodeServiceClient, error) 
 }
 
 // GetResourcesFromNode queries resource information from a specific node via gRPC.
-// Uses a 3-second timeout to prevent hanging on slow or unresponsive nodes.
+// Uses configured timeout to prevent hanging on slow or unresponsive nodes.
 func (cp *ClientPool) GetResourcesFromNode(nodeID string) (*proto.GetResourcesResponse, error) {
 	client, err := cp.GetClient(nodeID)
 	if err != nil {
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), cp.config.ResourceCallTimeout)
 	defer cancel()
 
 	req := &proto.GetResourcesRequest{}
@@ -169,9 +170,9 @@ func (cp *ClientPool) GetResourcesFromNode(nodeID string) (*proto.GetResourcesRe
 }
 
 // GetHealthFromNode queries health information from a specific node via gRPC.
-// Uses a short timeout to avoid hanging on unhealthy or unreachable nodes.
+// Uses configured client call timeout which is greater than server health check timeout
+// to prevent race conditions and ensure proper error handling.
 //
-// TODO: Add per-call timeouts via configuration and context propagation
 // TODO: Enrich request with specific check types when implemented server-side
 func (cp *ClientPool) GetHealthFromNode(nodeID string) (*proto.GetHealthResponse, error) {
 	client, err := cp.GetClient(nodeID)
@@ -179,7 +180,7 @@ func (cp *ClientPool) GetHealthFromNode(nodeID string) (*proto.GetHealthResponse
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), cp.config.ClientCallTimeout)
 	defer cancel()
 
 	req := &proto.GetHealthRequest{}

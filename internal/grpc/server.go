@@ -89,7 +89,7 @@ func (s *Server) Start() error {
 	// TODO: attach interceptors for structured logging; gRPC itself does not use std logger by default.
 
 	// Register NodeService for resource and health queries
-	nodeService := NewNodeServiceImpl(s.serfManager, s.raftManager)
+	nodeService := NewNodeServiceImpl(s.serfManager, s.raftManager, s.config)
 	nodeService.SetGRPCServer(s) // Set server reference after creation to avoid circular dependency
 	proto.RegisterNodeServiceServer(s.grpcServer, nodeService)
 
