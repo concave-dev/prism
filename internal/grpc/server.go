@@ -67,9 +67,9 @@ func (s *Server) Start() error {
 		logging.SetLevel(s.config.LogLevel)
 	}
 
-	// Create network listener
+	// Create network listener - force IPv4 for consistent behavior
 	addr := fmt.Sprintf("%s:%d", s.config.BindAddr, s.config.BindPort)
-	listener, err := net.Listen("tcp", addr)
+	listener, err := net.Listen("tcp4", addr)
 	if err != nil {
 		return fmt.Errorf("failed to listen on %s: %w", addr, err)
 	}
@@ -302,8 +302,8 @@ func (s *Server) isSelfReachable() bool {
 		addr = net.JoinHostPort("127.0.0.1", port)
 	}
 
-	// Use a very short timeout for health checks
-	conn, err := net.DialTimeout("tcp", addr, 500*time.Millisecond)
+	// Use a very short timeout for health checks - force IPv4 for consistency
+	conn, err := net.DialTimeout("tcp4", addr, 500*time.Millisecond)
 	if err != nil {
 		logging.Debug("gRPC health: Self-connectivity check failed for %s: %v", addr, err)
 		return false

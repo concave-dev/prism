@@ -621,7 +621,7 @@ func (m *RaftManager) setupTransport(logWriter io.Writer) error {
 	// Create the advertisable address for Raft
 	raftAddr := fmt.Sprintf("%s:%d", bindAddr, m.config.BindPort)
 
-	addr, err := net.ResolveTCPAddr("tcp", raftAddr)
+	addr, err := net.ResolveTCPAddr("tcp4", raftAddr)
 	if err != nil {
 		return fmt.Errorf("failed to resolve TCP address: %w", err)
 	}
@@ -1197,8 +1197,8 @@ func (m *RaftManager) checkPeerConnectivity(peers []string) (reachable, unreacha
 // Used for health monitoring to detect network connectivity issues that
 // could impact Raft consensus operations without affecting performance.
 func (m *RaftManager) isRaftPeerReachable(address string) bool {
-	// Use a short timeout for health checks
-	conn, err := net.DialTimeout("tcp", address, 1*time.Second)
+	// Use a short timeout for health checks - force IPv4 for consistency
+	conn, err := net.DialTimeout("tcp4", address, 1*time.Second)
 	if err != nil {
 		return false
 	}

@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/concave-dev/prism/internal/grpc/proto"
@@ -360,10 +361,12 @@ func (n *NodeServiceImpl) checkAPIServiceHealth(ctx context.Context, now time.Ti
 		}
 
 		if resp.StatusCode == http.StatusOK {
+			// Remove "http://" prefix for cleaner display
+			endpoint := strings.TrimPrefix(url, "http://")
 			return &proto.HealthCheck{
 				Name:      "api_service",
 				Status:    proto.HealthStatus_HEALTHY,
-				Message:   fmt.Sprintf("HTTP API healthy at %s (status: %d)", url, resp.StatusCode),
+				Message:   fmt.Sprintf("HTTP API healthy at %s (status: %d)", endpoint, resp.StatusCode),
 				Timestamp: timestamppb.New(now),
 			}
 		}
