@@ -11,6 +11,7 @@ import (
 	"github.com/concave-dev/prism/internal/raft"
 	"github.com/concave-dev/prism/internal/resources"
 	"github.com/concave-dev/prism/internal/serf"
+	serfpkg "github.com/hashicorp/serf/serf"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -97,78 +98,24 @@ func (n *NodeServiceImpl) GetHealth(ctx context.Context, req *proto.GetHealthReq
 	overallStatus := proto.HealthStatus_HEALTHY
 
 	// Check Serf membership status
-	serfCheck := &proto.HealthCheck{
-		Name:      "serf_membership",
-		Status:    proto.HealthStatus_HEALTHY,
-		Message:   "Node is active in cluster",
-		Timestamp: timestamppb.New(now),
-	}
+	serfCheck := n.checkSerfMembershipHealth(now)
 	checks = append(checks, serfCheck)
+	if serfCheck.GetStatus() == proto.HealthStatus_UNHEALTHY && overallStatus == proto.HealthStatus_HEALTHY {
+		overallStatus = proto.HealthStatus_UNHEALTHY
+	}
 
-	// Check Raft connectivity if Raft manager is available
-	if n.raftManager != nil {
-		raftHealth := n.raftManager.GetHealthStatus()
-
-		var raftStatus proto.HealthStatus
-		if raftHealth.IsHealthy {
-			raftStatus = proto.HealthStatus_HEALTHY
-		} else {
-			raftStatus = proto.HealthStatus_UNHEALTHY
-			// Update overall status if Raft is unhealthy
-			if overallStatus == proto.HealthStatus_HEALTHY {
-				overallStatus = proto.HealthStatus_UNHEALTHY
-			}
-		}
-
-		raftCheck := &proto.HealthCheck{
-			Name:      "raft_connectivity",
-			Status:    raftStatus,
-			Message:   raftHealth.Message,
-			Timestamp: timestamppb.New(now),
-		}
-		checks = append(checks, raftCheck)
-	} else {
-		// Raft not configured - this might be normal for some deployments
-		raftCheck := &proto.HealthCheck{
-			Name:      "raft_connectivity",
-			Status:    proto.HealthStatus_UNKNOWN,
-			Message:   "Raft consensus not configured",
-			Timestamp: timestamppb.New(now),
-		}
-		checks = append(checks, raftCheck)
+	// Check Raft service if Raft manager is available
+	raftCheck := n.checkRaftServiceHealth(now)
+	checks = append(checks, raftCheck)
+	if raftCheck.GetStatus() == proto.HealthStatus_UNHEALTHY && overallStatus == proto.HealthStatus_HEALTHY {
+		overallStatus = proto.HealthStatus_UNHEALTHY
 	}
 
 	// Check gRPC service health (local checks, no circular dependency)
-	if n.grpcServer != nil {
-		grpcHealth := n.grpcServer.GetHealthStatus()
-
-		var grpcStatus proto.HealthStatus
-		if grpcHealth.IsHealthy {
-			grpcStatus = proto.HealthStatus_HEALTHY
-		} else {
-			grpcStatus = proto.HealthStatus_UNHEALTHY
-			// Update overall status if gRPC is unhealthy
-			if overallStatus == proto.HealthStatus_HEALTHY {
-				overallStatus = proto.HealthStatus_UNHEALTHY
-			}
-		}
-
-		grpcCheck := &proto.HealthCheck{
-			Name:      "grpc_service",
-			Status:    grpcStatus,
-			Message:   grpcHealth.Message,
-			Timestamp: timestamppb.New(now),
-		}
-		checks = append(checks, grpcCheck)
-	} else {
-		// gRPC server reference not set
-		grpcCheck := &proto.HealthCheck{
-			Name:      "grpc_service",
-			Status:    proto.HealthStatus_UNKNOWN,
-			Message:   "gRPC server reference not available",
-			Timestamp: timestamppb.New(now),
-		}
-		checks = append(checks, grpcCheck)
+	grpcCheck := n.checkGRPCServiceHealth(now)
+	checks = append(checks, grpcCheck)
+	if grpcCheck.GetStatus() == proto.HealthStatus_UNHEALTHY && overallStatus == proto.HealthStatus_HEALTHY {
+		overallStatus = proto.HealthStatus_UNHEALTHY
 	}
 
 	// Check HTTP API service health using local HTTP request with short timeout
@@ -188,6 +135,10 @@ func (n *NodeServiceImpl) GetHealth(ctx context.Context, req *proto.GetHealthReq
 
 	return response, nil
 }
+
+// ============================================================================
+// HEALTH CHECK IMPLEMENTATIONS - Individual service health verification
+// ============================================================================
 
 // checkAPIServiceHealth verifies that the local HTTP API service is reachable
 // and responding successfully. It attempts a fast HTTP GET to /api/v1/health
@@ -246,6 +197,144 @@ func (n *NodeServiceImpl) checkAPIServiceHealth(now time.Time) *proto.HealthChec
 		Name:      "api_service",
 		Status:    proto.HealthStatus_UNHEALTHY,
 		Message:   "HTTP API unreachable or unhealthy",
+		Timestamp: timestamppb.New(now),
+	}
+}
+
+// checkSerfMembershipHealth verifies that the Serf gossip service is properly
+// functioning including local membership status and cluster connectivity.
+// Returns detailed status for distributed cluster membership operations.
+func (n *NodeServiceImpl) checkSerfMembershipHealth(now time.Time) *proto.HealthCheck {
+	if n.serfManager == nil {
+		return &proto.HealthCheck{
+			Name:      "serf_service",
+			Status:    proto.HealthStatus_UNKNOWN,
+			Message:   "Serf manager not available",
+			Timestamp: timestamppb.New(now),
+		}
+	}
+
+	// Get local member information to check our own status
+	localMember := n.serfManager.GetLocalMember()
+	if localMember == nil {
+		return &proto.HealthCheck{
+			Name:      "serf_service",
+			Status:    proto.HealthStatus_UNHEALTHY,
+			Message:   "Local member information unavailable",
+			Timestamp: timestamppb.New(now),
+		}
+	}
+
+	// Check if we're marked as alive in cluster membership
+	if localMember.Status != serfpkg.StatusAlive {
+		return &proto.HealthCheck{
+			Name:      "serf_service",
+			Status:    proto.HealthStatus_UNHEALTHY,
+			Message:   fmt.Sprintf("Node status is %v, expected alive", localMember.Status),
+			Timestamp: timestamppb.New(now),
+		}
+	}
+
+	// Additional check: verify we can see other cluster members (if any)
+	members := n.serfManager.GetMembers()
+	memberCount := len(members)
+
+	if memberCount == 1 {
+		// Single node cluster - this is valid
+		return &proto.HealthCheck{
+			Name:      "serf_service",
+			Status:    proto.HealthStatus_HEALTHY,
+			Message:   "Single-node cluster, Serf service healthy",
+			Timestamp: timestamppb.New(now),
+		}
+	}
+
+	// Multi-node cluster: check if we can see other alive members
+	aliveCount := 0
+	for _, member := range members {
+		if member.Status == serfpkg.StatusAlive {
+			aliveCount++
+		}
+	}
+
+	if aliveCount < 2 {
+		// We're the only alive member in a multi-node cluster
+		return &proto.HealthCheck{
+			Name:      "serf_service",
+			Status:    proto.HealthStatus_UNHEALTHY,
+			Message:   fmt.Sprintf("Cluster isolation: only %d of %d members alive", aliveCount, memberCount),
+			Timestamp: timestamppb.New(now),
+		}
+	}
+
+	return &proto.HealthCheck{
+		Name:      "serf_service",
+		Status:    proto.HealthStatus_HEALTHY,
+		Message:   fmt.Sprintf("Cluster connectivity healthy: %d of %d members alive", aliveCount, memberCount),
+		Timestamp: timestamppb.New(now),
+	}
+}
+
+// checkRaftServiceHealth verifies that the Raft consensus service is properly
+// functioning including leadership status, peer connectivity, and cluster health.
+// Returns detailed status for distributed consensus operations.
+func (n *NodeServiceImpl) checkRaftServiceHealth(now time.Time) *proto.HealthCheck {
+	if n.raftManager == nil {
+		// Raft not configured - this might be normal for some deployments
+		return &proto.HealthCheck{
+			Name:      "raft_service",
+			Status:    proto.HealthStatus_UNKNOWN,
+			Message:   "Raft consensus not configured",
+			Timestamp: timestamppb.New(now),
+		}
+	}
+
+	// Get comprehensive Raft health status
+	raftHealth := n.raftManager.GetHealthStatus()
+
+	var raftStatus proto.HealthStatus
+	if raftHealth.IsHealthy {
+		raftStatus = proto.HealthStatus_HEALTHY
+	} else {
+		raftStatus = proto.HealthStatus_UNHEALTHY
+	}
+
+	return &proto.HealthCheck{
+		Name:      "raft_service",
+		Status:    raftStatus,
+		Message:   raftHealth.Message,
+		Timestamp: timestamppb.New(now),
+	}
+}
+
+// checkGRPCServiceHealth verifies that the gRPC inter-node communication service
+// is properly functioning including server state, port binding, and connectivity.
+// Returns detailed status for distributed gRPC operations without circular dependencies.
+func (n *NodeServiceImpl) checkGRPCServiceHealth(now time.Time) *proto.HealthCheck {
+	if n.grpcServer == nil {
+		// gRPC server reference not set
+		return &proto.HealthCheck{
+			Name:      "grpc_service",
+			Status:    proto.HealthStatus_UNKNOWN,
+			Message:   "gRPC server reference not available",
+			Timestamp: timestamppb.New(now),
+		}
+	}
+
+	// Get comprehensive gRPC health status (local checks only)
+	grpcHealth := n.grpcServer.GetHealthStatus()
+
+	var grpcStatus proto.HealthStatus
+	if grpcHealth.IsHealthy {
+		grpcStatus = proto.HealthStatus_HEALTHY
+	} else {
+		grpcStatus = proto.HealthStatus_UNHEALTHY
+	}
+
+	return &proto.HealthCheck{
+		Name:      "grpc_service",
+		Status:    grpcStatus,
+		Message:   grpcHealth.Message,
 		Timestamp: timestamppb.New(now),
 	}
 }
