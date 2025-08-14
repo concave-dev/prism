@@ -180,16 +180,28 @@ done:
 		}
 	}
 
-	// Set overall status based on check results
-	// Any unhealthy check makes the node unhealthy
-	// All unknown checks make the node unknown
-	// Otherwise healthy
+	// Set overall status based on check results using proper health status hierarchy
+	// Priority order: UNHEALTHY > UNKNOWN > DEGRADED > HEALTHY
+	//
+	// Health Status Logic:
+	// - UNHEALTHY: Any service is unhealthy (serious issues)
+	// - UNKNOWN: All checks unknown or failed to complete
+	// - DEGRADED: Mixed states (some healthy, some unknown) - operational with minor issues
+	// - HEALTHY: All checks are healthy (fully operational)
 	var overallStatus proto.HealthStatus
+	totalChecks := len(checks)
+
 	if unhealthyCount > 0 {
+		// Any unhealthy service makes the entire node unhealthy
 		overallStatus = proto.HealthStatus_UNHEALTHY
-	} else if unknownCount == len(checks) {
+	} else if unknownCount == totalChecks {
+		// All checks are unknown - cannot determine health state
 		overallStatus = proto.HealthStatus_UNKNOWN
+	} else if unknownCount > 0 {
+		// Mixed states: some healthy, some unknown - degraded but operational
+		overallStatus = proto.HealthStatus_DEGRADED
 	} else {
+		// All checks are healthy - fully operational
 		overallStatus = proto.HealthStatus_HEALTHY
 	}
 
