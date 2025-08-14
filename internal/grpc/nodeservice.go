@@ -3,6 +3,8 @@ package grpc
 
 import (
 	"context"
+	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/concave-dev/prism/internal/grpc/proto"
@@ -169,6 +171,13 @@ func (n *NodeServiceImpl) GetHealth(ctx context.Context, req *proto.GetHealthReq
 		checks = append(checks, grpcCheck)
 	}
 
+	// Check HTTP API service health using local HTTP request with short timeout
+	apiCheck := n.checkAPIServiceHealth(now)
+	checks = append(checks, apiCheck)
+	if apiCheck.GetStatus() == proto.HealthStatus_UNHEALTHY && overallStatus == proto.HealthStatus_HEALTHY {
+		overallStatus = proto.HealthStatus_UNHEALTHY
+	}
+
 	response := &proto.GetHealthResponse{
 		NodeId:    n.serfManager.NodeID,
 		NodeName:  n.serfManager.NodeName,
@@ -178,4 +187,65 @@ func (n *NodeServiceImpl) GetHealth(ctx context.Context, req *proto.GetHealthReq
 	}
 
 	return response, nil
+}
+
+// checkAPIServiceHealth verifies that the local HTTP API service is reachable
+// and responding successfully. It attempts a fast HTTP GET to /api/v1/health
+// using the advertised API port from Serf tags. Tries localhost first, then
+// the node's IP address as a fallback. Uses a short timeout to avoid blocking.
+func (n *NodeServiceImpl) checkAPIServiceHealth(now time.Time) *proto.HealthCheck {
+	member := n.serfManager.GetLocalMember()
+	if member == nil {
+		return &proto.HealthCheck{
+			Name:      "api_service",
+			Status:    proto.HealthStatus_UNKNOWN,
+			Message:   "Local member information unavailable",
+			Timestamp: timestamppb.New(now),
+		}
+	}
+
+	apiPort, ok := member.Tags["api_port"]
+	if !ok || apiPort == "" {
+		return &proto.HealthCheck{
+			Name:      "api_service",
+			Status:    proto.HealthStatus_UNKNOWN,
+			Message:   "API port not advertised in Serf tags",
+			Timestamp: timestamppb.New(now),
+		}
+	}
+
+	// Candidate addresses to try in order of likelihood
+	candidates := []string{
+		fmt.Sprintf("127.0.0.1:%s", apiPort),
+	}
+	if member.Addr != nil {
+		candidates = append(candidates, fmt.Sprintf("%s:%s", member.Addr.String(), apiPort))
+	}
+
+	client := &http.Client{Timeout: 750 * time.Millisecond}
+	for _, addr := range candidates {
+		url := fmt.Sprintf("http://%s/api/v1/health", addr)
+		resp, err := client.Get(url)
+		if err != nil {
+			continue
+		}
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+		if resp.StatusCode == http.StatusOK {
+			return &proto.HealthCheck{
+				Name:      "api_service",
+				Status:    proto.HealthStatus_HEALTHY,
+				Message:   "HTTP API is healthy",
+				Timestamp: timestamppb.New(now),
+			}
+		}
+	}
+
+	return &proto.HealthCheck{
+		Name:      "api_service",
+		Status:    proto.HealthStatus_UNHEALTHY,
+		Message:   "HTTP API unreachable or unhealthy",
+		Timestamp: timestamppb.New(now),
+	}
 }
