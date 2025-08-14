@@ -94,6 +94,25 @@ func (n *NodeServiceImpl) GetResources(ctx context.Context, req *proto.GetResour
 // and Raft consensus connectivity checks for comprehensive cluster health monitoring.
 func (n *NodeServiceImpl) GetHealth(ctx context.Context, req *proto.GetHealthRequest) (*proto.GetHealthResponse, error) {
 	now := time.Now()
+
+	// Guard against nil serfManager - required for node identity
+	if n.serfManager == nil {
+		return &proto.GetHealthResponse{
+			NodeId:    "unknown",
+			NodeName:  "unknown",
+			Timestamp: timestamppb.New(now),
+			Status:    proto.HealthStatus_UNKNOWN,
+			Checks: []*proto.HealthCheck{
+				{
+					Name:      "node_identity",
+					Status:    proto.HealthStatus_UNKNOWN,
+					Message:   "Serf manager not available for node identity",
+					Timestamp: timestamppb.New(now),
+				},
+			},
+		}, nil
+	}
+
 	var checks []*proto.HealthCheck
 	overallStatus := proto.HealthStatus_HEALTHY
 
