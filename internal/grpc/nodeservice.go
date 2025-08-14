@@ -20,6 +20,7 @@ type NodeServiceImpl struct {
 	proto.UnimplementedNodeServiceServer
 	serfManager *serf.SerfManager // Access to node resources via serf manager
 	raftManager *raft.RaftManager // Access to Raft consensus status for health checks
+	grpcServer  *Server           // Reference to gRPC server for health checks
 }
 
 // NewNodeServiceImpl creates a new NodeService implementation
@@ -27,7 +28,14 @@ func NewNodeServiceImpl(serfManager *serf.SerfManager, raftManager *raft.RaftMan
 	return &NodeServiceImpl{
 		serfManager: serfManager,
 		raftManager: raftManager,
+		grpcServer:  nil, // Will be set after server creation to avoid circular dependency
 	}
+}
+
+// SetGRPCServer sets the gRPC server reference after initialization
+// to avoid circular dependency during server startup.
+func (n *NodeServiceImpl) SetGRPCServer(server *Server) {
+	n.grpcServer = server
 }
 
 // GetResources returns current resource utilization for this node
@@ -126,6 +134,39 @@ func (n *NodeServiceImpl) GetHealth(ctx context.Context, req *proto.GetHealthReq
 			Timestamp: timestamppb.New(now),
 		}
 		checks = append(checks, raftCheck)
+	}
+
+	// Check gRPC service health (local checks, no circular dependency)
+	if n.grpcServer != nil {
+		grpcHealth := n.grpcServer.GetHealthStatus()
+
+		var grpcStatus proto.HealthStatus
+		if grpcHealth.IsHealthy {
+			grpcStatus = proto.HealthStatus_HEALTHY
+		} else {
+			grpcStatus = proto.HealthStatus_UNHEALTHY
+			// Update overall status if gRPC is unhealthy
+			if overallStatus == proto.HealthStatus_HEALTHY {
+				overallStatus = proto.HealthStatus_UNHEALTHY
+			}
+		}
+
+		grpcCheck := &proto.HealthCheck{
+			Name:      "grpc_service",
+			Status:    grpcStatus,
+			Message:   grpcHealth.Message,
+			Timestamp: timestamppb.New(now),
+		}
+		checks = append(checks, grpcCheck)
+	} else {
+		// gRPC server reference not set
+		grpcCheck := &proto.HealthCheck{
+			Name:      "grpc_service",
+			Status:    proto.HealthStatus_UNKNOWN,
+			Message:   "gRPC server reference not available",
+			Timestamp: timestamppb.New(now),
+		}
+		checks = append(checks, grpcCheck)
 	}
 
 	response := &proto.GetHealthResponse{
