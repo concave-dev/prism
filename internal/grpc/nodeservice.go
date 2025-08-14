@@ -100,29 +100,44 @@ func (n *NodeServiceImpl) GetHealth(ctx context.Context, req *proto.GetHealthReq
 	// Check Serf membership status
 	serfCheck := n.checkSerfMembershipHealth(now)
 	checks = append(checks, serfCheck)
-	if serfCheck.GetStatus() == proto.HealthStatus_UNHEALTHY && overallStatus == proto.HealthStatus_HEALTHY {
-		overallStatus = proto.HealthStatus_UNHEALTHY
-	}
 
 	// Check Raft service if Raft manager is available
 	raftCheck := n.checkRaftServiceHealth(now)
 	checks = append(checks, raftCheck)
-	if raftCheck.GetStatus() == proto.HealthStatus_UNHEALTHY && overallStatus == proto.HealthStatus_HEALTHY {
-		overallStatus = proto.HealthStatus_UNHEALTHY
-	}
 
 	// Check gRPC service health (local checks, no circular dependency)
 	grpcCheck := n.checkGRPCServiceHealth(now)
 	checks = append(checks, grpcCheck)
-	if grpcCheck.GetStatus() == proto.HealthStatus_UNHEALTHY && overallStatus == proto.HealthStatus_HEALTHY {
-		overallStatus = proto.HealthStatus_UNHEALTHY
-	}
 
 	// Check HTTP API service health using local HTTP request with short timeout
 	apiCheck := n.checkAPIServiceHealth(now)
 	checks = append(checks, apiCheck)
-	if apiCheck.GetStatus() == proto.HealthStatus_UNHEALTHY && overallStatus == proto.HealthStatus_HEALTHY {
+
+	// Count check statuses for better health reporting
+	healthyCount := 0
+	unhealthyCount := 0
+	unknownCount := 0
+	for _, check := range checks {
+		switch check.Status {
+		case proto.HealthStatus_HEALTHY:
+			healthyCount++
+		case proto.HealthStatus_UNHEALTHY:
+			unhealthyCount++
+		case proto.HealthStatus_UNKNOWN:
+			unknownCount++
+		}
+	}
+
+	// Set overall status based on check results
+	// Any unhealthy check makes the node unhealthy
+	// All unknown checks make the node unknown
+	// Otherwise healthy
+	if unhealthyCount > 0 {
 		overallStatus = proto.HealthStatus_UNHEALTHY
+	} else if unknownCount == len(checks) {
+		overallStatus = proto.HealthStatus_UNKNOWN
+	} else {
+		overallStatus = proto.HealthStatus_HEALTHY
 	}
 
 	response := &proto.GetHealthResponse{

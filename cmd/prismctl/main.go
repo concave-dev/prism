@@ -1041,7 +1041,30 @@ func displayNodeInfo(resource NodeResources, isLeader bool, health *NodeHealth, 
 		fmt.Printf("Leader: %t\n", isLeader)
 		fmt.Printf("Timestamp: %s\n", resource.Timestamp.Format(time.RFC3339))
 		if health != nil {
-			fmt.Printf("Status: %s\n", strings.ToLower(health.Status))
+			// Count check statuses for detailed health reporting
+			healthyCount := 0
+			unhealthyCount := 0
+			unknownCount := 0
+			totalChecks := len(health.Checks)
+
+			for _, check := range health.Checks {
+				switch strings.ToLower(check.Status) {
+				case "healthy":
+					healthyCount++
+				case "unhealthy":
+					unhealthyCount++
+				case "unknown":
+					unknownCount++
+				}
+			}
+
+			// Display status with check counts
+			status := strings.ToLower(health.Status)
+			if totalChecks > 0 {
+				fmt.Printf("Status: %s (%d/%d)\n", status, healthyCount, totalChecks)
+			} else {
+				fmt.Printf("Status: %s\n", status)
+			}
 		}
 		// Network information (best-effort based on Serf tags)
 		// TODO: Add explicit api_port and serf_port tags in the future for clarity
