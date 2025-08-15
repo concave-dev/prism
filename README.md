@@ -54,22 +54,48 @@ go build -o bin/prismctl ./cmd/prismctl
 
 ## Usage
 
-Start the daemon:
+### Development and Testing
+
+For development and testing, you can omit port configuration. The system auto-discovers services and configures ports automatically:
+
 ```bash
-# First node (bootstrap new cluster) - auto-configures ports and data directory
-./bin/prismd --bootstrap --name=first-node
-
-# Join second node to existing cluster - auto-configures ports and data directory  
-./bin/prismd --join=192.168.1.100:4200 --name=second-node
-
-# Explicit configuration for production (advanced usage)
-./bin/prismd --serf=0.0.0.0:4200 --api=0.0.0.0:8008 --data-dir=/var/lib/prism --bootstrap --name=first-node
+# Bootstrap the first node - auto-configures all ports and data directory
+./bin/prismd --bootstrap
 
 # Enable debug mode for development (verbose logging and detailed HTTP output)
-DEBUG=true ./bin/prismd --bootstrap --name=first-node
+DEBUG=true ./bin/prismd --bootstrap
+
+# Join other nodes - only need to specify serf address to join
+./bin/prismd --join=192.168.1.100:4200
 ```
 
-**Auto-Configuration**: Network addresses (`--serf`, `--raft`, `--grpc`, `--api`) and data directory (`--data-dir`) are automatically configured when not explicitly specified, using available ports and timestamped directories like `./data/20240115-143022` for storage.
+### Production Deployment
+
+For production use, **explicitly assign all ports and data directory** for predictable service endpoints:
+
+```bash
+# Production bootstrap node with explicit configuration
+./bin/prismd \
+  --serf=0.0.0.0:4200 \
+  --raft=0.0.0.0:4201 \
+  --grpc=0.0.0.0:4202 \
+  --api=0.0.0.0:8008 \
+  --data-dir=/var/lib/prism \
+  --bootstrap \
+  --name=prod-node-1
+
+# Production join node with explicit configuration
+./bin/prismd \
+  --serf=0.0.0.0:4200 \
+  --raft=0.0.0.0:4201 \
+  --grpc=0.0.0.0:4202 \
+  --api=0.0.0.0:8008 \
+  --data-dir=/var/lib/prism \
+  --join=10.0.1.100:4200 \
+  --name=prod-node-2
+```
+
+**Auto-Configuration**: When ports are not explicitly specified, the system automatically configures available ports and uses timestamped directories like `./data/20240115-143022` for storage. All services (Raft, gRPC, API) auto-discover each other through Serf gossip.
 
 Use the CLI:
 ```bash
