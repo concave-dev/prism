@@ -1129,19 +1129,20 @@ func (m *RaftManager) GetHealthStatus() *RaftHealthStatus {
 	status.ReachablePeers = reachableCount
 	status.UnreachablePeers = unreachableCount
 
-	// Evaluate overall health
-	if status.State == "Leader" || status.State == "Follower" {
+	// Evaluate overall health using tagged switch
+	switch status.State {
+	case "Leader", "Follower":
 		// Normal states - check connectivity
 		if unreachableCount > 0 {
 			status.IsHealthy = false
 			status.Message = fmt.Sprintf("Raft consensus degraded: %d of %d peers unreachable",
 				unreachableCount, status.PeerCount)
 		}
-	} else if status.State == "Candidate" {
+	case "Candidate":
 		// Election in progress
 		status.IsHealthy = false
 		status.Message = "Raft leader election in progress"
-	} else {
+	default:
 		// Unknown or problematic state
 		status.IsHealthy = false
 		status.Message = fmt.Sprintf("Raft in unexpected state: %s", status.State)
