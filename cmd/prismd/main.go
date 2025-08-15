@@ -189,7 +189,8 @@ func findAvailablePort(address string, startPort int) (int, error) {
 		addr := fmt.Sprintf("%s:%d", address, port)
 
 		// Test TCP availability (future Raft compatibility - Raft uses TCP for leader election/log replication)
-		tcpConn, tcpErr := net.Listen("tcp", addr)
+		// Force IPv4 for consistent behavior with actual service binding
+		tcpConn, tcpErr := net.Listen("tcp4", addr)
 		if tcpErr != nil {
 			if isAddressInUseError(tcpErr) {
 				// Try next port
@@ -481,7 +482,8 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		udpConn.Close()
 
 		// Check TCP availability (memberlist stream connections)
-		tcpListener, tcpErr := net.Listen("tcp", testAddr)
+		// Force IPv4 for consistent behavior with actual service binding
+		tcpListener, tcpErr := net.Listen("tcp4", testAddr)
 		if tcpErr != nil {
 			if isAddressInUseError(tcpErr) {
 				return fmt.Errorf("cannot bind Serf (TCP) to %s: port %d is already in use", config.SerfAddr, config.SerfPort)
@@ -501,7 +503,7 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 
 		// Test binding to ensure port is available
 		testAddr := fmt.Sprintf("%s:%d", config.RaftAddr, config.RaftPort)
-		conn, err := net.Listen("tcp", testAddr)
+		conn, err := net.Listen("tcp4", testAddr)
 		if err != nil {
 			if isAddressInUseError(err) {
 				return fmt.Errorf("cannot bind Raft to %s: port %d is already in use",
@@ -524,7 +526,7 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 
 		// Test binding to ensure port is available
 		testAddr := fmt.Sprintf("%s:%d", config.GRPCAddr, config.GRPCPort)
-		conn, err := net.Listen("tcp", testAddr)
+		conn, err := net.Listen("tcp4", testAddr)
 		if err != nil {
 			if isAddressInUseError(err) {
 				return fmt.Errorf("cannot bind gRPC server to %s: port %d is already in use",
@@ -547,7 +549,7 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 
 		// Test binding to ensure port is available
 		testAddr := fmt.Sprintf("%s:%d", config.APIAddr, config.APIPort)
-		conn, err := net.Listen("tcp", testAddr)
+		conn, err := net.Listen("tcp4", testAddr)
 		if err != nil {
 			if isAddressInUseError(err) {
 				return fmt.Errorf("cannot bind API server to %s: port %d is already in use",
