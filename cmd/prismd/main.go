@@ -540,27 +540,11 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		config.GRPCAddr = config.SerfAddr
 	}
 
-	// Handle API address binding (before creating Serf tags)
+	// Store original API port for logging purposes
 	originalAPIPort := config.APIPort
 
-	if config.apiAddrExplicitlySet {
-		// User explicitly set API address - fail if port is busy
-		logging.Info("Starting HTTP API server on %s:%d", config.APIAddr, config.APIPort)
-
-		// Test binding to ensure port is available
-		testAddr := fmt.Sprintf("%s:%d", config.APIAddr, config.APIPort)
-		conn, err := net.Listen("tcp4", testAddr)
-		if err != nil {
-			if isAddressInUseError(err) {
-				return fmt.Errorf("cannot bind API server to %s: port %d is already in use",
-					config.APIAddr, config.APIPort)
-			}
-			return fmt.Errorf("failed to bind API server to %s: %w", testAddr, err)
-		}
-		conn.Close()
-	} else {
-		// Using defaults - keep default loopback address, find port just before starting API
-	}
+	// Note: API address uses defaults (loopback) unlike other services
+	// No need to set default address as it's already set in flag defaults
 
 	// ============================================================================
 	// ATOMIC PORT BINDING: Race Condition Prevention
@@ -671,19 +655,36 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		grpcListener = listener
 	}
 
-	// Discover available API port
+	// Pre-bind API listener to eliminate race conditions
+	var apiListener net.Listener
+
 	if !config.apiAddrExplicitlySet {
-		availableAPIPort, err := findAvailablePort(config.APIAddr, config.APIPort)
+		// Use fallback binding for auto-discovered ports
+		logging.Info("Pre-binding API listener starting from port %d", originalAPIPort)
+
+		listener, actualPort, err := portBinder.BindTCPWithFallback(config.APIAddr, config.APIPort)
 		if err != nil {
-			return fmt.Errorf("failed to find available API port: %w", err)
+			return fmt.Errorf("failed to pre-bind API listener: %w", err)
 		}
 
-		if availableAPIPort != originalAPIPort {
-			logging.Warn("Default API port %d was busy, using port %d for HTTP API", originalAPIPort, availableAPIPort)
-			config.APIPort = availableAPIPort
+		apiListener = listener
+		config.APIPort = actualPort
+
+		if actualPort != originalAPIPort {
+			logging.Warn("Default API port %d was busy, pre-bound to port %d", originalAPIPort, actualPort)
+		} else {
+			logging.Info("Pre-bound API listener to port %d", actualPort)
+		}
+	} else {
+		// Explicit port - bind directly
+		logging.Info("Pre-binding API listener to explicit port %d", config.APIPort)
+
+		listener, err := portBinder.BindTCP(config.APIAddr, config.APIPort)
+		if err != nil {
+			return fmt.Errorf("failed to pre-bind API listener to %s:%d: %w", config.APIAddr, config.APIPort, err)
 		}
 
-		logging.Info("Finding available API port starting from %d", originalAPIPort)
+		apiListener = listener
 	}
 
 	// ============================================================================
@@ -746,14 +747,15 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	// Create gRPC client pool for inter-node communication
 	grpcClientPool := grpc.NewClientPool(serfManager, config.GRPCPort, grpcConfig)
 
-	logging.Info("Starting HTTP API server on %s:%d", config.APIAddr, config.APIPort)
+	logging.Info("Starting HTTP API server with pre-bound listener on %s", apiListener.Addr().String())
 
-	// Start HTTP API server immediately after port discovery
+	// Create and start HTTP API server with pre-bound listener
 	var apiServer *api.Server
 
 	apiConfig := buildAPIConfig(serfManager, raftManager, grpcClientPool)
-	apiServer = api.NewServer(apiConfig)
+	apiServer = api.NewServerWithListener(apiConfig, apiListener)
 	if err := apiServer.Start(); err != nil {
+		// Note: apiServer now owns the listener, so it will handle cleanup
 		return fmt.Errorf("failed to start API server: %w", err)
 	}
 

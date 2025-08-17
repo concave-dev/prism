@@ -45,6 +45,7 @@ type Server struct {
 	raftManager    *raft.RaftManager // Consensus protocol and leader election manager
 	grpcClientPool *grpc.ClientPool  // Inter-node communication client pool
 	httpServer     *http.Server      // HTTP server instance for request handling
+	listener       net.Listener      // Pre-bound network listener (optional)
 	bindAddr       string            // Network address for HTTP server binding
 	bindPort       int               // Network port for HTTP server binding
 }
@@ -70,14 +71,37 @@ func NewServer(config *Config) *Server {
 	}
 }
 
+// NewServerWithListener creates a new HTTP API server with a pre-bound listener.
+// This eliminates port binding race conditions by using a listener that was
+// bound earlier during startup, ensuring the port is reserved for this service.
+//
+// The pre-bound listener approach is essential for production deployments where
+// multiple services start concurrently and port conflicts must be prevented.
+// This method should be preferred over NewServer for reliable port management.
+func NewServerWithListener(config *Config, listener net.Listener) *Server {
+	// Set Gin mode based on DEBUG environment variable
+	if os.Getenv("DEBUG") == "true" {
+		gin.SetMode(gin.DebugMode)
+	} else {
+		gin.SetMode(gin.ReleaseMode)
+	}
+
+	return &Server{
+		serfManager:    config.SerfManager,
+		raftManager:    config.RaftManager,
+		grpcClientPool: config.GRPCClientPool,
+		listener:       listener, // Use pre-bound listener
+		bindAddr:       config.BindAddr,
+		bindPort:       config.BindPort,
+	}
+}
+
 // Start initializes and starts the HTTP API server with middleware and routing.
 //
 // Configures the complete HTTP server stack including logging, CORS, recovery middleware,
-// and all REST endpoints. Performs binding validation before starting to catch configuration
-// errors early and prevent runtime failures during cluster operation.
+// and all REST endpoints. Supports both pre-bound listeners (preferred) and self-binding
+// for backward compatibility while eliminating port binding race conditions.
 func (s *Server) Start() error {
-	logging.Info("Starting HTTP API server on %s:%d", s.bindAddr, s.bindPort)
-
 	// Create Gin router
 	router := gin.New()
 
@@ -96,9 +120,20 @@ func (s *Server) Start() error {
 	// Setup routes
 	s.setupRoutes(router)
 
-	// Create HTTP server
+	// Create HTTP server with appropriate address
+	var serverAddr string
+	if s.listener != nil {
+		// Use pre-bound listener (preferred approach)
+		serverAddr = s.listener.Addr().String()
+		logging.Info("Starting HTTP API server with pre-bound listener on %s", serverAddr)
+	} else {
+		// Self-bind mode (fallback for compatibility)
+		serverAddr = fmt.Sprintf("%s:%d", s.bindAddr, s.bindPort)
+		logging.Info("Starting HTTP API server on %s (self-bind mode)", serverAddr)
+	}
+
 	s.httpServer = &http.Server{
-		Addr:    fmt.Sprintf("%s:%d", s.bindAddr, s.bindPort),
+		Addr:    serverAddr,
 		Handler: router,
 		// Timeouts for production
 		ReadTimeout:  15 * time.Second,
@@ -106,17 +141,18 @@ func (s *Server) Start() error {
 		IdleTimeout:  60 * time.Second,
 	}
 
-	// Test binding first to catch errors immediately
-	// Force IPv4 for consistent behavior with actual service binding
-	listener, err := net.Listen("tcp4", s.httpServer.Addr)
-	if err != nil {
-		return fmt.Errorf("failed to bind to %s: %w", s.httpServer.Addr, err)
-	}
-	listener.Close() // Close the test listener
-
-	// Start server in goroutine now that we know binding works
+	// Start server with appropriate method
 	go func() {
-		if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		var err error
+		if s.listener != nil {
+			// Use pre-bound listener - no race condition
+			err = s.httpServer.Serve(s.listener)
+		} else {
+			// Self-bind mode - bind now
+			err = s.httpServer.ListenAndServe()
+		}
+
+		if err != nil && err != http.ErrServerClosed {
 			logging.Error("HTTP server failed: %v", err)
 		}
 	}()
