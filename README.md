@@ -52,6 +52,27 @@ go build -o bin/prismd ./cmd/prismd
 go build -o bin/prismctl ./cmd/prismctl
 ```
 
+## Makefile
+
+Common development tasks are available via Makefile targets:
+
+```bash
+# Build both binaries into ./bin
+make build
+
+# Stop prismd and kill listeners on default port ranges, then remove ./bin and ./data
+make clean
+
+# Only stop prismd and kill listeners
+make stop-prismd
+
+# Only remove ./bin and ./data
+make delete-dir
+
+# Regenerate gRPC code for internal/grpc/proto/node_service.proto
+make generate-grpc
+```
+
 ## Usage
 
 ### Development and Testing
