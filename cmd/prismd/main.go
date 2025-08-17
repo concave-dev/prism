@@ -441,6 +441,19 @@ func buildGRPCConfig() *grpc.Config {
 	return grpcConfig
 }
 
+// buildAPIConfig converts daemon config to API config
+func buildAPIConfig(serfManager *serf.SerfManager, raftManager *raft.RaftManager, grpcClientPool *grpc.ClientPool) *api.Config {
+	apiConfig := api.DefaultConfig()
+
+	apiConfig.BindAddr = config.APIAddr
+	apiConfig.BindPort = config.APIPort
+	apiConfig.SerfManager = serfManager
+	apiConfig.RaftManager = raftManager
+	apiConfig.GRPCClientPool = grpcClientPool
+
+	return apiConfig
+}
+
 // runDaemon runs the daemon with graceful shutdown handling
 func runDaemon(cmd *cobra.Command, args []string) error {
 	logging.Info("Starting Prism daemon v%s", Version)
@@ -731,13 +744,7 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	// Start HTTP API server immediately after port discovery
 	var apiServer *api.Server
 
-	apiConfig := api.DefaultConfig()
-	apiConfig.BindAddr = config.APIAddr
-	apiConfig.BindPort = config.APIPort
-	apiConfig.SerfManager = serfManager
-	apiConfig.RaftManager = raftManager
-	apiConfig.GRPCClientPool = grpcClientPool
-
+	apiConfig := buildAPIConfig(serfManager, raftManager, grpcClientPool)
 	apiServer = api.NewServer(apiConfig)
 	if err := apiServer.Start(); err != nil {
 		return fmt.Errorf("failed to start API server: %w", err)
