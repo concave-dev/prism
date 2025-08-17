@@ -107,7 +107,8 @@ func (s *Server) Start() error {
 	}
 
 	// Test binding first to catch errors immediately
-	listener, err := net.Listen("tcp", s.httpServer.Addr)
+	// Force IPv4 for consistent behavior with actual service binding
+	listener, err := net.Listen("tcp4", s.httpServer.Addr)
 	if err != nil {
 		return fmt.Errorf("failed to bind to %s: %w", s.httpServer.Addr, err)
 	}
