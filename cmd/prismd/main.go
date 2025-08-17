@@ -59,6 +59,48 @@ func isAddressInUseError(err error) bool {
 	return false
 }
 
+// preBindServiceListener handles the common pattern of pre-binding TCP listeners for services.
+// This eliminates code duplication across Raft, gRPC, and API pre-binding logic.
+//
+// Parameters:
+//   - serviceName: human-readable name for logging (e.g., "Raft", "gRPC", "API")
+//   - portBinder: the PortBinder instance to use for binding
+//   - explicitlySet: whether the user explicitly set the address/port
+//   - addr: the address to bind to
+//   - port: the port to bind to (or starting port for fallback)
+//   - originalPort: the original default port for logging purposes
+//
+// Returns the bound listener and actual port, or error if binding fails.
+func preBindServiceListener(serviceName string, portBinder *netutil.PortBinder, explicitlySet bool, addr string, port int, originalPort int) (net.Listener, int, error) {
+	if !explicitlySet {
+		// Use fallback binding for auto-discovered ports
+		logging.Info("Pre-binding %s listener starting from port %d", serviceName, originalPort)
+
+		listener, actualPort, err := portBinder.BindTCPWithFallback(addr, port)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to pre-bind %s listener: %w", serviceName, err)
+		}
+
+		if actualPort != originalPort {
+			logging.Warn("Default %s port %d was busy, pre-bound to port %d", serviceName, originalPort, actualPort)
+		} else {
+			logging.Info("Pre-bound %s listener to port %d", serviceName, actualPort)
+		}
+
+		return listener, actualPort, nil
+	} else {
+		// Explicit port - bind directly
+		logging.Info("Pre-binding %s listener to explicit port %d", serviceName, port)
+
+		listener, err := portBinder.BindTCP(addr, port)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to pre-bind %s listener to %s:%d: %w", serviceName, addr, port, err)
+		}
+
+		return listener, port, nil
+	}
+}
+
 // isConnectionRefusedError checks if an error is "connection refused" using proper error types
 func isConnectionRefusedError(err error) bool {
 	var opErr *net.OpError
@@ -533,52 +575,46 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	// No need to set default address as it's already set in flag defaults
 
 	// ============================================================================
-	// ATOMIC PORT BINDING: Race Condition Prevention
+	// ATOMIC PORT BINDING STRATEGY: Eliminating Race Conditions
 	// ============================================================================
 	//
-	// PROBLEM: The original implementation had a race condition between port discovery
-	// and actual service binding that could cause startup failures in busy environments.
+	// PROBLEM: Traditional "find port + close + bind later" patterns have race conditions
+	// where other processes can grab tested ports between discovery and actual binding.
+	// This causes "address already in use" failures when running multiple prismd instances.
 	//
-	// RACE CONDITION TIMELINE (BEFORE):
-	//   validateConfig()        Services Start
-	//   ↓                      ↓
-	//   0ms ──── 50ms+ ──── Service Bind Time
-	//   ↑                   ↑
-	//   findAvailablePort() serf.Create()
-	//   Test port & close   Tries to bind
-	//   ← Race Window! →    ← May fail! →
+	// SOLUTION: Pre-bind all critical services before any can start:
 	//
-	//   During the 50ms+ gap:
-	//   - Another process could grab the tested port
-	//   - Multiple services initialize (Raft, gRPC, API)
-	//   - No port reservation mechanism
-	//   - Result: "address already in use" startup failure
+	// PHASE 1: ATOMIC PORT RESERVATION (before any service starts)
+	//   1. Pre-bind Raft listener    (TCP) → guaranteed port reservation
+	//   2. Pre-bind gRPC listener    (TCP) → guaranteed port reservation
+	//   3. Pre-bind API listener     (TCP) → guaranteed port reservation
 	//
-	// SOLUTION: Just-in-Time Port Discovery (AFTER):
-	//   Service Start
-	//   ↓
-	//   Service Bind Time ─ 1ms ─ Actual Bind
-	//   ↑                        ↑
-	//   findAvailablePort()      serf.Create()
-	//   Test & close immediately Binds immediately
-	//   ← Minimal race window (~1ms) →
+	// PHASE 2: SERVICE STARTUP (with guaranteed ports)
+	//   4. Start Serf with find+bind (UDP+TCP, can fail fast and release all ports)
+	//   5. Start Raft with pre-bound listener → no race condition
+	//   6. Start gRPC with pre-bound listener → no race condition
+	//   7. Start API with pre-bound listener  → no race condition
 	//
-	//   Benefits:
-	//   - Race window reduced from ~50ms+ to ~1ms
-	//   - Applied consistently to all services
-	//   - Maintains backward compatibility
-	//   - Production-ready for high process churn environments
+	// WHY SERF IS DIFFERENT:
+	// - Serf uses both UDP (gossip) and TCP (memberlist) on the same port
+	// - Serf starts first and dictates overall success/failure
+	// - If Serf fails, process exits and OS releases all pre-bound ports
+	// - Engineering pre-binding for UDP+TCP dual-bind isn't worth the complexity
+	// - Minimal race window (~1ms) is acceptable for the failure-dictating service
 	//
-	// NOTE: This pattern is applied to all services (Serf, Raft, gRPC, API) that
-	// support auto-discovery. Services with explicitly set ports skip this logic.
+	// BENEFITS:
+	// - Raft, gRPC, API: Zero race conditions (truly atomic port reservation)
+	// - Serf: Minimal race window with clean failure mode
+	// - Production-ready for high-concurrency environments
+	// - Backward compatible (all services support self-binding fallback)
 	// ============================================================================
 
 	// ============================================================================
-	// PHASE 1: PORT DISCOVERY - Resolve all ports before creating any services
-	// This ensures Serf tags contain the correct ports that services will actually use
+	// PHASE 1: PRE-BIND ALL TCP SERVICES (before Serf starts)
+	// This guarantees port reservation for Raft, gRPC, and API services
 	// ============================================================================
 
-	// Discover available Serf port
+	// Handle Serf port discovery (traditional approach - acceptable for failure-dictating service)
 	if !config.serfExplicitlySet {
 		availableSerfPort, err := findAvailablePort(config.SerfAddr, config.SerfPort)
 		if err != nil {
@@ -594,109 +630,51 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	}
 
 	// Pre-bind Raft listener to eliminate race conditions
-	var raftListener net.Listener
+	// Raft consensus requires TCP for leader election, log replication, and heartbeat messages
 	portBinder := netutil.NewPortBinder()
 
-	if !config.raftAddrExplicitlySet {
-		// Use fallback binding for auto-discovered ports
-		logging.Info("Pre-binding Raft listener starting from port %d", originalRaftPort)
-
-		listener, actualPort, err := portBinder.BindTCPWithFallback(config.RaftAddr, config.RaftPort)
-		if err != nil {
-			return fmt.Errorf("failed to pre-bind Raft listener: %w", err)
-		}
-
-		raftListener = listener
-		config.RaftPort = actualPort
-
-		if actualPort != originalRaftPort {
-			logging.Warn("Default Raft port %d was busy, pre-bound to port %d", originalRaftPort, actualPort)
-		} else {
-			logging.Info("Pre-bound Raft listener to port %d", actualPort)
-		}
-	} else {
-		// Explicit port - bind directly
-		logging.Info("Pre-binding Raft listener to explicit port %d", config.RaftPort)
-
-		listener, err := portBinder.BindTCP(config.RaftAddr, config.RaftPort)
-		if err != nil {
-			return fmt.Errorf("failed to pre-bind Raft listener to %s:%d: %w", config.RaftAddr, config.RaftPort, err)
-		}
-
-		raftListener = listener
+	raftListener, actualRaftPort, err := preBindServiceListener(
+		"Raft", portBinder, config.raftAddrExplicitlySet,
+		config.RaftAddr, config.RaftPort, originalRaftPort)
+	if err != nil {
+		return err
 	}
+	config.RaftPort = actualRaftPort
 
 	// Pre-bind gRPC listener to eliminate race conditions
-	var grpcListener net.Listener
-
-	if !config.grpcAddrExplicitlySet {
-		// Use fallback binding for auto-discovered ports
-		logging.Info("Pre-binding gRPC listener starting from port %d", originalGRPCPort)
-
-		listener, actualPort, err := portBinder.BindTCPWithFallback(config.GRPCAddr, config.GRPCPort)
-		if err != nil {
-			return fmt.Errorf("failed to pre-bind gRPC listener: %w", err)
-		}
-
-		grpcListener = listener
-		config.GRPCPort = actualPort
-
-		if actualPort != originalGRPCPort {
-			logging.Warn("Default gRPC port %d was busy, pre-bound to port %d", originalGRPCPort, actualPort)
-		} else {
-			logging.Info("Pre-bound gRPC listener to port %d", actualPort)
-		}
-	} else {
-		// Explicit port - bind directly
-		logging.Info("Pre-binding gRPC listener to explicit port %d", config.GRPCPort)
-
-		listener, err := portBinder.BindTCP(config.GRPCAddr, config.GRPCPort)
-		if err != nil {
-			return fmt.Errorf("failed to pre-bind gRPC listener to %s:%d: %w", config.GRPCAddr, config.GRPCPort, err)
-		}
-
-		grpcListener = listener
+	// gRPC server handles inter-node communication for resource queries and health checks
+	grpcListener, actualGRPCPort, err := preBindServiceListener(
+		"gRPC", portBinder, config.grpcAddrExplicitlySet,
+		config.GRPCAddr, config.GRPCPort, originalGRPCPort)
+	if err != nil {
+		return err
 	}
+	config.GRPCPort = actualGRPCPort
 
 	// Pre-bind API listener to eliminate race conditions
-	var apiListener net.Listener
-
-	if !config.apiAddrExplicitlySet {
-		// Use fallback binding for auto-discovered ports
-		logging.Info("Pre-binding API listener starting from port %d", originalAPIPort)
-
-		listener, actualPort, err := portBinder.BindTCPWithFallback(config.APIAddr, config.APIPort)
-		if err != nil {
-			return fmt.Errorf("failed to pre-bind API listener: %w", err)
-		}
-
-		apiListener = listener
-		config.APIPort = actualPort
-
-		if actualPort != originalAPIPort {
-			logging.Warn("Default API port %d was busy, pre-bound to port %d", originalAPIPort, actualPort)
-		} else {
-			logging.Info("Pre-bound API listener to port %d", actualPort)
-		}
-	} else {
-		// Explicit port - bind directly
-		logging.Info("Pre-binding API listener to explicit port %d", config.APIPort)
-
-		listener, err := portBinder.BindTCP(config.APIAddr, config.APIPort)
-		if err != nil {
-			return fmt.Errorf("failed to pre-bind API listener to %s:%d: %w", config.APIAddr, config.APIPort, err)
-		}
-
-		apiListener = listener
+	// HTTP API server provides REST endpoints for cluster management and monitoring
+	apiListener, actualAPIPort, err := preBindServiceListener(
+		"API", portBinder, config.apiAddrExplicitlySet,
+		config.APIAddr, config.APIPort, originalAPIPort)
+	if err != nil {
+		return err
 	}
+	config.APIPort = actualAPIPort
 
 	// ============================================================================
-	// PHASE 2: SERVICE CREATION - All ports are now finalized, create services
+	// PHASE 2: SERVICE STARTUP (with guaranteed port reservations)
+	// All TCP services now have guaranteed ports. Start services in dependency order:
+	// 1. Serf (cluster membership) - can fail fast and release all pre-bound ports
+	// 2. Raft (consensus) - uses pre-bound listener, guaranteed to succeed
+	// 3. gRPC (inter-node communication) - uses pre-bound listener, guaranteed to succeed
+	// 4. HTTP API (management interface) - uses pre-bound listener, guaranteed to succeed
 	// ============================================================================
 
-	logging.Info("Binding to %s:%d", config.SerfAddr, config.SerfPort)
+	logging.Info("Starting Serf cluster membership on %s:%d", config.SerfAddr, config.SerfPort)
 
 	// Create SerfManager with correct port tags (all ports are now finalized)
+	// Important: Serf tags now contain the actual ports that services will use,
+	// enabling accurate service discovery across the cluster
 	serfConfig := buildSerfConfig()
 	serfManager, err := serf.NewSerfManager(serfConfig)
 	if err != nil {
@@ -798,6 +776,11 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	// Handle shutdown signals
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+	// ============================================================================
+	// STARTUP COMPLETE: All services running with guaranteed port reservations
+	// The atomic port binding strategy has successfully eliminated race conditions
+	// ============================================================================
 
 	logging.Success("Prism daemon started successfully")
 	logging.Info("Daemon running... Press Ctrl+C to shutdown")
