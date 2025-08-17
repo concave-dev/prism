@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"syscall"
 )
 
 // AddressInUseError represents a "port already in use" error that preserves
@@ -74,7 +73,7 @@ func (pb *PortBinder) BindTCP(address string, port int) (net.Listener, error) {
 	// Force IPv4 for consistent behavior across platforms
 	listener, err := net.Listen("tcp4", addr)
 	if err != nil {
-		if isAddressInUseError(err) {
+		if IsAddressInUseError(err) {
 			// Return a wrapped error that preserves the original for type checking
 			return nil, &AddressInUseError{
 				Port:    port,
@@ -137,18 +136,4 @@ func (pb *PortBinder) GetListenerPort(listener net.Listener) (int, error) {
 	}
 
 	return tcpAddr.Port, nil
-}
-
-// isAddressInUseError checks if an error indicates "address already in use"
-// using proper error type checking rather than string matching.
-//
-// Critical for reliable error classification that works across different
-// operating systems and Go versions. Enables proper fallback logic that
-// distinguishes between port conflicts and other binding failures.
-func isAddressInUseError(err error) bool {
-	var opErr *net.OpError
-	if errors.As(err, &opErr) {
-		return errors.Is(opErr.Err, syscall.EADDRINUSE)
-	}
-	return false
 }

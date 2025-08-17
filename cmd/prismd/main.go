@@ -5,7 +5,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -50,15 +49,6 @@ func displayLogo() {
 	fmt.Println()
 }
 
-// isAddressInUseError checks if an error is "address already in use" using proper error types
-func isAddressInUseError(err error) bool {
-	var opErr *net.OpError
-	if errors.As(err, &opErr) {
-		return errors.Is(opErr.Err, syscall.EADDRINUSE)
-	}
-	return false
-}
-
 // preBindServiceListener handles the common pattern of pre-binding TCP listeners for services.
 // This eliminates code duplication across Raft, gRPC, and API pre-binding logic.
 //
@@ -99,15 +89,6 @@ func preBindServiceListener(serviceName string, portBinder *netutil.PortBinder, 
 
 		return listener, port, nil
 	}
-}
-
-// isConnectionRefusedError checks if an error is "connection refused" using proper error types
-func isConnectionRefusedError(err error) bool {
-	var opErr *net.OpError
-	if errors.As(err, &opErr) {
-		return errors.Is(opErr.Err, syscall.ECONNREFUSED)
-	}
-	return false
 }
 
 // Global configuration
@@ -235,7 +216,7 @@ func findAvailablePort(address string, startPort int) (int, error) {
 		// Force IPv4 for consistent behavior with actual service binding
 		tcpConn, tcpErr := net.Listen("tcp4", addr)
 		if tcpErr != nil {
-			if isAddressInUseError(tcpErr) {
+			if netutil.IsAddressInUseError(tcpErr) {
 				// Try next port
 				continue
 			}
@@ -257,7 +238,7 @@ func findAvailablePort(address string, startPort int) (int, error) {
 		}
 
 		// Check if UDP error is "address already in use"
-		if isAddressInUseError(udpErr) {
+		if netutil.IsAddressInUseError(udpErr) {
 			// Try next port
 			continue
 		}
@@ -530,7 +511,7 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		}
 		udpConn, udpErr := net.ListenUDP("udp", udpAddr)
 		if udpErr != nil {
-			if isAddressInUseError(udpErr) {
+			if netutil.IsAddressInUseError(udpErr) {
 				return fmt.Errorf("cannot bind Serf (UDP) to %s: port %d is already in use", config.SerfAddr, config.SerfPort)
 			}
 			return fmt.Errorf("failed to bind Serf (UDP) to %s: %w", testAddr, udpErr)
@@ -541,7 +522,7 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		// Force IPv4 for consistent behavior with actual service binding
 		tcpListener, tcpErr := net.Listen("tcp4", testAddr)
 		if tcpErr != nil {
-			if isAddressInUseError(tcpErr) {
+			if netutil.IsAddressInUseError(tcpErr) {
 				return fmt.Errorf("cannot bind Serf (TCP) to %s: port %d is already in use", config.SerfAddr, config.SerfPort)
 			}
 			return fmt.Errorf("failed to bind Serf (TCP) to %s: %w", testAddr, tcpErr)
@@ -750,7 +731,7 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 			logging.Error("Failed to join cluster: %v", err)
 
 			// Provide helpful context for connection issues
-			if isConnectionRefusedError(err) {
+			if netutil.IsConnectionRefusedError(err) {
 				logging.Error("TIP: Check if the target node(s) are running and accessible")
 				logging.Error("     You can verify with: prismctl members")
 			}
