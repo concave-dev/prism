@@ -53,6 +53,35 @@ func NewServer(config *Config, serfManager *serf.SerfManager, raftManager *raft.
 	return server, nil
 }
 
+// NewServerWithListener creates a new gRPC server with a pre-bound listener.
+// This eliminates port binding race conditions by using a listener that was
+// bound earlier during startup, ensuring the port is reserved for this service.
+//
+// The pre-bound listener approach is essential for production deployments where
+// multiple services start concurrently and port conflicts must be prevented.
+// This method should be preferred over NewServer for reliable port management.
+func NewServerWithListener(config *Config, listener net.Listener, serfManager *serf.SerfManager, raftManager *raft.RaftManager) (*Server, error) {
+	if err := config.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
+	}
+
+	if listener == nil {
+		return nil, fmt.Errorf("listener cannot be nil")
+	}
+
+	server := &Server{
+		config:      config,
+		listener:    listener, // Use pre-bound listener
+		shutdown:    make(chan struct{}),
+		serfManager: serfManager,
+		raftManager: raftManager,
+		activeConns: make(map[string]context.CancelFunc),
+	}
+
+	logging.Info("gRPC server created with pre-bound listener on %s", listener.Addr().String())
+	return server, nil
+}
+
 // Start starts the gRPC server
 // TODO: Add health check service registration
 // TODO: Implement graceful startup with retry logic
@@ -60,20 +89,26 @@ func (s *Server) Start() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	logging.Info("Starting gRPC server on %s:%d", s.config.BindAddr, s.config.BindPort)
-
 	// Configure logging level only if not already configured by CLI tools
 	if !logging.IsConfiguredByCLI() {
 		logging.SetLevel(s.config.LogLevel)
 	}
 
-	// Create network listener - force IPv4 for consistent behavior
-	addr := fmt.Sprintf("%s:%d", s.config.BindAddr, s.config.BindPort)
-	listener, err := net.Listen("tcp4", addr)
-	if err != nil {
-		return fmt.Errorf("failed to listen on %s: %w", addr, err)
+	// Handle listener binding - either use pre-bound listener or create new one
+	if s.listener == nil {
+		// No pre-bound listener - create one (fallback for compatibility)
+		addr := fmt.Sprintf("%s:%d", s.config.BindAddr, s.config.BindPort)
+		logging.Info("Starting gRPC server on %s (self-bind mode)", addr)
+
+		listener, err := net.Listen("tcp4", addr)
+		if err != nil {
+			return fmt.Errorf("failed to listen on %s: %w", addr, err)
+		}
+		s.listener = listener
+	} else {
+		// Use pre-bound listener (preferred approach)
+		logging.Info("Starting gRPC server with pre-bound listener on %s", s.listener.Addr().String())
 	}
-	s.listener = listener
 
 	// Create gRPC server with options including connection tracking
 	opts := []grpcstd.ServerOption{
@@ -95,8 +130,8 @@ func (s *Server) Start() error {
 
 	// Start serving in a goroutine
 	go func() {
-		logging.Info("gRPC server listening on %s", addr)
-		if err := s.grpcServer.Serve(listener); err != nil {
+		logging.Info("gRPC server listening on %s", s.listener.Addr().String())
+		if err := s.grpcServer.Serve(s.listener); err != nil {
 			logging.Error("gRPC server error: %v", err)
 		}
 	}()

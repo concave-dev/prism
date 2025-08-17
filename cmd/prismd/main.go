@@ -19,6 +19,7 @@ import (
 	"github.com/concave-dev/prism/internal/grpc"
 	"github.com/concave-dev/prism/internal/logging"
 	"github.com/concave-dev/prism/internal/names"
+	"github.com/concave-dev/prism/internal/netutil"
 	"github.com/concave-dev/prism/internal/raft"
 	"github.com/concave-dev/prism/internal/serf"
 	"github.com/concave-dev/prism/internal/validate"
@@ -530,26 +531,12 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		config.RaftAddr = config.SerfAddr
 	}
 
-	// Handle gRPC address binding (before creating Serf tags)
+	// Store original gRPC port for logging purposes
 	originalGRPCPort := config.GRPCPort
 
-	if config.grpcAddrExplicitlySet {
-		// User explicitly set gRPC address - fail if port is busy
-		logging.Info("Starting gRPC server on %s:%d", config.GRPCAddr, config.GRPCPort)
-
-		// Test binding to ensure port is available
-		testAddr := fmt.Sprintf("%s:%d", config.GRPCAddr, config.GRPCPort)
-		conn, err := net.Listen("tcp4", testAddr)
-		if err != nil {
-			if isAddressInUseError(err) {
-				return fmt.Errorf("cannot bind gRPC server to %s: port %d is already in use",
-					config.GRPCAddr, config.GRPCPort)
-			}
-			return fmt.Errorf("failed to bind gRPC server to %s: %w", testAddr, err)
-		}
-		conn.Close()
-	} else {
-		// Using defaults - use serf IP + find port just before starting gRPC
+	// Set default gRPC address if not explicitly set
+	if !config.grpcAddrExplicitlySet {
+		// Using defaults - use serf IP
 		config.GRPCAddr = config.SerfAddr
 	}
 
@@ -651,19 +638,37 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		logging.Info("Finding available Raft port starting from %d", originalRaftPort)
 	}
 
-	// Discover available gRPC port
+	// Pre-bind gRPC listener to eliminate race conditions
+	var grpcListener net.Listener
+	portBinder := netutil.NewPortBinder()
+
 	if !config.grpcAddrExplicitlySet {
-		availableGRPCPort, err := findAvailablePort(config.GRPCAddr, config.GRPCPort)
+		// Use fallback binding for auto-discovered ports
+		logging.Info("Pre-binding gRPC listener starting from port %d", originalGRPCPort)
+
+		listener, actualPort, err := portBinder.BindTCPWithFallback(config.GRPCAddr, config.GRPCPort)
 		if err != nil {
-			return fmt.Errorf("failed to find available gRPC port: %w", err)
+			return fmt.Errorf("failed to pre-bind gRPC listener: %w", err)
 		}
 
-		if availableGRPCPort != originalGRPCPort {
-			logging.Warn("Default gRPC port %d was busy, using port %d for gRPC", originalGRPCPort, availableGRPCPort)
-			config.GRPCPort = availableGRPCPort
+		grpcListener = listener
+		config.GRPCPort = actualPort
+
+		if actualPort != originalGRPCPort {
+			logging.Warn("Default gRPC port %d was busy, pre-bound to port %d", originalGRPCPort, actualPort)
+		} else {
+			logging.Info("Pre-bound gRPC listener to port %d", actualPort)
+		}
+	} else {
+		// Explicit port - bind directly
+		logging.Info("Pre-binding gRPC listener to explicit port %d", config.GRPCPort)
+
+		listener, err := portBinder.BindTCP(config.GRPCAddr, config.GRPCPort)
+		if err != nil {
+			return fmt.Errorf("failed to pre-bind gRPC listener to %s:%d: %w", config.GRPCAddr, config.GRPCPort, err)
 		}
 
-		logging.Info("Finding available gRPC port starting from %d", originalGRPCPort)
+		grpcListener = listener
 	}
 
 	// Discover available API port
@@ -722,17 +727,19 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	// Give Raft access to Serf member status for autopilot
 	raftManager.SetSerfManager(serfManager)
 
-	logging.Info("Starting gRPC server on %s:%d", config.GRPCAddr, config.GRPCPort)
+	logging.Info("Starting gRPC server with pre-bound listener on %s", grpcListener.Addr().String())
 
-	// Create and start gRPC server
+	// Create and start gRPC server with pre-bound listener
 	var grpcServer *grpc.Server
 	grpcConfig := buildGRPCConfig()
-	grpcServer, err = grpc.NewServer(grpcConfig, serfManager, raftManager)
+	grpcServer, err = grpc.NewServerWithListener(grpcConfig, grpcListener, serfManager, raftManager)
 	if err != nil {
+		grpcListener.Close() // Clean up pre-bound listener on error
 		return fmt.Errorf("failed to create gRPC server: %w", err)
 	}
 
 	if err := grpcServer.Start(); err != nil {
+		// Note: grpcServer now owns the listener, so it will handle cleanup
 		return fmt.Errorf("failed to start gRPC server: %w", err)
 	}
 
