@@ -358,7 +358,8 @@ func getRaftPeerStatus(member *serf.PrismNode, raftPeers []string) RaftStatus {
 // This helps distinguish between network partitions and configuration issues
 func isRaftNodeReachable(address string, port int) bool {
 	// Create connection with short timeout for fast response
-	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", address, port), 2*time.Second)
+	// Force IPv4 for consistent behavior with service binding
+	conn, err := net.DialTimeout("tcp4", fmt.Sprintf("%s:%d", address, port), 2*time.Second)
 	if err != nil {
 		return false // Connection failed - node unreachable
 	}
@@ -371,7 +372,8 @@ func isRaftNodeReachable(address string, port int) bool {
 
 // isTCPReachable checks reachability to an address in host:port form
 func isTCPReachable(address string) bool {
-	conn, err := net.DialTimeout("tcp", address, 2*time.Second)
+	// Force IPv4 for consistent behavior with service binding
+	conn, err := net.DialTimeout("tcp4", address, 2*time.Second)
 	if err != nil {
 		return false
 	}
