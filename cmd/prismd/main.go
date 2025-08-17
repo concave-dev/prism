@@ -478,7 +478,49 @@ func buildAPIConfig(serfManager *serf.SerfManager, raftManager *raft.RaftManager
 	return apiConfig
 }
 
-// runDaemon runs the daemon with graceful shutdown handling
+// runDaemon orchestrates the complete Prism daemon lifecycle from initialization to graceful shutdown.
+//
+// This function implements a sophisticated service startup strategy that eliminates race conditions
+// through atomic port binding, ensuring reliable cluster node initialization in high-concurrency
+// environments. The daemon consists of four core services: Serf (cluster membership), Raft
+// (distributed consensus), gRPC (inter-node communication), and HTTP API (management interface).
+//
+// EXECUTION FLOW:
+//
+// 1. PORT VALIDATION & DISCOVERY
+//   - Validates explicitly set Serf ports (both UDP for gossip and TCP for memberlist streams)
+//   - Discovers available ports for auto-binding services using a dual-protocol approach
+//   - Sets default addresses for services that inherit from Serf addressing
+//
+// 2. ATOMIC PORT BINDING (Race Condition Elimination)
+//   - Pre-binds TCP listeners for Raft, gRPC, and API services before any service starts
+//   - Guarantees port reservations to prevent "address already in use" failures
+//   - Serf uses traditional find+bind (acceptable for failure-dictating service)
+//
+// 3. SERVICE STARTUP (Dependency Order)
+//   - Serf: Cluster membership via gossip protocol, establishes node identity
+//   - Raft: Distributed consensus engine, integrates with Serf for automatic peer discovery
+//   - gRPC: Inter-node communication server for health checks and resource queries
+//   - HTTP API: REST interface for cluster management and monitoring
+//
+// 4. CLUSTER INTEGRATION
+//   - Attempts to join existing cluster if join addresses provided
+//   - Supports strict join mode (exit on failure) or isolation mode (continue standalone)
+//   - Handles connection failures with helpful diagnostic messages
+//
+// 5. OPERATIONAL PHASE
+//   - Logs all active service endpoints and their status
+//   - Waits for shutdown signals (SIGINT/SIGTERM) or context cancellation
+//   - Provides real-time cluster state information (leadership, membership)
+//
+// 6. GRACEFUL SHUTDOWN
+//   - Reverse dependency order: API → gRPC → Raft → Serf
+//   - Timeout-based shutdown for HTTP API to complete in-flight requests
+//   - Resource cleanup for client pools and network listeners
+//
+// The atomic port binding strategy is critical for production deployments where multiple
+// prismd instances may start simultaneously, eliminating the traditional race condition
+// where ports could be claimed between discovery and actual service binding.
 func runDaemon(cmd *cobra.Command, args []string) error {
 	logging.Info("Starting Prism daemon v%s", Version)
 	logging.Info("Node: %s", config.NodeName)
@@ -496,7 +538,6 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	//       environments where TCP is intentionally blocked.
 	originalSerfPort := config.SerfPort
 	if config.serfExplicitlySet {
-		// User explicitly set serf address - fail if port is busy
 		logging.Info("Binding to %s:%d", config.SerfAddr, config.SerfPort)
 
 		// Test binding to ensure both UDP (gossip) and TCP (stream) ports are available
@@ -536,7 +577,6 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 
 	// Set default Raft address if not explicitly set
 	if !config.raftAddrExplicitlySet {
-		// Using defaults - use serf IP
 		config.RaftAddr = config.SerfAddr
 	}
 
@@ -545,7 +585,6 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 
 	// Set default gRPC address if not explicitly set
 	if !config.grpcAddrExplicitlySet {
-		// Using defaults - use serf IP
 		config.GRPCAddr = config.SerfAddr
 	}
 
@@ -641,6 +680,22 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	config.APIPort = actualAPIPort
+
+	// Display final port configuration after all binding is complete
+	// This provides a clean summary after the port binding noise
+
+	// Calculate dynamic separator length based on the longest line (join command)
+	joinCommand := fmt.Sprintf("  %s --join=%s:%d", os.Args[0], config.SerfAddr, config.SerfPort)
+	separatorLength := len(joinCommand)
+	if separatorLength < 50 {
+		separatorLength = 50 // Minimum width for aesthetics
+	}
+	separator := strings.Repeat("━", separatorLength)
+
+	logging.Info("%s", separator)
+	logging.Info("To join this node to a cluster, use:")
+	logging.Info("  %s --join=%s:%d", os.Args[0], config.SerfAddr, config.SerfPort)
+	logging.Info("%s", separator)
 
 	// ============================================================================
 	// PHASE 2: SERVICE STARTUP (with guaranteed port reservations)
