@@ -52,6 +52,7 @@ import (
 	"time"
 
 	"github.com/concave-dev/prism/internal/logging"
+	"github.com/concave-dev/prism/internal/netutil"
 	serfpkg "github.com/concave-dev/prism/internal/serf"
 	"github.com/hashicorp/raft"
 	raftboltdb "github.com/hashicorp/raft-boltdb"
@@ -77,6 +78,7 @@ type RaftManager struct {
 	shutdown    chan struct{}          // Channel to signal shutdown
 	resolvedIP  string                 // Cached resolved IP for consistency across bootstrap and transport
 	serfManager SerfInterface          // Interface for Serf member queries
+	listener    net.Listener           // Pre-bound network listener (optional)
 }
 
 // SerfInterface defines the required methods from Serf manager for autopilot
@@ -107,6 +109,32 @@ func NewRaftManager(config *Config) (*RaftManager, error) {
 	}
 
 	logging.Info("Raft manager created successfully with config for %s:%d", config.BindAddr, config.BindPort)
+	return manager, nil
+}
+
+// NewRaftManagerWithListener creates a new Raft manager with a pre-bound listener.
+// This eliminates port binding race conditions by using a listener that was
+// bound earlier during startup, ensuring the port is reserved for this service.
+//
+// The pre-bound listener approach is essential for production deployments where
+// multiple services start concurrently and port conflicts must be prevented.
+// This method should be preferred over NewRaftManager for reliable port management.
+func NewRaftManagerWithListener(config *Config, listener net.Listener) (*RaftManager, error) {
+	if err := config.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
+	}
+
+	if listener == nil {
+		return nil, fmt.Errorf("listener cannot be nil")
+	}
+
+	manager := &RaftManager{
+		config:   config,
+		listener: listener, // Use pre-bound listener
+		shutdown: make(chan struct{}),
+	}
+
+	logging.Info("Raft manager created with pre-bound listener on %s", listener.Addr().String())
 	return manager, nil
 }
 
@@ -612,7 +640,7 @@ func (m *RaftManager) handleMemberLeave(member serf.Member) {
 //
 // Essential for Raft cluster formation as it establishes the communication
 // channel between nodes for leader election, log replication, and heartbeat
-// messages. Resolves wildcard addresses for proper peer connectivity.
+// messages. Supports both pre-bound listeners and self-binding modes.
 func (m *RaftManager) setupTransport(logWriter io.Writer) error {
 	// For Raft transport, we need an advertisable address, not 0.0.0.0
 	// Use centralized IP resolution to ensure consistency with bootstrap
@@ -626,12 +654,25 @@ func (m *RaftManager) setupTransport(logWriter io.Writer) error {
 		return fmt.Errorf("failed to resolve TCP address: %w", err)
 	}
 
-	// Bind to the configured address but advertise the advertisable address
-	bindAddress := fmt.Sprintf("%s:%d", m.config.BindAddr, m.config.BindPort)
-	// TODO: Consider exposing maxPool and timeout as config knobs
-	transport, err := raft.NewTCPTransport(bindAddress, addr, 3, 10*time.Second, logWriter)
-	if err != nil {
-		return fmt.Errorf("failed to create TCP transport: %w", err)
+	var transport *raft.NetworkTransport
+
+	if m.listener != nil {
+		// Use pre-bound listener with custom stream layer (preferred approach)
+		logging.Info("Setting up Raft transport with pre-bound listener on %s", m.listener.Addr().String())
+
+		streamLayer := netutil.NewRaftStreamLayer(m.listener)
+		transport = raft.NewNetworkTransport(streamLayer, 3, 10*time.Second, logWriter)
+	} else {
+		// Self-bind mode using traditional TCP transport (fallback for compatibility)
+		bindAddress := fmt.Sprintf("%s:%d", m.config.BindAddr, m.config.BindPort)
+		logging.Info("Setting up Raft transport on %s (self-bind mode)", bindAddress)
+
+		// TODO: Consider exposing maxPool and timeout as config knobs
+		tcpTransport, err := raft.NewTCPTransport(bindAddress, addr, 3, 10*time.Second, logWriter)
+		if err != nil {
+			return fmt.Errorf("failed to create TCP transport: %w", err)
+		}
+		transport = tcpTransport
 	}
 
 	m.transport = transport

@@ -507,27 +507,13 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		tcpListener.Close()
 	}
 
-	// Handle Raft address binding first (before creating Serf tags)
+	// Store original Raft port for logging purposes
 	var raftManager *raft.RaftManager
 	originalRaftPort := config.RaftPort
 
-	if config.raftAddrExplicitlySet {
-		// User explicitly set Raft address - fail if port is busy
-		logging.Info("Starting Raft consensus on %s:%d", config.RaftAddr, config.RaftPort)
-
-		// Test binding to ensure port is available
-		testAddr := fmt.Sprintf("%s:%d", config.RaftAddr, config.RaftPort)
-		conn, err := net.Listen("tcp4", testAddr)
-		if err != nil {
-			if isAddressInUseError(err) {
-				return fmt.Errorf("cannot bind Raft to %s: port %d is already in use",
-					config.RaftAddr, config.RaftPort)
-			}
-			return fmt.Errorf("failed to bind Raft to %s: %w", testAddr, err)
-		}
-		conn.Close()
-	} else {
-		// Using defaults - use serf IP + find port just before starting Raft
+	// Set default Raft address if not explicitly set
+	if !config.raftAddrExplicitlySet {
+		// Using defaults - use serf IP
 		config.RaftAddr = config.SerfAddr
 	}
 
@@ -607,24 +593,41 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		logging.Info("Finding available Serf port starting from %d", originalSerfPort)
 	}
 
-	// Discover available Raft port
+	// Pre-bind Raft listener to eliminate race conditions
+	var raftListener net.Listener
+	portBinder := netutil.NewPortBinder()
+
 	if !config.raftAddrExplicitlySet {
-		availableRaftPort, err := findAvailablePort(config.RaftAddr, config.RaftPort)
+		// Use fallback binding for auto-discovered ports
+		logging.Info("Pre-binding Raft listener starting from port %d", originalRaftPort)
+
+		listener, actualPort, err := portBinder.BindTCPWithFallback(config.RaftAddr, config.RaftPort)
 		if err != nil {
-			return fmt.Errorf("failed to find available Raft port: %w", err)
+			return fmt.Errorf("failed to pre-bind Raft listener: %w", err)
 		}
 
-		if availableRaftPort != originalRaftPort {
-			logging.Warn("Default Raft port %d was busy, using port %d for Raft", originalRaftPort, availableRaftPort)
-			config.RaftPort = availableRaftPort
+		raftListener = listener
+		config.RaftPort = actualPort
+
+		if actualPort != originalRaftPort {
+			logging.Warn("Default Raft port %d was busy, pre-bound to port %d", originalRaftPort, actualPort)
+		} else {
+			logging.Info("Pre-bound Raft listener to port %d", actualPort)
+		}
+	} else {
+		// Explicit port - bind directly
+		logging.Info("Pre-binding Raft listener to explicit port %d", config.RaftPort)
+
+		listener, err := portBinder.BindTCP(config.RaftAddr, config.RaftPort)
+		if err != nil {
+			return fmt.Errorf("failed to pre-bind Raft listener to %s:%d: %w", config.RaftAddr, config.RaftPort, err)
 		}
 
-		logging.Info("Finding available Raft port starting from %d", originalRaftPort)
+		raftListener = listener
 	}
 
 	// Pre-bind gRPC listener to eliminate race conditions
 	var grpcListener net.Listener
-	portBinder := netutil.NewPortBinder()
 
 	if !config.grpcAddrExplicitlySet {
 		// Use fallback binding for auto-discovered ports
@@ -705,18 +708,20 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to start serf manager: %w", err)
 	}
 
-	logging.Info("Starting Raft consensus on %s:%d", config.RaftAddr, config.RaftPort)
+	logging.Info("Starting Raft consensus with pre-bound listener on %s", raftListener.Addr().String())
 
-	// Create and start Raft manager immediately after port discovery
+	// Create and start Raft manager with pre-bound listener
 	raftConfig := buildRaftConfig()
 	// Use the Serf node_id as Raft ServerID for consistency
 	raftConfig.NodeID = serfManager.NodeID
-	raftManager, err = raft.NewRaftManager(raftConfig)
+	raftManager, err = raft.NewRaftManagerWithListener(raftConfig, raftListener)
 	if err != nil {
+		raftListener.Close() // Clean up pre-bound listener on error
 		return fmt.Errorf("failed to create raft manager: %w", err)
 	}
 
 	if err := raftManager.Start(); err != nil {
+		// Note: raftManager now owns the listener, so it will handle cleanup
 		return fmt.Errorf("failed to start raft manager: %w", err)
 	}
 
