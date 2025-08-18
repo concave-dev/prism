@@ -1,4 +1,4 @@
-.PHONY: build prismd prismctl clean stop-prismd delete-dir generate-grpc test
+.PHONY: build prismd prismctl clean stop delete-dir generate-grpc test run
 
 BIN_DIR := bin
 PRISMD := $(BIN_DIR)/prismd
@@ -20,7 +20,7 @@ $(PRISMCTL):
 	@mkdir -p $(BIN_DIR)
 	$(GO) build -o $(PRISMCTL) ./cmd/prismctl
 
-stop-prismd:
+stop:
 	@echo "=== Stopping prismd processes ==="
 	-@pkill -f prismd 2>/dev/null || true
 	@echo "Killing by port ranges (Serf 4200-4219 TCP+UDP, Raft 6969-6988 TCP, gRPC 7117-7136 TCP, API 8008-8027 TCP)"
@@ -38,7 +38,7 @@ delete-dir:
 	@echo "=== Deleting bin and data directories ==="
 	@rm -rf $(BIN_DIR) data
 
-clean: stop-prismd delete-dir
+clean: stop delete-dir
 
 generate-grpc:
 	@echo "=== Generating gRPC code ==="
@@ -62,5 +62,17 @@ generate-grpc:
 test:
 	@echo "=== Running tests without cache ==="
 	$(GO) test -count=1 ./...
+
+run: build stop
+	@echo "=== Starting Prism cluster (1 bootstrap + 2 joining nodes) ==="
+	@echo "Starting bootstrap node..."
+	@$(PRISMD) --bootstrap &
+	@sleep 3
+	@echo "Starting joining node 1..."
+	@$(PRISMD) --join=0.0.0.0:4200 &
+	@sleep 2
+	@echo "Starting joining node 2..."
+	@$(PRISMD) --join=0.0.0.0:4200 &
+	@echo "Cluster started! Use 'make stop' to stop all nodes."
 
 
