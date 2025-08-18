@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 
+	"github.com/concave-dev/prism/internal/logging"
 	"github.com/concave-dev/prism/internal/netutil"
 )
 
@@ -74,7 +75,7 @@ func FindAvailablePort(address string, startPort int) (int, error) {
 func PreBindServiceListener(serviceName string, portBinder *netutil.PortBinder, explicitlySet bool, addr string, port int, originalPort int) (net.Listener, int, error) {
 	if !explicitlySet {
 		// Use fallback binding for auto-discovered ports
-		fmt.Printf("Pre-binding %s listener starting from port %d\n", serviceName, originalPort)
+		logging.Info("Pre-binding %s listener starting from port %d", serviceName, originalPort)
 
 		listener, actualPort, err := portBinder.BindTCPWithFallback(addr, port)
 		if err != nil {
@@ -82,15 +83,15 @@ func PreBindServiceListener(serviceName string, portBinder *netutil.PortBinder, 
 		}
 
 		if actualPort != originalPort {
-			fmt.Printf("Default %s port %d was busy, pre-bound to port %d\n", serviceName, originalPort, actualPort)
+			logging.Warn("Default %s port %d was busy, pre-bound to port %d", serviceName, originalPort, actualPort)
 		} else {
-			fmt.Printf("Pre-bound %s listener to port %d\n", serviceName, actualPort)
+			logging.Info("Pre-bound %s listener to port %d", serviceName, actualPort)
 		}
 
 		return listener, actualPort, nil
 	} else {
 		// Explicit port - bind directly
-		fmt.Printf("Pre-binding %s listener to explicit port %d\n", serviceName, port)
+		logging.Info("Pre-binding %s listener to explicit port %d", serviceName, port)
 
 		listener, err := portBinder.BindTCP(addr, port)
 		if err != nil {
