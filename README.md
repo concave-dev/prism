@@ -5,7 +5,7 @@ Distributed runtime platform for AI agents and workflows.
 ![prismd screenshot](https://github.com/user-attachments/assets/15fb5429-0bd0-4a1e-9b3c-0579f76608b2)
 
 > [!CAUTION]
-> The cluster is not yet stable. Use at your own risk. Test coverage: ~9%.
+> The cluster is not yet stable. Use at your own risk. Test coverage: 8.6%.
 
 ## Overview
 
@@ -23,54 +23,60 @@ This aligns with [Concave's mission](https://concave.dev/) to build unified infr
 - [x] **Cluster Management**: Serf gossip protocol for membership, failure detection, auto-discovery
 - [x] **Consensus Layer**: Raft for leader election, log replication, strong consistency guarantees  
 - [x] **Inter-Node Communication**: gRPC NodeService with HTTP REST API fallback
-- [x] **Resource Discovery**: Real-time system monitoring (CPU, memory, load) across cluster nodes
+- [x] **Resource Discovery**: Real-time system monitoring (CPU, memory, disk, load) across cluster nodes
 - [x] **CLI Tooling**: Complete cluster management via `prismctl` with JSON/table output
 - [x] **Network Resilience**: Graceful daemon lifecycle, automatic peer discovery, partition tolerance
+- [x] **Autopilot & Reconciliation**: Automatic dead peer removal and cluster health maintenance
 
-### Workload Execution
-- [ ] **MicroVM Orchestration**: Firecracker VM lifecycle management with sub-second boot times
-- [ ] **Burst Scaling**: Dynamic scaling from 0 to 10k instances based on workload demands
-- [ ] **Task Scheduling**: Resource-aware placement and execution of agent workloads
-- [ ] **Sandbox Isolation**: Secure execution environments for code execution
+### Agent Execution
+- [ ] **Agent Orchestration**: Firecracker microVM lifecycle for secure agent isolation  
+- [ ] **Serverless Scaling**: Dynamic scaling from 0 to 10k agent instances based on demand
+- [ ] **Agent Scheduling**: Intelligent placement and execution of AI agents across cluster
+- [ ] **Secure Sandboxing**: Isolated execution environments for safe agent code execution
+- [ ] **Crash-Proof Execution**: Fault-tolerant agent runtime with automatic recovery and retry
 
-### Observability
-- [ ] **Execution Tracking**: Monitor workload lifecycle and resource utilization
-- [ ] **Performance Metrics**: Real-time visibility into VM and cluster performance
-- [ ] **Debugging Tools**: Analysis and troubleshooting for distributed workloads
+### Agent Observability
+- [x] **Health Monitoring**: Node health checks with gRPC and HTTP API endpoints
+- [x] **Resource Metrics**: Real-time CPU, memory, disk, and load monitoring across cluster
+- [x] **Cluster Visibility**: Comprehensive cluster status, member information, and Raft state
+- [x] **API Endpoints**: RESTful APIs for health, resources, nodes, and cluster information
+- [ ] **Agent Lifecycle Tracking**: Monitor agent execution, state transitions, and resource usage
+- [ ] **Performance Analytics**: Real-time visibility into agent performance and microVM metrics
+- [ ] **Agent Debugging**: Analysis and troubleshooting tools for distributed agent workloads
 
-### Future Agentic Primitives
+### Future Agent Infrastructure
 
-- Distributed memory and state management
-- Agent mesh and inter-agent communication  
-- Multi-runtime support (cloud-hypervisor, Docker)
-- Crash-proof agent execution
+- **Agent Memory & State**: Distributed memory and persistent state management for agents
+- **Agent Mesh**: Inter-agent communication and service discovery with first-class MCP support
+- **Multi-Runtime Support**: cloud-hypervisor, Docker containers for different agent types
+- **Agent Workflows**: Durable execution patterns with automatic retry and recovery
+- **LLM Gateway**: Built-in LLM routing, rate limiting, and cost optimization
+- **Secrets Vault**: Secure credential management for agent API access
+
+## Quick Start
+
+Get a 3-node cluster running locally in under 30 seconds:
+
+```bash
+# Build binaries
+make build
+
+# Start 3-node cluster on localhost
+make run
+
+# Check cluster status
+./bin/prismctl info
+```
 
 ## Build
 
 ```bash
-go build -o bin/prismd ./cmd/prismd
-go build -o bin/prismctl ./cmd/prismctl
-```
-
-## Makefile
-
-Common development tasks are available via Makefile targets:
-
-```bash
-# Build both binaries into ./bin
+# Using Make
 make build
 
-# Stop prismd and kill listeners on default port ranges, then remove ./bin and ./data
-make clean
-
-# Only stop prismd and kill listeners
-make stop-prismd
-
-# Only remove ./bin and ./data
-make delete-dir
-
-# Regenerate gRPC code for internal/grpc/proto/node_service.proto
-make generate-grpc
+# Or using Go directly
+go build -o bin/prismd ./cmd/prismd
+go build -o bin/prismctl ./cmd/prismctl
 ```
 
 ## Usage
@@ -92,7 +98,7 @@ DEBUG=true ./bin/prismd --bootstrap
 
 ### Production Deployment
 
-For production use, **explicitly assign all ports and data directory** for predictable service endpoints. Use `--bootstrap-expect` for safe cluster formation:
+For production use, **explicitly assign all ports and data directory** for predictable service endpoints. Use `--bootstrap-expect` for safe cluster formation. **Use odd-numbered clusters (3, 5, 7) for proper quorum and fault tolerance.**
 
 ```bash
 # Production-safe 3-node cluster formation
@@ -178,18 +184,10 @@ DEBUG=true ./bin/prismctl info
 ## Known Issues
 
 - **Security (no TLS/Auth):** HTTP API and gRPC are plaintext with no authentication/authorization; Serf gossip is unencrypted (no keyring configured).
-- **Bootstrap Race Conditions:** The legacy `--bootstrap` flag creates single-node clusters that become leader immediately, risking split-brain scenarios if multiple nodes bootstrap simultaneously. **Recommendation:** Use `--bootstrap-expect=N` for production deployments where nodes wait for expected quorum before forming a cluster (implemented and production-ready).
-- **Split Brain Risk:** Network partitions can cause Raft leadership conflicts. Use odd-numbered clusters (3+) for proper quorum.
- - **Quorum Math (Example):** With 6 voters the majority is 4. If any 3 voters are down, the remaining 3 cannot elect a leader and elections will loop. Prefer 5 voters (or 3) and make extra nodes non-voting learners.
+- **Split Brain Risk:** Network partitions can cause Raft leadership conflicts.
 - **Quorum Loss Recovery:** If majority of nodes fail, new nodes cannot join the cluster without manual intervention. The cluster will detect deadlock and provide recovery guidance, but operators must either restart dead nodes or rebuild from backup. Adding new nodes to a quorum-less cluster will fail with "rejecting pre-vote request since node is not in configuration" errors.
-- **Minimum 3+ Nodes Required:** Clusters with fewer than 3 nodes lose fault tolerance and behave unpredictably. With 1 node: no fault tolerance (if it dies, cluster is down). With 2 nodes: no fault tolerance (if either dies, cluster loses quorum). **Recommendation:** Always deploy 3+ nodes (preferably odd numbers: 3, 5, 7) for meaningful fault tolerance.
-- **Raft peer lifecycle vs Serf membership:** Peers are added/removed by the Raft leader in response to Serf events. If this node is not the leader or events are dropped, stale peers can remain after a node leaves/fails until the leader reconciles.
-- **Tag drift risk:** Raft/gRPC peer discovery relies on Serf tags (`raft_port`, `grpc_port`). Misconfigured/missing tags prevent peer wiring and may require manual correction.
-- **Node Identity vs Data Persistence:** Killed nodes that restart with the same data directory get fresh identities (new ID/name) but recover Raft log state. This prevents split-brain but means node identity is ephemeral while consensus state persists.
 - **Resource aggregation delays on failures:** Aggregation counts all known members; failed nodes are included until reaped, so calls may wait for timeout before returning.
 - **Serf reap delay:** Reaping of dead members is time-based. Large `DeadNodeReclaimTime` can delay full cleanup and UI/CLI visibility.
-- **Resource queries (gRPC-first):** Cluster resource aggregation now queries each node via gRPC for speed and consistency, with Serf `get-resources` as a fallback if gRPC fails. Gossip fallback can be slower and partial under timeouts; not a strongly consistent snapshot.
-- **Network Connectivity:** Nodes behind NAT or firewalls may fail to join. Ensure gossip ports are accessible between all nodes.
 - **Metrics completeness:** CPU usage, load averages, and job accounting are placeholders; reported metrics are not yet suitable for scheduling decisions.
 - **0.0.0.0 Bind Address Limitation:** When `0.0.0.0` is specified as a bind address, the system doesn't truly bind to all network interfaces. Instead, it resolves to a single IP address by determining which local interface can reach external networks (via 8.8.8.8). This works for most setups but may bind to unexpected interfaces on multi-homed servers or fail in offline environments where it falls back to 127.0.0.1.
 - **IPv6 Not Supported:** The system currently only supports IPv4 addresses. IPv6 addresses, dual-stack configurations, and IPv6-only environments are not supported. All network components (Serf, Raft, gRPC, HTTP API) assume IPv4 addressing.
