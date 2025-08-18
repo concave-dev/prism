@@ -97,7 +97,8 @@ type Config struct {
 	CommitTimeout      time.Duration // How long to wait for commit acknowledgment
 	LeaderLeaseTimeout time.Duration // How long leader lease is valid
 	LogLevel           string        // Log level for Raft: DEBUG, INFO, WARN, ERROR
-	Bootstrap          bool          // Whether this node should bootstrap a new cluster
+	Bootstrap          bool          // Whether this node should bootstrap a new cluster (legacy)
+	BootstrapExpect    int           // Expected number of nodes for cluster formation (0 = disabled)
 
 	// Autopilot settings gate leader-driven membership changes using multiple
 	// signals. These are evaluated only by the leader and are not part of the
@@ -127,6 +128,7 @@ func DefaultConfig() *Config {
 		LeaderLeaseTimeout: DefaultLeaderLeaseTimeout,
 		LogLevel:           config.DefaultLogLevel,
 		Bootstrap:          false,
+		BootstrapExpect:    0,
 
 		// Autopilot conservative defaults
 		CleanupDeadServers:      true,

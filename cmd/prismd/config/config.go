@@ -30,20 +30,21 @@ const (
 
 // Config holds all daemon configuration values
 type Config struct {
-	SerfAddr   string   // Network address for Serf cluster membership
-	SerfPort   int      // Network port for Serf cluster membership
-	APIAddr    string   // HTTP API server address (defaults to same IP as serf with port 8008)
-	APIPort    int      // HTTP API server port (derived from APIAddr)
-	RaftAddr   string   // Raft consensus address (defaults to same IP as serf with port 6969)
-	RaftPort   int      // Raft consensus port (derived from RaftAddr)
-	GRPCAddr   string   // gRPC server address (defaults to same IP as serf with port 7117)
-	GRPCPort   int      // gRPC server port (derived from GRPCAddr)
-	NodeName   string   // Name of this node
-	JoinAddrs  []string // List of cluster addresses to join
-	StrictJoin bool     // Exit if cluster join fails (default: continue in isolation)
-	LogLevel   string   // Log level: DEBUG, INFO, WARN, ERROR
-	DataDir    string   // Data directory for persistent storage
-	Bootstrap  bool     // Whether to bootstrap a new Raft cluster
+	SerfAddr        string   // Network address for Serf cluster membership
+	SerfPort        int      // Network port for Serf cluster membership
+	APIAddr         string   // HTTP API server address (defaults to same IP as serf with port 8008)
+	APIPort         int      // HTTP API server port (derived from APIAddr)
+	RaftAddr        string   // Raft consensus address (defaults to same IP as serf with port 6969)
+	RaftPort        int      // Raft consensus port (derived from RaftAddr)
+	GRPCAddr        string   // gRPC server address (defaults to same IP as serf with port 7117)
+	GRPCPort        int      // gRPC server port (derived from GRPCAddr)
+	NodeName        string   // Name of this node
+	JoinAddrs       []string // List of cluster addresses to join
+	StrictJoin      bool     // Exit if cluster join fails (default: continue in isolation)
+	LogLevel        string   // Log level: DEBUG, INFO, WARN, ERROR
+	DataDir         string   // Data directory for persistent storage
+	Bootstrap       bool     // Whether to bootstrap a new Raft cluster (legacy single-node)
+	BootstrapExpect int      // Expected number of nodes for cluster formation (0 = disabled)
 
 	// Flags to track if values were explicitly set by user
 	serfExplicitlySet     bool

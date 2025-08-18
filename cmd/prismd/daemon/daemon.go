@@ -55,6 +55,7 @@ func buildRaftConfig() *raft.Config {
 	raftConfig.LogLevel = config.Global.LogLevel
 	raftConfig.DataDir = config.Global.DataDir
 	raftConfig.Bootstrap = config.Global.Bootstrap
+	raftConfig.BootstrapExpect = config.Global.BootstrapExpect
 
 	return raftConfig
 }

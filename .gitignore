@@ -79,3 +79,6 @@ local/
 # Data directories (Raft logs, snapshots, etc.)
 data/
 /data/ 
+
+# Cursor editor artifacts
+.cursor/

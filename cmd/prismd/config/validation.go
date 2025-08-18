@@ -167,21 +167,36 @@ func ValidateConfig() error {
 		}
 	}
 
-	// Enforce mutual exclusivity between bootstrap and join cluster operations.
-	// Bootstrap initializes a new cluster (first node only), while join connects
-	// to existing clusters (subsequent nodes). Mixing these operations can cause
-	// split-brain scenarios where multiple independent clusters form accidentally.
+	// Validate cluster formation modes: bootstrap, bootstrap-expect, or join-only.
 	//
-	// IMPORTANT: Bootstrap mode has inherent risks in production environments:
-	//   - Single-node clusters lack fault tolerance during initialization
-	//   - Concurrent bootstrap attempts can create separate, incompatible clusters
-	//   - Manual coordination required to prevent accidental cluster fragmentation
+	// LEGACY BOOTSTRAP MODE (--bootstrap):
+	// Creates single-node cluster immediately. Mutually exclusive with --join to prevent
+	// split-brain scenarios where nodes accidentally form separate clusters.
 	//
-	// TODO: Implement --bootstrap-expect for production-safe cluster initialization.
-	// This feature would require nodes to wait for expected quorum size before
-	// starting consensus operations, preventing premature cluster formation.
+	// PRODUCTION BOOTSTRAP MODE (--bootstrap-expect):
+	// Waits for expected number of peers before forming cluster. Works WITH --join
+	// for peer discovery. All nodes must have same bootstrap-expect value.
+	//
+	// JOIN-ONLY MODE (--join without bootstrap flags):
+	// Connects to existing cluster. Standard operation for most nodes.
+	if Global.Bootstrap && Global.BootstrapExpect > 0 {
+		return fmt.Errorf("cannot use both --bootstrap and --bootstrap-expect: choose one bootstrap mode")
+	}
+
 	if Global.Bootstrap && len(Global.JoinAddrs) > 0 {
 		return fmt.Errorf("cannot use --bootstrap and --join together: bootstrap creates a new cluster, join connects to existing cluster")
+	}
+
+	// Validate bootstrap-expect configuration
+	if Global.BootstrapExpect > 0 {
+		if Global.BootstrapExpect < 1 {
+			return fmt.Errorf("--bootstrap-expect must be >= 1, got %d", Global.BootstrapExpect)
+		}
+
+		// For bootstrap-expect > 1, require --join for peer discovery
+		if Global.BootstrapExpect > 1 && len(Global.JoinAddrs) == 0 {
+			return fmt.Errorf("--bootstrap-expect=%d requires --join addresses for peer discovery. All nodes should use the same join addresses to find each other", Global.BootstrapExpect)
+		}
 	}
 
 	// Configure persistent data directory for cluster state and logs.
