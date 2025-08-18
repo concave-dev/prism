@@ -300,7 +300,7 @@ func Run() error {
 	if separatorLength < 50 {
 		separatorLength = 50 // Minimum width for aesthetics
 	}
-	separator := strings.Repeat("━", separatorLength)
+	separator := strings.Repeat("-", separatorLength)
 
 	logging.Info("%s", separator)
 	logging.Info("To join this node to a cluster, use:")
