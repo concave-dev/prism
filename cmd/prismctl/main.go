@@ -112,6 +112,16 @@ type RaftPeer struct {
 	Reachable bool   `json:"reachable"`
 }
 
+// GetID returns the peer ID for PeerLike interface
+func (p RaftPeer) GetID() string {
+	return p.ID
+}
+
+// GetName returns the peer name for PeerLike interface
+func (p RaftPeer) GetName() string {
+	return p.Name
+}
+
 type NodeResources struct {
 	NodeID    string    `json:"nodeId"`
 	NodeName  string    `json:"nodeName"`
@@ -412,6 +422,20 @@ func (api *PrismAPIClient) GetRaftPeers() (*RaftPeersResponse, error) {
 	return nil, fmt.Errorf("unexpected response format for raft peers")
 }
 
+// GetRaftPeersForResolver fetches Raft peers for resolver operations
+func (api *PrismAPIClient) GetRaftPeersForResolver() ([]utils.PeerLike, error) {
+	resp, err := api.GetRaftPeers()
+	if err != nil {
+		return nil, err
+	}
+
+	var peers []utils.PeerLike
+	for _, peer := range resp.Peers {
+		peers = append(peers, peer)
+	}
+	return peers, nil
+}
+
 // GetClusterResources fetches cluster resources from the API
 func (api *PrismAPIClient) GetClusterResources() ([]NodeResources, error) {
 	var response APIResponse
@@ -649,24 +673,31 @@ func handlePeerList(cmd *cobra.Command, args []string) error {
 func handlePeerInfo(cmd *cobra.Command, args []string) error {
 	utils.SetupLogging()
 
-	peerID := args[0]
+	peerIdentifier := args[0]
 	apiClient := createAPIClient()
+
+	// Resolve partial ID if needed
+	resolvedPeerID, err := utils.ResolvePeerIdentifier(apiClient, peerIdentifier)
+	if err != nil {
+		return err
+	}
+
+	// Get peers and find the resolved peer
 	resp, err := apiClient.GetRaftPeers()
 	if err != nil {
 		return err
 	}
 
-	// Find the specific peer
 	var targetPeer *RaftPeer
 	for _, p := range resp.Peers {
-		if p.ID == peerID || strings.HasPrefix(p.ID, peerID) {
+		if p.ID == resolvedPeerID {
 			targetPeer = &p
 			break
 		}
 	}
 
 	if targetPeer == nil {
-		return fmt.Errorf("peer '%s' not found in Raft configuration", peerID)
+		return fmt.Errorf("peer '%s' not found in Raft configuration", resolvedPeerID)
 	}
 
 	if config.Global.Output == "json" {

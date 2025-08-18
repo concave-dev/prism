@@ -14,9 +14,20 @@ type MemberLike interface {
 	GetName() string
 }
 
+// PeerLike represents anything with ID and Name for peer resolution
+type PeerLike interface {
+	GetID() string
+	GetName() string
+}
+
 // APIClientLike interface for node resolution operations
 type APIClientLike interface {
 	GetMembersForResolver() ([]MemberLike, error)
+}
+
+// PeerAPIClientLike interface for peer resolution operations
+type PeerAPIClientLike interface {
+	GetRaftPeersForResolver() ([]PeerLike, error)
 }
 
 // ResolveNodeIdentifier resolves a node identifier (supports partial ID matching)
@@ -57,6 +68,47 @@ func ResolveNodeIdentifier(apiClient APIClientLike, identifier string) (string, 
 
 	// No partial match found, return original identifier
 	// (will be handled by the API as either full ID or node name)
+	return identifier, nil
+}
+
+// ResolvePeerIdentifier resolves a peer identifier (supports partial ID matching)
+func ResolvePeerIdentifier(apiClient PeerAPIClientLike, identifier string) (string, error) {
+	// Get all Raft peers to check for partial ID matches
+	peers, err := apiClient.GetRaftPeersForResolver()
+	if err != nil {
+		return "", fmt.Errorf("failed to get Raft peers for ID resolution: %w", err)
+	}
+
+	// Check for partial ID matches (only for identifiers that look like hex and have valid length)
+	if IsHexString(identifier) && IsValidPartialIDLength(identifier) {
+		var matches []PeerLike
+		for _, peer := range peers {
+			if strings.HasPrefix(peer.GetID(), identifier) {
+				matches = append(matches, peer)
+			}
+		}
+
+		if len(matches) == 1 {
+			// Unique partial match found
+			logging.Info("Resolved partial ID '%s' to full ID '%s' (peer: %s)",
+				identifier, matches[0].GetID(), matches[0].GetName())
+			return matches[0].GetID(), nil
+		} else if len(matches) > 1 {
+			// Multiple matches - not unique
+			var matchIDs []string
+			for _, match := range matches {
+				matchIDs = append(matchIDs, fmt.Sprintf("%s (%s)", match.GetID(), match.GetName()))
+			}
+			logging.Error("Partial ID '%s' is not unique, matches multiple peers:", identifier)
+			for _, matchID := range matchIDs {
+				logging.Error("  %s", matchID)
+			}
+			return "", fmt.Errorf("partial ID not unique")
+		}
+	}
+
+	// No partial match found, return original identifier
+	// (will be handled by the API as either full ID or peer name)
 	return identifier, nil
 }
 
