@@ -64,6 +64,18 @@ const (
 
 	// DefaultLeaderLeaseTimeout is the default leader lease timeout
 	DefaultLeaderLeaseTimeout = 100 * time.Millisecond
+
+	// DefaultAutopilotLastContactThreshold controls how stale a follower's last
+	// RPC contact can be before it is considered suspect for demotion/removal.
+	DefaultAutopilotLastContactThreshold = 1 * time.Second
+
+	// DefaultAutopilotServerStabilizationTime enforces a quiet period with no
+	// membership churn before making any reconfiguration changes.
+	DefaultAutopilotServerStabilizationTime = 10 * time.Second
+
+	// DefaultAutopilotMaxTrailingLogs limits how far behind a follower may be
+	// before it is considered unhealthy for voting or promotion.
+	DefaultAutopilotMaxTrailingLogs = uint64(1024)
 )
 
 // Config holds comprehensive configuration parameters for Raft consensus operations
@@ -86,6 +98,14 @@ type Config struct {
 	LeaderLeaseTimeout time.Duration // How long leader lease is valid
 	LogLevel           string        // Log level for Raft: DEBUG, INFO, WARN, ERROR
 	Bootstrap          bool          // Whether this node should bootstrap a new cluster
+
+	// Autopilot settings gate leader-driven membership changes using multiple
+	// signals. These are evaluated only by the leader and are not part of the
+	// replicated FSM. They prevent coupling Serf membership directly to Raft.
+	CleanupDeadServers      bool          // Enable automatic cleanup of dead servers
+	LastContactThreshold    time.Duration // RPC last-contact threshold before suspect
+	ServerStabilizationTime time.Duration // Quiet period before reconfig operations
+	MaxTrailingLogs         uint64        // Max acceptable follower log lag
 }
 
 // DefaultConfig returns a default Raft configuration optimized for low-latency
@@ -107,6 +127,12 @@ func DefaultConfig() *Config {
 		LeaderLeaseTimeout: DefaultLeaderLeaseTimeout,
 		LogLevel:           config.DefaultLogLevel,
 		Bootstrap:          false,
+
+		// Autopilot conservative defaults
+		CleanupDeadServers:      true,
+		LastContactThreshold:    DefaultAutopilotLastContactThreshold,
+		ServerStabilizationTime: DefaultAutopilotServerStabilizationTime,
+		MaxTrailingLogs:         DefaultAutopilotMaxTrailingLogs,
 	}
 }
 
@@ -156,6 +182,14 @@ func (c *Config) Validate() error {
 	}
 	if !validLogLevels[c.LogLevel] {
 		return fmt.Errorf("invalid log level: %s", c.LogLevel)
+	}
+
+	// Validate autopilot thresholds
+	if c.LastContactThreshold < 0 {
+		return fmt.Errorf("last contact threshold must be >= 0")
+	}
+	if c.ServerStabilizationTime < 0 {
+		return fmt.Errorf("server stabilization time must be >= 0")
 	}
 
 	return nil

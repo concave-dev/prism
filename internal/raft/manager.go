@@ -79,6 +79,11 @@ type RaftManager struct {
 	resolvedIP  string                 // Cached resolved IP for consistency across bootstrap and transport
 	serfManager SerfInterface          // Interface for Serf member queries
 	listener    net.Listener           // Pre-bound network listener (optional)
+
+	// Autopilot leader-only state for safe membership changes. This is not part of
+	// the replicated FSM; it reflects operational health and timers.
+	autopilotSuspectSince map[string]time.Time // nodeID -> first suspect time
+	lastReconfigTime      time.Time            // last successful membership change time
 }
 
 // SerfInterface defines the required methods from Serf manager for autopilot
@@ -104,8 +109,10 @@ func NewRaftManager(config *Config) (*RaftManager, error) {
 	}
 
 	manager := &RaftManager{
-		config:   config,
-		shutdown: make(chan struct{}),
+		config:                config,
+		shutdown:              make(chan struct{}),
+		autopilotSuspectSince: make(map[string]time.Time),
+		lastReconfigTime:      time.Now(),
 	}
 
 	logging.Info("Raft manager created successfully with config for %s:%d", config.BindAddr, config.BindPort)
@@ -129,9 +136,11 @@ func NewRaftManagerWithListener(config *Config, listener net.Listener) (*RaftMan
 	}
 
 	manager := &RaftManager{
-		config:   config,
-		listener: listener, // Use pre-bound listener
-		shutdown: make(chan struct{}),
+		config:                config,
+		listener:              listener, // Use pre-bound listener
+		shutdown:              make(chan struct{}),
+		autopilotSuspectSince: make(map[string]time.Time),
+		lastReconfigTime:      time.Now(),
 	}
 
 	logging.Info("Raft manager created with pre-bound listener on %s", listener.Addr().String())
@@ -547,6 +556,8 @@ func (m *RaftManager) handleMemberEvent(event serf.MemberEvent) {
 		case serf.EventMemberJoin:
 			m.handleMemberJoin(member)
 		case serf.EventMemberLeave, serf.EventMemberFailed:
+			// Do not remove immediately on failure/leave; mark suspect and let the
+			// leader-only autopilot loop evaluate thresholds before any action.
 			m.handleMemberLeave(member)
 		}
 	}
@@ -627,10 +638,13 @@ func (m *RaftManager) handleMemberLeave(member serf.Member) {
 		return
 	}
 
-	logging.Info("Serf member %s (%s) left, attempting to remove from Raft cluster", member.Name, nodeID)
-
-	if err := m.RemovePeer(nodeID); err != nil {
-		logging.Error("Failed to remove Raft peer %s: %v", nodeID, err)
+	// Leader-only autopilot: mark as suspect and let the cleanup loop evaluate
+	// thresholds (last-contact, stabilization, lag) before any removal.
+	if m.autopilotSuspectSince[nodeID].IsZero() {
+		m.autopilotSuspectSince[nodeID] = time.Now()
+		logging.Info("Autopilot: Marked %s as suspect due to Serf leave/failure", nodeID)
+	} else {
+		logging.Debug("Autopilot: %s already suspect since %v", nodeID, m.autopilotSuspectSince[nodeID])
 	}
 }
 
@@ -886,6 +900,17 @@ func (m *RaftManager) performAutopilotCleanup() {
 		return
 	}
 
+	// Respect operator setting
+	if !m.config.CleanupDeadServers {
+		return
+	}
+
+	// Enforce stabilization window between membership changes
+	if time.Since(m.lastReconfigTime) < m.config.ServerStabilizationTime {
+		logging.Debug("Autopilot: Waiting for stabilization window to elapse before considering reconfig")
+		return
+	}
+
 	// Get current Raft peers
 	peers, err := m.GetPeers()
 	if err != nil {
@@ -913,8 +938,7 @@ func (m *RaftManager) performAutopilotCleanup() {
 	logging.Debug("Autopilot: Found %d alive Serf members, checking %d Raft peers",
 		len(aliveNodeIDs), len(peers))
 
-	// Find dead peers (in Raft but not alive in Serf)
-	var deadPeers []string
+	var candidates []string
 	for _, peer := range peers {
 		// Parse peer format: "nodeID@address"
 		parts := strings.Split(peer, "@")
@@ -922,45 +946,74 @@ func (m *RaftManager) performAutopilotCleanup() {
 			continue
 		}
 		nodeID := parts[0]
+		address := parts[1]
 
 		// Skip ourselves
 		if nodeID == m.config.NodeID {
 			continue
 		}
 
-		// If not in alive Serf members, mark as dead
-		if !aliveNodeIDs[nodeID] {
-			deadPeers = append(deadPeers, nodeID)
-			logging.Info("Autopilot: Detected dead peer %s (not alive in Serf)", nodeID)
+		// If alive in Serf, clear suspect tracking if any
+		if aliveNodeIDs[nodeID] {
+			if !m.autopilotSuspectSince[nodeID].IsZero() {
+				logging.Info("Autopilot: Clearing suspect status for %s (alive in Serf)", nodeID)
+				delete(m.autopilotSuspectSince, nodeID)
+			}
+			continue
 		}
+
+		// Not alive in Serf: ensure suspect window has elapsed
+		suspectAt := m.autopilotSuspectSince[nodeID]
+		if suspectAt.IsZero() {
+			// No prior suspect mark; start tracking and skip this round
+			m.autopilotSuspectSince[nodeID] = time.Now()
+			logging.Info("Autopilot: Marked %s as suspect (cleanup loop)", nodeID)
+			continue
+		}
+
+		// Require stabilization since suspect
+		if time.Since(suspectAt) < m.config.ServerStabilizationTime {
+			logging.Debug("Autopilot: %s still within stabilization window (%v < %v)", nodeID, time.Since(suspectAt), m.config.ServerStabilizationTime)
+			continue
+		}
+
+		// Optional: RPC last-contact and log lag gating could be added here. Since
+		// we don't expose those metrics yet, we gate on network reachability as a proxy.
+		if m.isRaftPeerReachable(address) {
+			logging.Debug("Autopilot: %s reachable over TCP, deferring removal", nodeID)
+			continue
+		}
+
+		candidates = append(candidates, nodeID)
 	}
 
 	// Detect election deadlock: no leader + insufficient quorum due to dead peers
-	if len(deadPeers) > 0 {
-		// Check if there's actually no leader in the cluster
+	if len(candidates) > 0 {
 		currentLeader := m.Leader()
 		if currentLeader == "" {
 			// Calculate if we have sufficient alive peers for quorum
 			totalPeers := len(peers)
-			alivePeers := totalPeers - len(deadPeers)
+			alivePeers := totalPeers - len(candidates)
 			requiredQuorum := (totalPeers / 2) + 1
 
 			if alivePeers < requiredQuorum {
-				m.reportDeadlock(deadPeers, totalPeers, alivePeers, requiredQuorum)
+				m.reportDeadlock(candidates, totalPeers, alivePeers, requiredQuorum)
 			}
 		}
 	}
 
-	// Remove dead peers from Raft cluster
-	for _, nodeID := range deadPeers {
+	// Apply at most one membership change per run to avoid thrash
+	if len(candidates) > 0 {
+		nodeID := candidates[0]
 		logging.Info("Autopilot: Removing dead peer %s from Raft cluster", nodeID)
 
-		// TODO: Add safety checks (minimum quorum, cooldown periods)
 		future := m.raft.RemoveServer(raft.ServerID(nodeID), 0, 0)
 		if err := future.Error(); err != nil {
 			logging.Error("Autopilot: Failed to remove dead peer %s: %v", nodeID, err)
 		} else {
 			logging.Success("Autopilot: Successfully removed dead peer %s", nodeID)
+			m.lastReconfigTime = time.Now()
+			delete(m.autopilotSuspectSince, nodeID)
 		}
 	}
 }
