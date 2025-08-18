@@ -1,4 +1,4 @@
-.PHONY: build prismd prismctl clean stop-prismd delete-dir generate-grpc
+.PHONY: build prismd prismctl clean stop-prismd delete-dir generate-grpc test
 
 BIN_DIR := bin
 PRISMD := $(BIN_DIR)/prismd
@@ -58,5 +58,9 @@ generate-grpc:
 			--go_opt=paths=source_relative \
 			--go-grpc_opt=paths=source_relative \
 			$(PROTO)
+
+test:
+	@echo "=== Running tests without cache ==="
+	$(GO) test -count=1 ./...
 
 
