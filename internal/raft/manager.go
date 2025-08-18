@@ -41,11 +41,13 @@ package raft
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -88,6 +90,10 @@ type RaftManager struct {
 	// Bootstrap-expect state for production-safe cluster formation
 	bootstrapExpectComplete bool // whether bootstrap-expect has been satisfied
 	lastPeerCount           int  // last known peer count for bootstrap-expect tracking
+
+	// Deterministic bootstrap coordinator selection state
+	bootstrapLastEligibleHash    string    // hash of last eligible set for stability gating
+	bootstrapEligibleStableSince time.Time // when the current eligible set became stable
 }
 
 // SerfInterface defines the required methods from Serf manager for autopilot
@@ -280,36 +286,28 @@ func (m *RaftManager) performLegacyBootstrap() error {
 // aligns the readiness signal with the actual Raft bootstrap set, avoiding forming
 // a smaller-than-expected cluster.
 func (m *RaftManager) checkBootstrapExpectConditions() {
+	// If already complete, do nothing
+	if m.bootstrapExpectComplete {
+		return
+	}
+
+	// If a leader is observed, consider bootstrap completed locally
+	if m.raft != nil {
+		if leader := m.Leader(); leader != "" {
+			m.bootstrapExpectComplete = true
+			return
+		}
+	}
+
 	if m.serfManager == nil {
 		logging.Debug("Bootstrap-expect: No Serf manager available for peer counting")
 		return
 	}
 
-	// Count eligible peers for bootstrap: self + alive peers with raft_port
+	// Build current eligible set and totals
 	serfMembers := m.serfManager.GetMembers()
-	totalAlive := 0
-	eligibleCount := 0
-	var ineligibleAlive []string
-
-	for nodeID, member := range serfMembers {
-		if member.Status != serf.StatusAlive {
-			continue
-		}
-		totalAlive++
-
-		// Self is always eligible (explicitly added to initial configuration)
-		if nodeID == m.config.NodeID {
-			eligibleCount++
-			continue
-		}
-
-		// Other peers must advertise raft_port to be eligible
-		if port, ok := member.Tags["raft_port"]; ok && port != "" {
-			eligibleCount++
-		} else {
-			ineligibleAlive = append(ineligibleAlive, fmt.Sprintf("%s(%s)", member.Name, nodeID))
-		}
-	}
+	eligibleIDs, totalAlive, ineligibleAlive := m.computeEligibleBootstrapPeers(serfMembers)
+	eligibleCount := len(eligibleIDs)
 
 	// Log eligibility changes for visibility
 	if eligibleCount != m.lastPeerCount {
@@ -321,16 +319,39 @@ func (m *RaftManager) checkBootstrapExpectConditions() {
 		m.lastPeerCount = eligibleCount
 	}
 
-	// Check if we've reached the expected eligible peer count
-	if eligibleCount >= m.config.BootstrapExpect {
-		logging.Info("Bootstrap-expect: Conditions met! Forming cluster with %d eligible nodes (alive: %d)", eligibleCount, totalAlive)
+	// Require the eligible set to be stable for a quiet period before bootstrapping
+	eligibleHash := m.hashEligibleSet(eligibleIDs)
+	if eligibleHash != m.bootstrapLastEligibleHash {
+		m.bootstrapLastEligibleHash = eligibleHash
+		m.bootstrapEligibleStableSince = time.Now()
+		logging.Debug("Bootstrap-expect: Eligible set changed, restarting stabilization window")
+		return
+	}
 
-		if err := m.performBootstrapExpect(serfMembers); err != nil {
-			logging.Error("Bootstrap-expect: Failed to form cluster: %v", err)
-		} else {
-			m.bootstrapExpectComplete = true
-			logging.Success("Bootstrap-expect: Cluster formation completed successfully")
-		}
+	// Enforce stabilization window using ServerStabilizationTime knob
+	if time.Since(m.bootstrapEligibleStableSince) < m.config.ServerStabilizationTime {
+		logging.Debug("Bootstrap-expect: Waiting for eligible set stabilization window to elapse")
+		return
+	}
+
+	// Check if we've reached the expected eligible peer count
+	if eligibleCount < m.config.BootstrapExpect {
+		return
+	}
+
+	// Deterministically pick a single coordinator across all nodes using rendezvous hashing
+	coordinatorID := m.selectBootstrapCoordinator(eligibleIDs)
+	if coordinatorID != m.config.NodeID {
+		logging.Debug("Bootstrap-expect: Coordinator selected as %s, this node will not bootstrap", coordinatorID)
+		return
+	}
+
+	logging.Info("Bootstrap-expect: Conditions met and this node is the coordinator. Forming cluster with %d eligible nodes (alive: %d)", eligibleCount, totalAlive)
+	if err := m.performBootstrapExpect(serfMembers); err != nil {
+		logging.Error("Bootstrap-expect: Failed to form cluster: %v", err)
+	} else {
+		m.bootstrapExpectComplete = true
+		logging.Success("Bootstrap-expect: Cluster formation completed successfully")
 	}
 }
 
@@ -397,6 +418,79 @@ func (m *RaftManager) performBootstrapExpect(serfMembers map[string]*serfpkg.Pri
 	}
 
 	return nil
+}
+
+// computeEligibleBootstrapPeers returns the set of node IDs that are eligible for
+// initial bootstrap along with total alive count and a list of alive-but-ineligible
+// nodes for diagnostics. Eligibility rules:
+//   - This node is always eligible
+//   - Other nodes must be Serf-alive and advertise a non-empty "raft_port" tag
+func (m *RaftManager) computeEligibleBootstrapPeers(serfMembers map[string]*serfpkg.PrismNode) (eligibleIDs []string, totalAlive int, ineligibleAlive []string) {
+	for nodeID, member := range serfMembers {
+		if member.Status != serf.StatusAlive {
+			continue
+		}
+		totalAlive++
+
+		if nodeID == m.config.NodeID {
+			eligibleIDs = append(eligibleIDs, nodeID)
+			continue
+		}
+
+		// Only include nodes that advertise raft_port
+		if port, ok := member.Tags["raft_port"]; ok && port != "" {
+			eligibleIDs = append(eligibleIDs, nodeID)
+		} else {
+			ineligibleAlive = append(ineligibleAlive, fmt.Sprintf("%s(%s)", member.Name, nodeID))
+		}
+	}
+
+	// Sort for stable hashing (order-independent)
+	if len(eligibleIDs) > 1 {
+		slices.Sort(eligibleIDs)
+	}
+	return eligibleIDs, totalAlive, ineligibleAlive
+}
+
+// hashEligibleSet produces a deterministic hash of the eligible ID set that is
+// independent of ordering. Used to detect set stability before bootstrapping.
+func (m *RaftManager) hashEligibleSet(eligibleIDs []string) string {
+	joined := strings.Join(eligibleIDs, ",")
+	sum := sha256.Sum256([]byte("prism-bootstrap-set-v1:" + joined))
+	return fmt.Sprintf("%x", sum[:])
+}
+
+// selectBootstrapCoordinator chooses a single coordinator deterministically using
+// rendezvous (highest-random-weight) hashing over the eligible node IDs. The seed
+// is constant so all nodes with the same eligible set agree on the winner.
+func (m *RaftManager) selectBootstrapCoordinator(eligibleIDs []string) string {
+	const seed = "prism-bootstrap-hrw-v1"
+	var (
+		bestID    string
+		bestScore [32]byte
+	)
+	for _, id := range eligibleIDs {
+		score := sha256.Sum256([]byte(seed + ":" + id))
+		if bestID == "" || compareHash(score, bestScore) > 0 || (compareHash(score, bestScore) == 0 && id < bestID) {
+			bestID = id
+			bestScore = score
+		}
+	}
+	return bestID
+}
+
+// compareHash compares two 32-byte hashes lexicographically and returns
+// 1 if a>b, -1 if a<b, and 0 if equal.
+func compareHash(a, b [32]byte) int {
+	for i := 0; i < len(a); i++ {
+		if a[i] > b[i] {
+			return 1
+		}
+		if a[i] < b[i] {
+			return -1
+		}
+	}
+	return 0
 }
 
 // Stop gracefully shuts down the Raft manager with leadership transfer and
