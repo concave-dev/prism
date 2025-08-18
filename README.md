@@ -92,10 +92,49 @@ DEBUG=true ./bin/prismd --bootstrap
 
 ### Production Deployment
 
-For production use, **explicitly assign all ports and data directory** for predictable service endpoints:
+For production use, **explicitly assign all ports and data directory** for predictable service endpoints. Use `--bootstrap-expect` for safe cluster formation:
 
 ```bash
-# Production bootstrap node with explicit configuration
+# Production-safe 3-node cluster formation
+# All nodes use the same bootstrap-expect value and join addresses
+
+# Node 1
+./bin/prismd \
+  --serf=0.0.0.0:4200 \
+  --raft=0.0.0.0:4201 \
+  --grpc=0.0.0.0:4202 \
+  --api=0.0.0.0:8008 \
+  --data-dir=/var/lib/prism \
+  --bootstrap-expect=3 \
+  --join=10.0.1.100:4200,10.0.1.101:4200,10.0.1.102:4200 \
+  --name=prod-node-1
+
+# Node 2
+./bin/prismd \
+  --serf=0.0.0.0:4200 \
+  --raft=0.0.0.0:4201 \
+  --grpc=0.0.0.0:4202 \
+  --api=0.0.0.0:8008 \
+  --data-dir=/var/lib/prism \
+  --bootstrap-expect=3 \
+  --join=10.0.1.100:4200,10.0.1.101:4200,10.0.1.102:4200 \
+  --name=prod-node-2
+
+# Node 3
+./bin/prismd \
+  --serf=0.0.0.0:4200 \
+  --raft=0.0.0.0:4201 \
+  --grpc=0.0.0.0:4202 \
+  --api=0.0.0.0:8008 \
+  --data-dir=/var/lib/prism \
+  --bootstrap-expect=3 \
+  --join=10.0.1.100:4200,10.0.1.101:4200,10.0.1.102:4200 \
+  --name=prod-node-3
+```
+
+**Legacy Single-Node Bootstrap** (development only):
+```bash
+# Single node with immediate bootstrap (split-brain risk in production)
 ./bin/prismd \
   --serf=0.0.0.0:4200 \
   --raft=0.0.0.0:4201 \
@@ -103,18 +142,15 @@ For production use, **explicitly assign all ports and data directory** for predi
   --api=0.0.0.0:8008 \
   --data-dir=/var/lib/prism \
   --bootstrap \
-  --name=prod-node-1
-
-# Production join node with explicit configuration
-./bin/prismd \
-  --serf=0.0.0.0:4200 \
-  --raft=0.0.0.0:4201 \
-  --grpc=0.0.0.0:4202 \
-  --api=0.0.0.0:8008 \
-  --data-dir=/var/lib/prism \
-  --join=10.0.1.100:4200 \
-  --name=prod-node-2
+  --name=dev-node-1
 ```
+
+**Bootstrap-Expect Behavior**: 
+- All nodes wait until exactly N peers are discovered via Serf gossip
+- Only one node (deterministically selected by smallest node ID) coordinates cluster formation  
+- Prevents split-brain scenarios during concurrent startup
+- Includes stability window to handle network churn during bootstrap
+- Use `--bootstrap-expect=1` for single-node development clusters
 
 **Auto-Configuration**: When ports are not explicitly specified, the system automatically configures available ports and uses timestamped directories like `./data/20240115-143022` for storage. All services (Raft, gRPC, API) auto-discover each other through Serf gossip.
 
@@ -142,7 +178,7 @@ DEBUG=true ./bin/prismctl info
 ## Known Issues
 
 - **Security (no TLS/Auth):** HTTP API and gRPC are plaintext with no authentication/authorization; Serf gossip is unencrypted (no keyring configured).
-- **Bootstrap Race Conditions:** The current `--bootstrap` flag creates single-node clusters that become leader immediately, risking split-brain scenarios if multiple nodes bootstrap. **Recommendation:** Adopt a bootstrap-expect-style approach where nodes wait for expected quorum before forming a cluster — planned; not yet implemented.
+- **Bootstrap Race Conditions:** The legacy `--bootstrap` flag creates single-node clusters that become leader immediately, risking split-brain scenarios if multiple nodes bootstrap simultaneously. **Recommendation:** Use `--bootstrap-expect=N` for production deployments where nodes wait for expected quorum before forming a cluster (implemented and production-ready).
 - **Split Brain Risk:** Network partitions can cause Raft leadership conflicts. Use odd-numbered clusters (3+) for proper quorum.
  - **Quorum Math (Example):** With 6 voters the majority is 4. If any 3 voters are down, the remaining 3 cannot elect a leader and elections will loop. Prefer 5 voters (or 3) and make extra nodes non-voting learners.
 - **Quorum Loss Recovery:** If majority of nodes fail, new nodes cannot join the cluster without manual intervention. The cluster will detect deadlock and provide recovery guidance, but operators must either restart dead nodes or rebuild from backup. Adding new nodes to a quorum-less cluster will fail with "rejecting pre-vote request since node is not in configuration" errors.
