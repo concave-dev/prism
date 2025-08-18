@@ -7,6 +7,18 @@ import (
 	configDefaults "github.com/concave-dev/prism/internal/config"
 )
 
+// ConfigField represents a configuration field that can be explicitly set
+type ConfigField int
+
+const (
+	// Configuration field identifiers
+	SerfField ConfigField = iota
+	RaftAddrField
+	GRPCAddrField
+	APIAddrField
+	DataDirField
+)
+
 const (
 	DefaultSerf     = configDefaults.DefaultBindAddr + ":4200" // Default serf address
 	DefaultRaft     = configDefaults.DefaultBindAddr + ":6969" // Default raft address
@@ -44,16 +56,35 @@ type Config struct {
 // Global configuration instance
 var Global Config
 
-// SetExplicitlySet sets the explicitly set flags for configuration tracking
-func (c *Config) SetExplicitlySet(serf, raftAddr, grpcAddr, apiAddr, dataDir bool) {
-	c.serfExplicitlySet = serf
-	c.raftAddrExplicitlySet = raftAddr
-	c.grpcAddrExplicitlySet = grpcAddr
-	c.apiAddrExplicitlySet = apiAddr
-	c.dataDirExplicitlySet = dataDir
+// SetExplicitlySet marks a specific configuration field as explicitly set by user
+func (c *Config) SetExplicitlySet(field ConfigField, value bool) {
+	switch field {
+	case SerfField:
+		c.serfExplicitlySet = value
+	case RaftAddrField:
+		c.raftAddrExplicitlySet = value
+	case GRPCAddrField:
+		c.grpcAddrExplicitlySet = value
+	case APIAddrField:
+		c.apiAddrExplicitlySet = value
+	case DataDirField:
+		c.dataDirExplicitlySet = value
+	}
 }
 
-// IsExplicitlySet returns whether configuration values were explicitly set by user
-func (c *Config) IsExplicitlySet() (serf, raftAddr, grpcAddr, apiAddr, dataDir bool) {
-	return c.serfExplicitlySet, c.raftAddrExplicitlySet, c.grpcAddrExplicitlySet, c.apiAddrExplicitlySet, c.dataDirExplicitlySet
+// IsExplicitlySet returns whether a specific configuration field was explicitly set by user
+func (c *Config) IsExplicitlySet(field ConfigField) bool {
+	switch field {
+	case SerfField:
+		return c.serfExplicitlySet
+	case RaftAddrField:
+		return c.raftAddrExplicitlySet
+	case GRPCAddrField:
+		return c.grpcAddrExplicitlySet
+	case APIAddrField:
+		return c.apiAddrExplicitlySet
+	case DataDirField:
+		return c.dataDirExplicitlySet
+	}
+	return false
 }

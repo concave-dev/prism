@@ -55,11 +55,9 @@ func SetupFlags(cmd *cobra.Command) {
 
 // CheckExplicitFlags checks if flags were explicitly set by the user
 func CheckExplicitFlags(cmd *cobra.Command) {
-	config.Global.SetExplicitlySet(
-		cmd.Flags().Changed("serf"),
-		cmd.Flags().Changed("raft"),
-		cmd.Flags().Changed("grpc"),
-		cmd.Flags().Changed("api"),
-		cmd.Flags().Changed("data-dir"),
-	)
+	config.Global.SetExplicitlySet(config.SerfField, cmd.Flags().Changed("serf"))
+	config.Global.SetExplicitlySet(config.RaftAddrField, cmd.Flags().Changed("raft"))
+	config.Global.SetExplicitlySet(config.GRPCAddrField, cmd.Flags().Changed("grpc"))
+	config.Global.SetExplicitlySet(config.APIAddrField, cmd.Flags().Changed("api"))
+	config.Global.SetExplicitlySet(config.DataDirField, cmd.Flags().Changed("data-dir"))
 }

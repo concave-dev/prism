@@ -145,8 +145,7 @@ func Run() error {
 	// TODO: Consider a flag to run in UDP-only validation mode for constrained
 	//       environments where TCP is intentionally blocked.
 	originalSerfPort := config.Global.SerfPort
-	serfExplicitlySet, _, _, _, _ := config.Global.IsExplicitlySet()
-	if serfExplicitlySet {
+	if config.Global.IsExplicitlySet(config.SerfField) {
 		logging.Info("Binding to %s:%d", config.Global.SerfAddr, config.Global.SerfPort)
 
 		// Test binding to ensure both UDP (gossip) and TCP (stream) ports are available
@@ -185,8 +184,7 @@ func Run() error {
 	originalRaftPort := config.Global.RaftPort
 
 	// Set default Raft address if not explicitly set
-	_, raftAddrExplicitlySet, _, _, _ := config.Global.IsExplicitlySet()
-	if !raftAddrExplicitlySet {
+	if !config.Global.IsExplicitlySet(config.RaftAddrField) {
 		config.Global.RaftAddr = config.Global.SerfAddr
 	}
 
@@ -194,8 +192,7 @@ func Run() error {
 	originalGRPCPort := config.Global.GRPCPort
 
 	// Set default gRPC address if not explicitly set
-	_, _, grpcAddrExplicitlySet, _, _ := config.Global.IsExplicitlySet()
-	if !grpcAddrExplicitlySet {
+	if !config.Global.IsExplicitlySet(config.GRPCAddrField) {
 		config.Global.GRPCAddr = config.Global.SerfAddr
 	}
 
@@ -246,7 +243,7 @@ func Run() error {
 	// ============================================================================
 
 	// Handle Serf port discovery (traditional approach - acceptable for failure-dictating service)
-	if !serfExplicitlySet {
+	if !config.Global.IsExplicitlySet(config.SerfField) {
 		availableSerfPort, err := utils.FindAvailablePort(config.Global.SerfAddr, config.Global.SerfPort)
 		if err != nil {
 			return fmt.Errorf("failed to find available Serf port: %w", err)
@@ -265,7 +262,7 @@ func Run() error {
 	portBinder := netutil.NewPortBinder()
 
 	raftListener, actualRaftPort, err := utils.PreBindServiceListener(
-		"Raft", portBinder, raftAddrExplicitlySet,
+		"Raft", portBinder, config.Global.IsExplicitlySet(config.RaftAddrField),
 		config.Global.RaftAddr, config.Global.RaftPort, originalRaftPort)
 	if err != nil {
 		return err
@@ -275,7 +272,7 @@ func Run() error {
 	// Pre-bind gRPC listener to eliminate race conditions
 	// gRPC server handles inter-node communication for resource queries and health checks
 	grpcListener, actualGRPCPort, err := utils.PreBindServiceListener(
-		"gRPC", portBinder, grpcAddrExplicitlySet,
+		"gRPC", portBinder, config.Global.IsExplicitlySet(config.GRPCAddrField),
 		config.Global.GRPCAddr, config.Global.GRPCPort, originalGRPCPort)
 	if err != nil {
 		return err
@@ -284,9 +281,8 @@ func Run() error {
 
 	// Pre-bind API listener to eliminate race conditions
 	// HTTP API server provides REST endpoints for cluster management and monitoring
-	_, _, _, apiAddrExplicitlySet, _ := config.Global.IsExplicitlySet()
 	apiListener, actualAPIPort, err := utils.PreBindServiceListener(
-		"API", portBinder, apiAddrExplicitlySet,
+		"API", portBinder, config.Global.IsExplicitlySet(config.APIAddrField),
 		config.Global.APIAddr, config.Global.APIPort, originalAPIPort)
 	if err != nil {
 		return err
