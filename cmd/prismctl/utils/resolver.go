@@ -20,11 +20,6 @@ type PeerLike interface {
 	GetName() string
 }
 
-// PeerAPIClientLike interface for peer resolution operations
-type PeerAPIClientLike interface {
-	GetRaftPeersForResolver() ([]PeerLike, error)
-}
-
 // ResolveNodeIdentifierFromMembers resolves a node identifier from existing members list
 // This avoids duplicate API calls when members are already available
 func ResolveNodeIdentifierFromMembers(members []MemberLike, identifier string) (string, error) {
@@ -61,14 +56,9 @@ func ResolveNodeIdentifierFromMembers(members []MemberLike, identifier string) (
 	return identifier, nil
 }
 
-// ResolvePeerIdentifier resolves a peer identifier (supports partial ID matching)
-func ResolvePeerIdentifier(apiClient PeerAPIClientLike, identifier string) (string, error) {
-	// Get all Raft peers to check for partial ID matches
-	peers, err := apiClient.GetRaftPeersForResolver()
-	if err != nil {
-		return "", fmt.Errorf("failed to get Raft peers for ID resolution: %w", err)
-	}
-
+// ResolvePeerIdentifierFromPeers resolves a peer identifier from existing peers list
+// This avoids duplicate API calls when peers are already available
+func ResolvePeerIdentifierFromPeers(peers []PeerLike, identifier string) (string, error) {
 	// Check for partial ID matches (only for identifiers that look like hex and have valid length)
 	if IsHexString(identifier) && IsValidPartialIDLength(identifier) {
 		var matches []PeerLike
