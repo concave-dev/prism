@@ -169,7 +169,9 @@ func Run() error {
 		}
 		udpConn.Close()
 
-		// Check TCP availability (memberlist stream connections)
+		// Serf uses both UDP (gossip) and TCP (state sync, fallback probes) on the same port
+		// TCP is critical for reliable failure detection and full cluster state synchronization
+		// Check TCP availability (memberlist stream connections and fallback probes)
 		// Force IPv4 for consistent behavior with actual service binding
 		tcpListener, tcpErr := net.Listen("tcp4", testAddr)
 		if tcpErr != nil {
@@ -398,7 +400,7 @@ func Run() error {
 			// Provide helpful context for connection issues
 			if netutil.IsConnectionRefusedError(err) {
 				logging.Error("TIP: Check if the target node(s) are running and accessible")
-				logging.Error("     You can verify with: prismctl members")
+				logging.Error("     You can verify with: prismctl node ls")
 			}
 
 			// Handle strict join mode
@@ -425,7 +427,7 @@ func Run() error {
 
 	// ============================================================================
 	// STARTUP COMPLETE: All services running with guaranteed port reservations
-	// The atomic port binding strategy has successfully eliminated race conditions
+	// The atomic port binding strategy successfully eliminates race conditions
 	// ============================================================================
 
 	logging.Success("Prism daemon started successfully")
