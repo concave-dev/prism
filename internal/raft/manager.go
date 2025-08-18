@@ -460,37 +460,14 @@ func (m *RaftManager) hashEligibleSet(eligibleIDs []string) string {
 	return fmt.Sprintf("%x", sum[:])
 }
 
-// selectBootstrapCoordinator chooses a single coordinator deterministically using
-// rendezvous (highest-random-weight) hashing over the eligible node IDs. The seed
-// is constant so all nodes with the same eligible set agree on the winner.
+// selectBootstrapCoordinator chooses a single coordinator deterministically by
+// selecting the node with the smallest ID among eligible peers. Since eligibleIDs
+// is already sorted, we simply return the first element.
 func (m *RaftManager) selectBootstrapCoordinator(eligibleIDs []string) string {
-	const seed = "prism-bootstrap-hrw-v1"
-	var (
-		bestID    string
-		bestScore [32]byte
-	)
-	for _, id := range eligibleIDs {
-		score := sha256.Sum256([]byte(seed + ":" + id))
-		if bestID == "" || compareHash(score, bestScore) > 0 || (compareHash(score, bestScore) == 0 && id < bestID) {
-			bestID = id
-			bestScore = score
-		}
+	if len(eligibleIDs) == 0 {
+		return ""
 	}
-	return bestID
-}
-
-// compareHash compares two 32-byte hashes lexicographically and returns
-// 1 if a>b, -1 if a<b, and 0 if equal.
-func compareHash(a, b [32]byte) int {
-	for i := 0; i < len(a); i++ {
-		if a[i] > b[i] {
-			return 1
-		}
-		if a[i] < b[i] {
-			return -1
-		}
-	}
-	return 0
+	return eligibleIDs[0] // Smallest node ID wins
 }
 
 // Stop gracefully shuts down the Raft manager with leadership transfer and
