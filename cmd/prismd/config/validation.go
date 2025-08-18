@@ -1,0 +1,203 @@
+// Package config handles configuration validation for the Prism daemon.
+//
+// This package provides comprehensive validation logic for all daemon configuration
+// parameters before startup. Validation ensures proper cluster operation by:
+//   - Parsing and validating network addresses (Serf, API, Raft, gRPC)
+//   - Enforcing port requirements (no OS-assigned ports for distributed systems)
+//   - Handling node naming (generation, format validation, case normalization)
+//   - Validating cluster operation flags (bootstrap vs join mutual exclusivity)
+//   - Auto-configuring data directories with timestamp-based naming
+//
+// The validation process transforms raw configuration values into validated,
+// normalized forms ready for service initialization. This prevents common
+// misconfigurations that could lead to cluster split-brain, network binding
+// failures, or service discovery issues in production deployments.
+
+package config
+
+import (
+	"fmt"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/concave-dev/prism/internal/logging"
+	"github.com/concave-dev/prism/internal/names"
+	"github.com/concave-dev/prism/internal/validate"
+)
+
+// ValidateConfig performs comprehensive validation and normalization of all daemon
+// configuration parameters before service startup.
+//
+// This function orchestrates the complete validation workflow:
+//   - Environment variable processing (DEBUG override for development)
+//   - Network address parsing and validation for all services
+//   - Node identity management (name generation/validation)
+//   - Service port assignment and conflict prevention
+//   - Cluster operation flag validation (bootstrap vs join)
+//   - Data directory auto-configuration with timestamping
+//
+// The validation process transforms raw CLI/config file values into normalized,
+// validated forms that services can safely use during initialization. This prevents
+// runtime failures from malformed addresses, port conflicts, or invalid cluster
+// configurations that could cause split-brain scenarios or service discovery issues.
+//
+// Returns error for any validation failure with descriptive context to aid debugging.
+func ValidateConfig() error {
+	// Handle DEBUG environment variable override for development workflows.
+	if os.Getenv("DEBUG") == "true" {
+		Global.LogLevel = "DEBUG"
+		logging.Info("DEBUG environment variable detected, setting log level to DEBUG")
+	}
+
+	// Parse and validate Serf address for cluster membership and gossip protocol.
+	// Serf requires predictable network addresses for peer discovery and failure detection.
+	// The address format supports both "host:port" and "port" (defaulting to 0.0.0.0).
+	netAddr, err := validate.ParseBindAddress(Global.SerfAddr)
+	if err != nil {
+		return fmt.Errorf("invalid serf address: %w", err)
+	}
+
+	// Enforce explicit port assignment for Serf communication.
+	// Port 0 (OS-assigned) is incompatible with distributed systems that need
+	if err := validate.ValidateField(netAddr.Port, "required,min=1,max=65535"); err != nil {
+		return fmt.Errorf("daemon requires specific port (not 0): %w", err)
+	}
+
+	Global.SerfAddr = netAddr.Host
+	Global.SerfPort = netAddr.Port
+
+	// Node names serve as unique identifiers in the gossip protocol
+	if Global.NodeName == "" {
+		Global.NodeName = names.Generate()
+		logging.Info("Generated node name: %s", Global.NodeName)
+	} else {
+		originalName := Global.NodeName
+		Global.NodeName = strings.ToLower(Global.NodeName)
+		if originalName != Global.NodeName {
+			logging.Warn("Node name '%s' converted to lowercase: '%s'", originalName, Global.NodeName)
+		}
+
+		if err := validate.NodeNameFormat(Global.NodeName); err != nil {
+			return fmt.Errorf("invalid node name: %w", err)
+		}
+	}
+
+	validLogLevels := map[string]bool{
+		"DEBUG": true,
+		"INFO":  true,
+		"WARN":  true,
+		"ERROR": true,
+	}
+	if !validLogLevels[Global.LogLevel] {
+		return fmt.Errorf("invalid log level: %s", Global.LogLevel)
+	}
+
+	// Configure HTTP API service address for cluster management operations.
+	if Global.apiAddrExplicitlySet {
+		apiNetAddr, err := validate.ParseBindAddress(Global.APIAddr)
+		if err != nil {
+			return fmt.Errorf("invalid API address: %w", err)
+		}
+
+		if err := validate.ValidateField(apiNetAddr.Port, "required,min=1,max=65535"); err != nil {
+			return fmt.Errorf("API address requires specific port (not 0): %w", err)
+		}
+
+		Global.APIAddr = apiNetAddr.Host
+		Global.APIPort = apiNetAddr.Port
+	} else {
+		// Apply default API configuration for development and single-node deployments.
+		// Defaults to loopback interface (127.0.0.1) for security, preventing
+		// unintended external access while allowing local CLI tool connectivity.
+		apiNetAddr, err := validate.ParseBindAddress(Global.APIAddr)
+		if err != nil {
+			return fmt.Errorf("invalid default API address: %w", err)
+		}
+		Global.APIAddr = apiNetAddr.Host
+		Global.APIPort = apiNetAddr.Port
+	}
+
+	// Configure Raft consensus protocol address for distributed coordination.
+	if Global.raftAddrExplicitlySet {
+		raftNetAddr, err := validate.ParseBindAddress(Global.RaftAddr)
+		if err != nil {
+			return fmt.Errorf("invalid Raft address: %w", err)
+		}
+
+		if err := validate.ValidateField(raftNetAddr.Port, "required,min=1,max=65535"); err != nil {
+			return fmt.Errorf("raft address requires specific port (not 0): %w", err)
+		}
+
+		Global.RaftAddr = raftNetAddr.Host
+		Global.RaftPort = raftNetAddr.Port
+	} else {
+		Global.RaftAddr = Global.SerfAddr
+		Global.RaftPort = 6969 // TODO: Use raft.DefaultRaftPort constant
+	}
+
+	// Configure gRPC service address for high-performance inter-node communication.
+	// gRPC enables efficient binary protocol communication for resource queries,
+	// node status reporting, and internal cluster operations. Network configuration
+	// must support both streaming and unary RPC calls across cluster nodes.
+	if Global.grpcAddrExplicitlySet {
+		grpcNetAddr, err := validate.ParseBindAddress(Global.GRPCAddr)
+		if err != nil {
+			return fmt.Errorf("invalid gRPC address: %w", err)
+		}
+
+		if err := validate.ValidateField(grpcNetAddr.Port, "required,min=1,max=65535"); err != nil {
+			return fmt.Errorf("gRPC address requires specific port (not 0): %w", err)
+		}
+
+		Global.GRPCAddr = grpcNetAddr.Host
+		Global.GRPCPort = grpcNetAddr.Port
+	} else {
+		Global.GRPCAddr = Global.SerfAddr
+		Global.GRPCPort = 7117 // TODO: Use grpc.DefaultGRPCPort constant
+	}
+
+	// Validate cluster join addresses for fault-tolerant node discovery.
+	// Multiple join addresses enable resilient cluster joining where Serf automatically
+	// attempts connection to each address until successful. This prevents single points
+	// of failure during cluster expansion and handles network partitions gracefully.
+	if len(Global.JoinAddrs) > 0 {
+		if err := validate.ValidateAddressList(Global.JoinAddrs); err != nil {
+			return fmt.Errorf("invalid join addresses: %w", err)
+		}
+	}
+
+	// Enforce mutual exclusivity between bootstrap and join cluster operations.
+	// Bootstrap initializes a new cluster (first node only), while join connects
+	// to existing clusters (subsequent nodes). Mixing these operations can cause
+	// split-brain scenarios where multiple independent clusters form accidentally.
+	//
+	// IMPORTANT: Bootstrap mode has inherent risks in production environments:
+	//   - Single-node clusters lack fault tolerance during initialization
+	//   - Concurrent bootstrap attempts can create separate, incompatible clusters
+	//   - Manual coordination required to prevent accidental cluster fragmentation
+	//
+	// TODO: Implement --bootstrap-expect for production-safe cluster initialization.
+	// This feature would require nodes to wait for expected quorum size before
+	// starting consensus operations, preventing premature cluster formation.
+	if Global.Bootstrap && len(Global.JoinAddrs) > 0 {
+		return fmt.Errorf("cannot use --bootstrap and --join together: bootstrap creates a new cluster, join connects to existing cluster")
+	}
+
+	// Configure persistent data directory for cluster state and logs.
+	if !Global.dataDirExplicitlySet {
+		// Auto-generate timestamped data directory for development workflows.
+		// Timestamp-based naming prevents conflicts between test runs and provides
+		// clear separation of cluster states during development and debugging.
+		// Production deployments should explicitly set data directories for persistence.
+		timestamp := time.Now().Format("20060102-150405")
+		Global.DataDir = fmt.Sprintf("./data/%s", timestamp)
+		logging.Info("Data directory auto-configured: %s", Global.DataDir)
+	}
+
+	if Global.DataDir == "" {
+		return fmt.Errorf("data directory cannot be empty")
+	}
+
+	return nil
+}
