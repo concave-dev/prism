@@ -31,6 +31,7 @@ import (
 	"github.com/concave-dev/prism/internal/logging"
 	"github.com/concave-dev/prism/internal/raft"
 	"github.com/concave-dev/prism/internal/serf"
+	"github.com/concave-dev/prism/internal/version"
 	"github.com/gin-gonic/gin"
 )
 
@@ -176,8 +177,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 }
 
 var (
-	startTime = time.Now()  // Track server start time for uptime calculation
-	version   = "0.1.0-dev" // Version information
+	startTime = time.Now() // Track server start time for uptime calculation
 )
 
 // handleHealth provides server health status endpoint.
@@ -188,7 +188,7 @@ func (s *Server) handleHealth(c *gin.Context) {
 
 // getHandlerHealth creates health endpoint handler with version and uptime data.
 func (s *Server) getHandlerHealth() gin.HandlerFunc {
-	return handlers.HandleHealth(version, startTime)
+	return handlers.HandleHealth(version.PrismdVersion, startTime)
 }
 
 // handleMembers provides cluster membership information endpoint.
@@ -210,7 +210,7 @@ func (s *Server) handleClusterInfo(c *gin.Context) {
 
 // getHandlerClusterInfo creates cluster info handler with all cluster data.
 func (s *Server) getHandlerClusterInfo() gin.HandlerFunc {
-	return handlers.HandleClusterInfo(s.serfManager, s.raftManager, version, startTime)
+	return handlers.HandleClusterInfo(s.serfManager, s.raftManager, version.PrismdVersion, startTime)
 }
 
 // handleNodes provides list of all cluster nodes endpoint.

@@ -7,6 +7,7 @@ import (
 	"github.com/concave-dev/prism/cmd/prismd/config"
 	"github.com/concave-dev/prism/cmd/prismd/daemon"
 	"github.com/concave-dev/prism/cmd/prismd/utils"
+	"github.com/concave-dev/prism/internal/version"
 	"github.com/spf13/cobra"
 )
 
@@ -20,7 +21,7 @@ Think Kubernetes for AI agents - with isolated VMs, sandboxed execution,
 serverless functions, native memory, workflows, and other AI-first primitives.
 
 Auto-configures network addresses and data directory when not explicitly specified.`,
-	Version:      daemon.Version,
+	Version:      version.PrismdVersion,
 	SilenceUsage: true, // Don't show usage on errors
 	Example: `  	  # Start first node in cluster (bootstrap) - auto-configures ports and data directory
 	  prismd --bootstrap
@@ -35,7 +36,7 @@ Auto-configures network addresses and data directory when not explicitly specifi
 	  prismd --join=node1:4200,node2:4200,node3:4200`,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		// Display logo first, before any validation or logging
-		utils.DisplayLogo(daemon.Version)
+		utils.DisplayLogo(version.PrismdVersion)
 	},
 	PreRunE: func(cmd *cobra.Command, args []string) error {
 		// Check which flags were explicitly set by user

@@ -1,10 +1,14 @@
 // Package config provides configuration management for the prismctl CLI.
 package config
 
+import "github.com/concave-dev/prism/internal/version"
+
 const (
-	Version        = "0.1.0-dev"      // Version information
 	DefaultAPIAddr = "127.0.0.1:8008" // Default API server address (routable)
 )
+
+// Version returns the current prismctl CLI version from the centralized version package
+var Version = version.PrismctlVersion
 
 // Global holds the global CLI configuration
 var Global struct {

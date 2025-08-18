@@ -21,9 +21,8 @@ import (
 	"github.com/concave-dev/prism/internal/netutil"
 	"github.com/concave-dev/prism/internal/raft"
 	"github.com/concave-dev/prism/internal/serf"
+	"github.com/concave-dev/prism/internal/version"
 )
-
-const Version = "0.1.0-dev" // Version information
 
 // buildSerfConfig converts daemon config to SerfManager config
 func buildSerfConfig() *serf.Config {
@@ -40,7 +39,7 @@ func buildSerfConfig() *serf.Config {
 	serfConfig.APIPort = config.Global.APIPort
 
 	// Add custom tags
-	serfConfig.Tags["prism_version"] = Version
+	serfConfig.Tags["prism_version"] = version.PrismdVersion
 
 	return serfConfig
 }
@@ -133,7 +132,7 @@ func Run() error {
 	// Apply logging level early to respect --log-level flag before any log output
 	// This ensures --log-level=ERROR suppresses early Info logs
 	logging.SetLevel(config.Global.LogLevel)
-	logging.Info("Starting Prism daemon v%s", Version)
+	logging.Info("Starting Prism daemon v%s", version.PrismdVersion)
 	logging.Info("Node: %s", config.Global.NodeName)
 
 	// Handle Serf port binding
