@@ -130,6 +130,9 @@ func buildAPIConfig(serfManager *serf.SerfManager, raftManager *raft.RaftManager
 // prismd instances may start simultaneously, eliminating the traditional race condition
 // where ports could be claimed between discovery and actual service binding.
 func Run() error {
+	// Apply logging level early to respect --log-level flag before any log output
+	// This ensures --log-level=ERROR suppresses early Info logs
+	logging.SetLevel(config.Global.LogLevel)
 	logging.Info("Starting Prism daemon v%s", Version)
 	logging.Info("Node: %s", config.Global.NodeName)
 
