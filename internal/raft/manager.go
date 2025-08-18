@@ -268,37 +268,62 @@ func (m *RaftManager) performLegacyBootstrap() error {
 }
 
 // checkBootstrapExpectConditions evaluates whether the bootstrap-expect conditions
-// have been met and triggers cluster formation if so. Counts total Serf peers
-// (including self) and initiates bootstrap when the expected count is reached.
+// have been met and triggers cluster formation if so. This gates on the number of
+// eligible peers rather than all Serf-alive members. A peer is considered eligible
+// if it is alive in Serf and will be included in the initial Raft configuration:
 //
-// Critical for production-safe cluster formation as it ensures all expected
-// nodes are discovered before starting consensus operations, eliminating
-// split-brain risks from premature bootstrap attempts.
+//   - Self is always eligible (added explicitly to the initial configuration)
+//   - Other nodes must be Serf-alive AND advertise a non-empty "raft_port" tag
+//
+// Gating on eligibility prevents premature bootstrap when some alive nodes are
+// missing required tags and would be excluded from the initial server list. This
+// aligns the readiness signal with the actual Raft bootstrap set, avoiding forming
+// a smaller-than-expected cluster.
 func (m *RaftManager) checkBootstrapExpectConditions() {
 	if m.serfManager == nil {
 		logging.Debug("Bootstrap-expect: No Serf manager available for peer counting")
 		return
 	}
 
-	// Count total peers including ourselves
+	// Count eligible peers for bootstrap: self + alive peers with raft_port
 	serfMembers := m.serfManager.GetMembers()
-	alivePeerCount := 0
+	totalAlive := 0
+	eligibleCount := 0
+	var ineligibleAlive []string
 
-	for _, member := range serfMembers {
-		if member.Status == serf.StatusAlive {
-			alivePeerCount++
+	for nodeID, member := range serfMembers {
+		if member.Status != serf.StatusAlive {
+			continue
+		}
+		totalAlive++
+
+		// Self is always eligible (explicitly added to initial configuration)
+		if nodeID == m.config.NodeID {
+			eligibleCount++
+			continue
+		}
+
+		// Other peers must advertise raft_port to be eligible
+		if port, ok := member.Tags["raft_port"]; ok && port != "" {
+			eligibleCount++
+		} else {
+			ineligibleAlive = append(ineligibleAlive, fmt.Sprintf("%s(%s)", member.Name, nodeID))
 		}
 	}
 
-	// Log peer count changes for visibility
-	if alivePeerCount != m.lastPeerCount {
-		logging.Info("Bootstrap-expect: Discovered %d/%d expected peers", alivePeerCount, m.config.BootstrapExpect)
-		m.lastPeerCount = alivePeerCount
+	// Log eligibility changes for visibility
+	if eligibleCount != m.lastPeerCount {
+		if len(ineligibleAlive) > 0 {
+			logging.Info("Bootstrap-expect: Eligible peers %d/%d (alive: %d). Waiting for peers to advertise raft_port: %v", eligibleCount, m.config.BootstrapExpect, totalAlive, ineligibleAlive)
+		} else {
+			logging.Info("Bootstrap-expect: Eligible peers %d/%d (alive: %d)", eligibleCount, m.config.BootstrapExpect, totalAlive)
+		}
+		m.lastPeerCount = eligibleCount
 	}
 
-	// Check if we've reached the expected peer count
-	if alivePeerCount >= m.config.BootstrapExpect {
-		logging.Info("Bootstrap-expect: Conditions met! Forming cluster with %d nodes", alivePeerCount)
+	// Check if we've reached the expected eligible peer count
+	if eligibleCount >= m.config.BootstrapExpect {
+		logging.Info("Bootstrap-expect: Conditions met! Forming cluster with %d eligible nodes (alive: %d)", eligibleCount, totalAlive)
 
 		if err := m.performBootstrapExpect(serfMembers); err != nil {
 			logging.Error("Bootstrap-expect: Failed to form cluster: %v", err)
