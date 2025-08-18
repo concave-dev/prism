@@ -20,24 +20,14 @@ type PeerLike interface {
 	GetName() string
 }
 
-// APIClientLike interface for node resolution operations
-type APIClientLike interface {
-	GetMembersForResolver() ([]MemberLike, error)
-}
-
 // PeerAPIClientLike interface for peer resolution operations
 type PeerAPIClientLike interface {
 	GetRaftPeersForResolver() ([]PeerLike, error)
 }
 
-// ResolveNodeIdentifier resolves a node identifier (supports partial ID matching)
-func ResolveNodeIdentifier(apiClient APIClientLike, identifier string) (string, error) {
-	// Get all cluster members to check for partial ID matches
-	members, err := apiClient.GetMembersForResolver()
-	if err != nil {
-		return "", fmt.Errorf("failed to get cluster members for ID resolution: %w", err)
-	}
-
+// ResolveNodeIdentifierFromMembers resolves a node identifier from existing members list
+// This avoids duplicate API calls when members are already available
+func ResolveNodeIdentifierFromMembers(members []MemberLike, identifier string) (string, error) {
 	// Check for partial ID matches (only for identifiers that look like hex and have valid length)
 	if IsHexString(identifier) && IsValidPartialIDLength(identifier) {
 		var matches []MemberLike

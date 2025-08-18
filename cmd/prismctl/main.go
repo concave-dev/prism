@@ -297,20 +297,6 @@ func (c ClusterMember) GetName() string {
 	return c.Name
 }
 
-// GetMembersForResolver adapts GetMembers for the resolver interface
-func (api *PrismAPIClient) GetMembersForResolver() ([]utils.MemberLike, error) {
-	members, err := api.GetMembers()
-	if err != nil {
-		return nil, err
-	}
-
-	result := make([]utils.MemberLike, len(members))
-	for i, member := range members {
-		result[i] = member
-	}
-	return result, nil
-}
-
 // GetClusterInfo fetches comprehensive cluster information from the API
 func (api *PrismAPIClient) GetClusterInfo() (*ClusterInfo, error) {
 	var response APIResponse
@@ -816,20 +802,26 @@ func handleNodeInfo(cmd *cobra.Command, args []string) error {
 	// Create API client
 	apiClient := createAPIClient()
 
-	// Resolve partial ID if needed
-	resolvedNodeID, err := utils.ResolveNodeIdentifier(apiClient, nodeIdentifier)
+	// Get cluster members first (we need this for both ID resolution and leader status)
+	members, err := apiClient.GetMembers()
+	if err != nil {
+		return err
+	}
+
+	// Convert members to MemberLike for resolution
+	memberLikes := make([]utils.MemberLike, len(members))
+	for i, member := range members {
+		memberLikes[i] = member
+	}
+
+	// Resolve partial ID using the members we already have
+	resolvedNodeID, err := utils.ResolveNodeIdentifierFromMembers(memberLikes, nodeIdentifier)
 	if err != nil {
 		return err
 	}
 
 	// Get node resources using resolved ID
 	resource, err := apiClient.GetNodeResources(resolvedNodeID)
-	if err != nil {
-		return err
-	}
-
-	// Get cluster members to determine if this node is the Raft leader
-	members, err := apiClient.GetMembers()
 	if err != nil {
 		return err
 	}
