@@ -84,6 +84,10 @@ type RaftManager struct {
 	// the replicated FSM; it reflects operational health and timers.
 	autopilotSuspectSince map[string]time.Time // nodeID -> first suspect time
 	lastReconfigTime      time.Time            // last successful membership change time
+
+	// Bootstrap-expect state for production-safe cluster formation
+	bootstrapExpectComplete bool // whether bootstrap-expect has been satisfied
+	lastPeerCount           int  // last known peer count for bootstrap-expect tracking
 }
 
 // SerfInterface defines the required methods from Serf manager for autopilot
@@ -211,36 +215,162 @@ func (m *RaftManager) Start() error {
 
 	m.raft = r
 
-	// Bootstrap cluster if this is the first node
+	// Handle cluster bootstrap modes
 	if m.config.Bootstrap {
-		logging.Info("Bootstrapping new Raft cluster")
-
-		// Use centralized IP resolution to ensure consistency with transport setup
-		bindAddr := m.resolveBindAddress()
-
-		// Create initial cluster configuration with this node only
-		configuration := raft.Configuration{
-			Servers: []raft.Server{
-				{
-					ID:      raft.ServerID(m.config.NodeID),
-					Address: raft.ServerAddress(fmt.Sprintf("%s:%d", bindAddr, m.config.BindPort)),
-				},
-			},
-		}
-
-		// Bootstrap the cluster
-		future := m.raft.BootstrapCluster(configuration)
-		if err := future.Error(); err != nil {
+		// Legacy bootstrap: immediate single-node cluster formation
+		if err := m.performLegacyBootstrap(); err != nil {
 			return fmt.Errorf("failed to bootstrap cluster: %w", err)
 		}
-
-		logging.Info("Successfully bootstrapped Raft cluster")
+	} else if m.config.BootstrapExpect > 0 {
+		// Production bootstrap: wait for expected peers before forming cluster
+		logging.Info("Bootstrap-expect mode: waiting for %d total nodes before forming cluster", m.config.BootstrapExpect)
+		// Note: Actual bootstrap will be triggered by Serf integration when peer count reached
 	}
 
 	// TODO: Add periodic status monitoring
 	// TODO: Implement automatic peer discovery via Serf integration
 
 	logging.Info("Raft manager started successfully")
+	return nil
+}
+
+// performLegacyBootstrap handles immediate single-node cluster formation for
+// the legacy --bootstrap flag. Creates a cluster with only this node and
+// immediately starts consensus operations.
+//
+// Essential for development and single-node deployments where immediate
+// cluster formation is acceptable. Should be avoided in production due to
+// split-brain risks if multiple nodes bootstrap simultaneously.
+func (m *RaftManager) performLegacyBootstrap() error {
+	logging.Info("Bootstrapping new Raft cluster (legacy mode)")
+
+	// Use centralized IP resolution to ensure consistency with transport setup
+	bindAddr := m.resolveBindAddress()
+
+	// Create initial cluster configuration with this node only
+	configuration := raft.Configuration{
+		Servers: []raft.Server{
+			{
+				ID:      raft.ServerID(m.config.NodeID),
+				Address: raft.ServerAddress(fmt.Sprintf("%s:%d", bindAddr, m.config.BindPort)),
+			},
+		},
+	}
+
+	// Bootstrap the cluster
+	future := m.raft.BootstrapCluster(configuration)
+	if err := future.Error(); err != nil {
+		return err
+	}
+
+	logging.Info("Successfully bootstrapped Raft cluster")
+	return nil
+}
+
+// checkBootstrapExpectConditions evaluates whether the bootstrap-expect conditions
+// have been met and triggers cluster formation if so. Counts total Serf peers
+// (including self) and initiates bootstrap when the expected count is reached.
+//
+// Critical for production-safe cluster formation as it ensures all expected
+// nodes are discovered before starting consensus operations, eliminating
+// split-brain risks from premature bootstrap attempts.
+func (m *RaftManager) checkBootstrapExpectConditions() {
+	if m.serfManager == nil {
+		logging.Debug("Bootstrap-expect: No Serf manager available for peer counting")
+		return
+	}
+
+	// Count total peers including ourselves
+	serfMembers := m.serfManager.GetMembers()
+	alivePeerCount := 0
+
+	for _, member := range serfMembers {
+		if member.Status == serf.StatusAlive {
+			alivePeerCount++
+		}
+	}
+
+	// Log peer count changes for visibility
+	if alivePeerCount != m.lastPeerCount {
+		logging.Info("Bootstrap-expect: Discovered %d/%d expected peers", alivePeerCount, m.config.BootstrapExpect)
+		m.lastPeerCount = alivePeerCount
+	}
+
+	// Check if we've reached the expected peer count
+	if alivePeerCount >= m.config.BootstrapExpect {
+		logging.Info("Bootstrap-expect: Conditions met! Forming cluster with %d nodes", alivePeerCount)
+
+		if err := m.performBootstrapExpect(serfMembers); err != nil {
+			logging.Error("Bootstrap-expect: Failed to form cluster: %v", err)
+		} else {
+			m.bootstrapExpectComplete = true
+			logging.Success("Bootstrap-expect: Cluster formation completed successfully")
+		}
+	}
+}
+
+// performBootstrapExpect creates a Raft cluster with all discovered Serf peers
+// when bootstrap-expect conditions are met. Builds the initial cluster configuration
+// with all alive nodes that advertise raft_port tags.
+//
+// Essential for production cluster formation as it ensures all expected nodes
+// participate in the initial cluster configuration, providing immediate fault
+// tolerance and preventing split-brain scenarios during startup.
+func (m *RaftManager) performBootstrapExpect(serfMembers map[string]*serfpkg.PrismNode) error {
+	logging.Info("Bootstrap-expect: Building initial cluster configuration")
+
+	// Use centralized IP resolution for consistency
+	bindAddr := m.resolveBindAddress()
+
+	var servers []raft.Server
+
+	// Add ourselves first
+	servers = append(servers, raft.Server{
+		ID:      raft.ServerID(m.config.NodeID),
+		Address: raft.ServerAddress(fmt.Sprintf("%s:%d", bindAddr, m.config.BindPort)),
+	})
+
+	// Add all other alive peers that have raft_port
+	for nodeID, member := range serfMembers {
+		// Skip ourselves
+		if nodeID == m.config.NodeID {
+			continue
+		}
+
+		// Only include alive members
+		if member.Status != serf.StatusAlive {
+			continue
+		}
+
+		// Only include nodes that advertise raft_port
+		raftPortStr, ok := member.Tags["raft_port"]
+		if !ok || raftPortStr == "" {
+			logging.Warn("Bootstrap-expect: Peer %s (%s) has no raft_port tag, excluding from initial cluster", member.Name, nodeID)
+			continue
+		}
+
+		// Build Raft address
+		raftAddr := fmt.Sprintf("%s:%s", member.Addr.String(), raftPortStr)
+
+		servers = append(servers, raft.Server{
+			ID:      raft.ServerID(nodeID),
+			Address: raft.ServerAddress(raftAddr),
+		})
+
+		logging.Info("Bootstrap-expect: Added peer %s (%s) at %s to initial cluster", member.Name, nodeID, raftAddr)
+	}
+
+	// Create cluster configuration
+	configuration := raft.Configuration{Servers: servers}
+
+	logging.Info("Bootstrap-expect: Bootstrapping cluster with %d total nodes", len(servers))
+
+	// Bootstrap the cluster with all expected peers
+	future := m.raft.BootstrapCluster(configuration)
+	if err := future.Error(); err != nil {
+		return fmt.Errorf("failed to bootstrap cluster with expected peers: %w", err)
+	}
+
 	return nil
 }
 
@@ -564,13 +694,18 @@ func (m *RaftManager) handleMemberEvent(event serf.MemberEvent) {
 }
 
 // handleMemberJoin processes Serf member join events by adding the new node
-// as a Raft peer. Extracts node metadata from Serf tags and constructs the
-// appropriate Raft peer address for cluster integration.
+// as a Raft peer. Also handles bootstrap-expect logic to trigger cluster formation
+// when the expected number of peers is reached.
 //
-// Essential for automatic cluster scaling as it seamlessly integrates new
-// nodes into the Raft consensus without manual intervention. Only the leader
-// performs the actual peer addition to maintain cluster consistency.
+// Essential for automatic cluster scaling and production-safe bootstrap. Seamlessly
+// integrates new nodes into Raft consensus and triggers initial cluster formation
+// when bootstrap-expect conditions are met.
 func (m *RaftManager) handleMemberJoin(member serf.Member) {
+	// Check for bootstrap-expect completion first (before leader check)
+	if m.config.BootstrapExpect > 0 && !m.bootstrapExpectComplete {
+		m.checkBootstrapExpectConditions()
+	}
+
 	// Only leader can add peers - check this first for fast exit
 	if !m.IsLeader() {
 		logging.Debug("Not Raft leader, skipping peer addition for member %s (this is normal)", member.Name)
@@ -1083,6 +1218,13 @@ func (m *RaftManager) reconcilePeers(ctx context.Context, interval time.Duration
 // of whether their join events were processed successfully. Provides automatic
 // recovery from event drops and guarantees eventual convergence.
 func (m *RaftManager) performPeerReconciliation() {
+	// Check for bootstrap-expect completion first (works for any node)
+	if m.config.BootstrapExpect > 0 && !m.bootstrapExpectComplete {
+		m.checkBootstrapExpectConditions()
+		// If bootstrap-expect not complete, don't do regular reconciliation
+		return
+	}
+
 	// Only leader can add peers - check this first for fast exit
 	if !m.IsLeader() {
 		logging.Debug("Reconciliation: Not Raft leader, skipping peer reconciliation (this is normal)")
