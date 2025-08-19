@@ -1412,6 +1412,35 @@ func (api *PrismAPIClient) CreateAgent(name, agentType string, metadata map[stri
 	return &response, nil
 }
 
+// DeleteAgent deletes an agent via the API
+func (api *PrismAPIClient) DeleteAgent(agentID string) error {
+	resp, err := api.client.R().
+		Delete(fmt.Sprintf("/agents/%s", agentID))
+
+	if err != nil {
+		logging.Error("Failed to connect to API server: %v", err)
+		logging.Error("Make sure a Prism daemon with API server is running at %s", api.baseURL)
+		return fmt.Errorf("connection failed")
+	}
+
+	if resp.StatusCode() == 404 {
+		logging.Error("Agent '%s' not found", agentID)
+		return fmt.Errorf("agent not found")
+	}
+
+	if resp.StatusCode() == 307 {
+		logging.Error("Not cluster leader, request redirected")
+		return fmt.Errorf("not cluster leader - retry request")
+	}
+
+	if resp.StatusCode() != 200 {
+		logging.Error("API request failed with status %d: %s", resp.StatusCode(), resp.String())
+		return fmt.Errorf("API request failed")
+	}
+
+	return nil
+}
+
 // displayAgents displays agents in table or JSON format
 func displayAgents(agents []Agent) {
 	if len(agents) == 0 {
@@ -1552,10 +1581,18 @@ func handleAgentInfo(cmd *cobra.Command, args []string) error {
 func handleAgentDelete(cmd *cobra.Command, args []string) error {
 	utils.SetupLogging()
 
-	// TODO: Implement agent delete logic
-	// This will call the /api/v1/agents/{id} DELETE endpoint
-	logging.Info("Agent delete command - implementation pending")
-	return fmt.Errorf("agent delete command not yet implemented")
+	agentID := args[0]
+	logging.Info("Deleting agent '%s' from API server: %s", agentID, config.Global.APIAddr)
+
+	// Create API client and delete agent
+	apiClient := createAPIClient()
+	if err := apiClient.DeleteAgent(agentID); err != nil {
+		return err
+	}
+
+	fmt.Printf("Agent '%s' deleted successfully\n", agentID)
+	logging.Success("Successfully deleted agent '%s'", agentID)
+	return nil
 }
 
 // main is the main entry point
