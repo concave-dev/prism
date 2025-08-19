@@ -12,6 +12,7 @@ import (
 
 	"github.com/concave-dev/prism/internal/raft"
 	"github.com/concave-dev/prism/internal/serf"
+	"github.com/concave-dev/prism/internal/utils"
 	"github.com/gin-gonic/gin"
 )
 
@@ -271,24 +272,9 @@ func HandleClusterInfo(serfManager *serf.SerfManager, raftManager *raft.RaftMana
 			return apiMembers[i].Name < apiMembers[j].Name
 		})
 
-		// Generate a simple cluster ID based on the first node's ID
-		// TODO: Consider using a more sophisticated cluster ID generation
-		var clusterID string
-		if len(apiMembers) > 0 {
-			// Use first 8 characters of the alphabetically first node ID
-			sort.Slice(apiMembers, func(i, j int) bool {
-				return apiMembers[i].ID < apiMembers[j].ID
-			})
-			if len(apiMembers[0].ID) >= 8 {
-				clusterID = apiMembers[0].ID[:8]
-			} else {
-				clusterID = apiMembers[0].ID
-			}
-			// Sort back by name for display
-			sort.Slice(apiMembers, func(i, j int) bool {
-				return apiMembers[i].Name < apiMembers[j].Name
-			})
-		}
+		// Generate cluster ID (independent of node IDs)
+		// TODO: Store cluster ID persistently and reuse across restarts
+		clusterID, _ := utils.GenerateID()
 
 		info := ClusterInfo{
 			Version:   version,
