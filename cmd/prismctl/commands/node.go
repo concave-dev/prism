@@ -53,8 +53,14 @@ var nodeTopCmd = &cobra.Command{
 
 This command shows resource utilization similar to 'kubectl top nodes',
 including CPU cores, memory usage, job capacity, and runtime statistics.`,
-	Example: `  # Show resource overview for all nodes
+	Example: `  # Show resource overview for all nodes (sorted by uptime, longest first)
   prismctl node top
+
+  # Show nodes sorted by resource score (best resources first)
+  prismctl node top --sort=score
+
+  # Show nodes sorted by name
+  prismctl node top --sort=name
 
   # Show live updates with watch
   prismctl node top --watch
@@ -121,7 +127,7 @@ func GetNodeCommands() (*cobra.Command, *cobra.Command, *cobra.Command) {
 
 // SetupNodeFlags configures flags for node commands
 func SetupNodeFlags(nodeLsCmd, nodeTopCmd, nodeInfoCmd *cobra.Command,
-	watchPtr *bool, statusFilterPtr *string, verbosePtr *bool) {
+	watchPtr *bool, statusFilterPtr *string, verbosePtr *bool, sortPtr *string) {
 	// Add flags to node ls command
 	nodeLsCmd.Flags().BoolVarP(watchPtr, "watch", "w", false,
 		"Watch for changes and continuously update the display")
@@ -135,6 +141,8 @@ func SetupNodeFlags(nodeLsCmd, nodeTopCmd, nodeInfoCmd *cobra.Command,
 		"Filter nodes by status (alive, failed, left)")
 	nodeTopCmd.Flags().BoolVarP(verbosePtr, "verbose", "v", false,
 		"Show verbose output including goroutines")
+	nodeTopCmd.Flags().StringVar(sortPtr, "sort", "uptime",
+		"Sort nodes by: uptime, name, score")
 
 	// Add flags to node info command
 	nodeInfoCmd.Flags().BoolVarP(verbosePtr, "verbose", "v", false,
