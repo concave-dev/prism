@@ -34,7 +34,6 @@ import (
 	"time"
 
 	"github.com/concave-dev/prism/internal/logging"
-	"github.com/concave-dev/prism/internal/utils"
 	"github.com/hashicorp/raft"
 )
 
@@ -167,6 +166,7 @@ type Command struct {
 // Processed by the AgentFSM to create new agent records and trigger placement
 // decisions based on current cluster resource availability and scoring.
 type AgentCreateCommand struct {
+	ID        string                `json:"id"`                  // Pre-generated agent ID
 	Name      string                `json:"name"`                // Agent name
 	Type      string                `json:"type"`                // Agent type: "task" or "service"
 	Resources *ResourceRequirements `json:"resources,omitempty"` // Resource requirements
@@ -346,11 +346,11 @@ func (a *AgentFSM) processCreateCommand(cmd Command) interface{} {
 		return fmt.Errorf("failed to unmarshal create command: %w", err)
 	}
 
-	// Generate unique agent ID using crypto-secure random hex (like node IDs)
-	agentID, err := utils.GenerateID()
-	if err != nil {
-		logging.Error("AgentFSM: Failed to generate agent ID: %v", err)
-		return fmt.Errorf("failed to generate agent ID: %w", err)
+	// Use pre-generated agent ID from the command
+	agentID := createCmd.ID
+	if agentID == "" {
+		logging.Error("AgentFSM: Agent ID is required in create command")
+		return fmt.Errorf("agent ID is required in create command")
 	}
 
 	// Create new agent record
