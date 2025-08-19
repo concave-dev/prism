@@ -63,6 +63,9 @@ type NodeResourcesResponse struct {
 	DiskTotalMB       int `json:"diskTotalMB"`
 	DiskUsedMB        int `json:"diskUsedMB"`
 	DiskAvailableMB   int `json:"diskAvailableMB"`
+
+	// Resource Score
+	Score float64 `json:"score"` // Composite resource score for workload placement
 }
 
 // convertToAPIResponse converts resources.NodeResources to API response format
@@ -114,6 +117,9 @@ func convertToAPIResponse(nodeRes *resources.NodeResources) NodeResourcesRespons
 		DiskTotalMB:       int(nodeRes.DiskTotal / (1024 * 1024)),
 		DiskUsedMB:        int(nodeRes.DiskUsed / (1024 * 1024)),
 		DiskAvailableMB:   int(nodeRes.DiskAvailable / (1024 * 1024)),
+
+		// Resource Score
+		Score: nodeRes.Score,
 	}
 }
 
@@ -174,10 +180,32 @@ func HandleClusterResources(clientPool *grpc.ClientPool, serfManager *serf.SerfM
 			}
 		}
 
-		// Sort by node name for consistent output
-		sort.Slice(resList, func(i, j int) bool {
-			return resList[i].NodeName < resList[j].NodeName
-		})
+		// Sort based on query parameter
+		sortBy := c.DefaultQuery("sort", "uptime")
+		switch sortBy {
+		case "score":
+			sort.Slice(resList, func(i, j int) bool {
+				return resList[i].Score > resList[j].Score // Highest scores first
+			})
+		case "name":
+			sort.Slice(resList, func(i, j int) bool {
+				return resList[i].NodeName < resList[j].NodeName
+			})
+		case "uptime":
+			sort.Slice(resList, func(i, j int) bool {
+				// Parse uptime strings and sort by duration (longest uptime first)
+				uptimeA := parseUptimeString(resList[i].Uptime)
+				uptimeB := parseUptimeString(resList[j].Uptime)
+				return uptimeA > uptimeB
+			})
+		default:
+			// Default to uptime sorting for unknown sort parameters
+			sort.Slice(resList, func(i, j int) bool {
+				uptimeA := parseUptimeString(resList[i].Uptime)
+				uptimeB := parseUptimeString(resList[j].Uptime)
+				return uptimeA > uptimeB
+			})
+		}
 
 		c.JSON(http.StatusOK, gin.H{
 			"status": "success",
@@ -301,5 +329,47 @@ func convertFromGRPCResponse(grpcRes *proto.GetResourcesResponse) NodeResourcesR
 		DiskTotalMB:       int(grpcRes.DiskTotal / (1024 * 1024)),
 		DiskUsedMB:        int(grpcRes.DiskUsed / (1024 * 1024)),
 		DiskAvailableMB:   int(grpcRes.DiskAvailable / (1024 * 1024)),
+
+		// Resource Score
+		Score: grpcRes.Score,
 	}
+}
+
+// parseUptimeString converts uptime strings like "5h30m", "2d1h", "45s" to duration in seconds
+// for comparison purposes. Returns 0 if parsing fails.
+func parseUptimeString(uptimeStr string) int64 {
+	if uptimeStr == "" {
+		return 0
+	}
+
+	// Try to parse as Go duration first
+	if duration, err := time.ParseDuration(uptimeStr); err == nil {
+		return int64(duration.Seconds())
+	}
+
+	// Manual parsing for formats like "2d1h30m" that Go doesn't support natively
+	var totalSeconds int64
+	var current int64
+	var unit rune
+
+	for _, char := range uptimeStr {
+		if char >= '0' && char <= '9' {
+			current = current*10 + int64(char-'0')
+		} else {
+			unit = char
+			switch unit {
+			case 'd':
+				totalSeconds += current * 24 * 3600 // days to seconds
+			case 'h':
+				totalSeconds += current * 3600 // hours to seconds
+			case 'm':
+				totalSeconds += current * 60 // minutes to seconds
+			case 's':
+				totalSeconds += current // seconds
+			}
+			current = 0
+		}
+	}
+
+	return totalSeconds
 }
