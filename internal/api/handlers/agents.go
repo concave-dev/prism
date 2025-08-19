@@ -34,6 +34,7 @@ import (
 	"time"
 
 	"github.com/concave-dev/prism/internal/logging"
+	"github.com/concave-dev/prism/internal/names"
 	"github.com/concave-dev/prism/internal/raft"
 	"github.com/concave-dev/prism/internal/utils"
 	"github.com/gin-gonic/gin"
@@ -62,7 +63,7 @@ type AgentManager interface {
 // Supports both task-based and service-based agent types with different
 // lifecycle characteristics and resource allocation patterns.
 type AgentCreateRequest struct {
-	Name      string                     `json:"name" binding:"required"` // Agent name
+	Name      string                     `json:"name"`                    // Agent name (auto-generated if not provided)
 	Type      string                     `json:"type" binding:"required"` // Agent type: "task" or "service"
 	Resources *raft.ResourceRequirements `json:"resources,omitempty"`     // Resource requirements
 	Metadata  map[string]string          `json:"metadata,omitempty"`      // Additional metadata
@@ -76,9 +77,10 @@ type AgentCreateRequest struct {
 // the assigned identifier for future operations. Includes status information
 // for initial placement tracking and monitoring integration.
 type AgentCreateResponse struct {
-	AgentID string `json:"agent_id"` // Assigned unique agent identifier
-	Status  string `json:"status"`   // Initial agent status
-	Message string `json:"message"`  // Human-readable status message
+	AgentID   string `json:"agent_id"`   // Assigned unique agent identifier
+	AgentName string `json:"agent_name"` // Actual agent name (may be auto-generated)
+	Status    string `json:"status"`     // Initial agent status
+	Message   string `json:"message"`    // Human-readable status message
 }
 
 // AgentListResponse represents the HTTP response for agent listing requests.
@@ -125,6 +127,13 @@ func CreateAgent(agentMgr AgentManager, nodeID string) gin.HandlerFunc {
 			return
 		}
 
+		// Auto-generate agent name if not provided
+		agentName := req.Name
+		if agentName == "" {
+			agentName = names.Generate()
+			logging.Info("Auto-generated agent name: %s", agentName)
+		}
+
 		// Generate agent ID upfront for consistent response
 		agentID, err := utils.GenerateID()
 		if err != nil {
@@ -136,7 +145,7 @@ func CreateAgent(agentMgr AgentManager, nodeID string) gin.HandlerFunc {
 			return
 		}
 
-		logging.Info("Agent creation request: name=%s type=%s id=%s", req.Name, req.Type, agentID)
+		logging.Info("Agent creation request: name=%s type=%s id=%s", agentName, req.Type, agentID)
 
 		// Check if this node is the Raft leader
 		if !agentMgr.IsLeader() {
@@ -161,10 +170,10 @@ func CreateAgent(agentMgr AgentManager, nodeID string) gin.HandlerFunc {
 			return
 		}
 
-		// Create Raft command for agent creation with pre-generated ID
+		// Create Raft command for agent creation with pre-generated ID and name
 		createCmd := raft.AgentCreateCommand{
 			ID:        agentID,
-			Name:      req.Name,
+			Name:      agentName,
 			Type:      req.Type,
 			Resources: req.Resources,
 			Metadata:  req.Metadata,
@@ -213,11 +222,12 @@ func CreateAgent(agentMgr AgentManager, nodeID string) gin.HandlerFunc {
 
 		logging.Success("Agent creation command submitted to Raft consensus")
 
-		// Return success response with the actual agent ID
+		// Return success response with the actual agent ID and name
 		response := AgentCreateResponse{
-			AgentID: agentID,
-			Status:  "submitted",
-			Message: "Agent creation submitted to cluster consensus",
+			AgentID:   agentID,
+			AgentName: agentName,
+			Status:    "submitted",
+			Message:   "Agent creation submitted to cluster",
 		}
 
 		c.JSON(http.StatusAccepted, response)
@@ -423,7 +433,7 @@ func UpdateAgent(agentMgr AgentManager, nodeID string) gin.HandlerFunc {
 		c.JSON(http.StatusOK, gin.H{
 			"agent_id": agentID,
 			"status":   "updated",
-			"message":  "Agent update submitted to cluster consensus",
+			"message":  "Agent update submitted to cluster",
 		})
 	}
 }
@@ -544,7 +554,7 @@ func DeleteAgent(agentMgr AgentManager, nodeID string) gin.HandlerFunc {
 		c.JSON(http.StatusOK, gin.H{
 			"agent_id": agentID,
 			"status":   "deleted",
-			"message":  "Agent deletion submitted to cluster consensus",
+			"message":  "Agent deletion submitted to cluster",
 		})
 	}
 }

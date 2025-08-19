@@ -33,6 +33,7 @@ func init() {
 	commands.SetupCommands()
 	commands.SetupNodeCommands()
 	commands.SetupPeerCommands()
+	commands.SetupAgentCommands()
 
 	// Setup global flags
 	commands.SetupGlobalFlags(rootCmd, &config.Global.APIAddr, &config.Global.LogLevel,
@@ -42,6 +43,10 @@ func init() {
 	nodeLsCmd, nodeTopCmd, nodeInfoCmd := commands.GetNodeCommands()
 	commands.SetupNodeFlags(nodeLsCmd, nodeTopCmd, nodeInfoCmd,
 		&config.Node.Watch, &config.Node.StatusFilter, &config.Node.Verbose, &config.Node.Sort)
+
+	// Setup agent command flags
+	agentCreateCmd, agentLsCmd, agentInfoCmd, agentUpdateCmd, agentDeleteCmd := commands.GetAgentCommands()
+	setupAgentFlags(agentCreateCmd, agentLsCmd, agentInfoCmd, agentUpdateCmd, agentDeleteCmd)
 
 	// Setup command handlers
 	setupCommandHandlers()
@@ -53,6 +58,7 @@ func setupCommandHandlers() {
 	nodeLsCmd, nodeTopCmd, nodeInfoCmd := commands.GetNodeCommands()
 	peerLsCmd, peerInfoCmd := commands.GetPeerCommands()
 	infoCmd := commands.GetInfoCommand()
+	agentCreateCmd, agentLsCmd, agentInfoCmd, agentUpdateCmd, agentDeleteCmd := commands.GetAgentCommands()
 
 	// Assign handlers
 	nodeLsCmd.RunE = handleMembers
@@ -61,6 +67,11 @@ func setupCommandHandlers() {
 	peerLsCmd.RunE = handlePeerList
 	peerInfoCmd.RunE = handlePeerInfo
 	infoCmd.RunE = handleClusterInfo
+	agentCreateCmd.RunE = handleAgentCreate
+	agentLsCmd.RunE = handleAgentList
+	agentInfoCmd.RunE = handleAgentInfo
+	agentUpdateCmd.RunE = handleAgentUpdate
+	agentDeleteCmd.RunE = handleAgentDelete
 }
 
 // API response types that match the server responses
@@ -97,6 +108,29 @@ type ClusterInfo struct {
 	StartTime  time.Time       `json:"startTime"`
 	RaftLeader string          `json:"raftLeader,omitempty"`
 	ClusterID  string          `json:"clusterId,omitempty"`
+}
+
+// Agent response types
+type Agent struct {
+	ID       string            `json:"id"`
+	Name     string            `json:"name"`
+	Type     string            `json:"type"`
+	Status   string            `json:"status"`
+	Created  time.Time         `json:"created"`
+	Updated  time.Time         `json:"updated"`
+	Metadata map[string]string `json:"metadata,omitempty"`
+}
+
+type AgentCreateResponse struct {
+	AgentID   string `json:"agent_id"`
+	AgentName string `json:"agent_name"`
+	Status    string `json:"status"`
+	Message   string `json:"message"`
+}
+
+type AgentListResponse struct {
+	Agents []Agent `json:"agents"`
+	Count  int     `json:"count"`
 }
 
 // API type for raft peers response
@@ -1313,6 +1347,226 @@ func (api *PrismAPIClient) GetNodeHealth(nodeID string) (*NodeHealth, error) {
 	}
 
 	return nil, fmt.Errorf("unexpected response format for node health")
+}
+
+// GetAgents fetches all agents from the API
+func (api *PrismAPIClient) GetAgents() ([]Agent, error) {
+	var response AgentListResponse
+
+	resp, err := api.client.R().
+		SetResult(&response).
+		Get("/agents")
+
+	if err != nil {
+		logging.Error("Failed to connect to API server: %v", err)
+		logging.Error("Make sure a Prism daemon with API server is running at %s", api.baseURL)
+		return nil, fmt.Errorf("connection failed")
+	}
+
+	if resp.StatusCode() != 200 {
+		logging.Error("API request failed with status %d: %s", resp.StatusCode(), resp.String())
+		return nil, fmt.Errorf("API request failed")
+	}
+
+	return response.Agents, nil
+}
+
+// CreateAgent creates a new agent via the API
+func (api *PrismAPIClient) CreateAgent(name, agentType string, metadata map[string]string) (*AgentCreateResponse, error) {
+	var response AgentCreateResponse
+
+	// Prepare request payload
+	payload := map[string]interface{}{
+		"name": name,
+		"type": agentType,
+	}
+	if len(metadata) > 0 {
+		payload["metadata"] = metadata
+	}
+
+	resp, err := api.client.R().
+		SetBody(payload).
+		SetResult(&response).
+		Post("/agents")
+
+	if err != nil {
+		logging.Error("Failed to connect to API server: %v", err)
+		logging.Error("Make sure a Prism daemon with API server is running at %s", api.baseURL)
+		return nil, fmt.Errorf("connection failed")
+	}
+
+	if resp.StatusCode() == 400 {
+		logging.Error("Invalid request: %s", resp.String())
+		return nil, fmt.Errorf("invalid request")
+	}
+
+	if resp.StatusCode() == 307 {
+		logging.Error("Not cluster leader, request redirected")
+		return nil, fmt.Errorf("not cluster leader - retry request")
+	}
+
+	if resp.StatusCode() != 202 {
+		logging.Error("API request failed with status %d: %s", resp.StatusCode(), resp.String())
+		return nil, fmt.Errorf("API request failed")
+	}
+
+	return &response, nil
+}
+
+// displayAgents displays agents in table or JSON format
+func displayAgents(agents []Agent) {
+	if len(agents) == 0 {
+		if config.Global.Output == "json" {
+			fmt.Println("[]")
+		} else {
+			fmt.Println("No agents found")
+		}
+		return
+	}
+
+	// Sort agents by name for consistent output
+	sort.Slice(agents, func(i, j int) bool {
+		return agents[i].Name < agents[j].Name
+	})
+
+	if config.Global.Output == "json" {
+		// JSON output
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		if err := encoder.Encode(agents); err != nil {
+			logging.Error("Failed to encode JSON: %v", err)
+			fmt.Println("Error encoding JSON output")
+		}
+	} else {
+		// Table output
+		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+		defer w.Flush()
+
+		// Header
+		fmt.Fprintln(w, "ID\tNAME\tTYPE\tSTATUS\tCREATED\tUPDATED")
+
+		// Display each agent
+		for _, agent := range agents {
+			created := utils.FormatDuration(time.Since(agent.Created))
+			updated := utils.FormatDuration(time.Since(agent.Updated))
+
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+				agent.ID, agent.Name, agent.Type, agent.Status, created, updated)
+		}
+	}
+}
+
+// setupAgentFlags configures flags for agent commands
+func setupAgentFlags(createCmd, lsCmd, infoCmd, updateCmd, deleteCmd *cobra.Command) {
+	// Agent create flags
+	createCmd.Flags().StringVar(&config.Agent.Name, "name", "", "Agent name (auto-generated if not provided)")
+	createCmd.Flags().StringVar(&config.Agent.Type, "type", "task", "Agent type: task or service")
+
+	// Agent list flags (for future filtering)
+	lsCmd.Flags().BoolVar(&config.Agent.Watch, "watch", false, "Watch for live updates")
+	lsCmd.Flags().StringVar(&config.Agent.StatusFilter, "status", "", "Filter by status")
+	lsCmd.Flags().StringVar(&config.Agent.TypeFilter, "type", "", "Filter by type")
+
+	// Agent delete flags
+	deleteCmd.Flags().BoolVar(&config.Agent.Force, "force", false, "Force delete without confirmation")
+}
+
+// ============================================================================
+// AGENT COMMAND HANDLERS
+// ============================================================================
+
+// handleAgentCreate handles the agent create subcommand
+func handleAgentCreate(cmd *cobra.Command, args []string) error {
+	utils.SetupLogging()
+
+	// Validate agent type
+	if config.Agent.Type != "task" && config.Agent.Type != "service" {
+		return fmt.Errorf("agent type must be 'task' or 'service'")
+	}
+
+	// Use provided name or let server auto-generate
+	agentName := config.Agent.Name
+	if agentName == "" {
+		logging.Info("Creating agent with auto-generated name of type '%s' on API server: %s",
+			config.Agent.Type, config.Global.APIAddr)
+	} else {
+		logging.Info("Creating agent '%s' of type '%s' on API server: %s",
+			agentName, config.Agent.Type, config.Global.APIAddr)
+	}
+
+	// Create API client and create agent
+	apiClient := createAPIClient()
+	response, err := apiClient.CreateAgent(agentName, config.Agent.Type, config.Agent.Metadata)
+	if err != nil {
+		return err
+	}
+
+	// Display result
+	if config.Global.Output == "json" {
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		if err := encoder.Encode(response); err != nil {
+			logging.Error("Failed to encode JSON: %v", err)
+			return fmt.Errorf("failed to encode response")
+		}
+	} else {
+		fmt.Printf("Agent created successfully:\n")
+		fmt.Printf("  ID:      %s\n", response.AgentID)
+		fmt.Printf("  Name:    %s\n", response.AgentName)
+		fmt.Printf("  Status:  %s\n", response.Status)
+		fmt.Printf("  Message: %s\n", response.Message)
+	}
+
+	logging.Success("Successfully created agent '%s' with ID: %s", response.AgentName, response.AgentID)
+	return nil
+}
+
+// handleAgentList handles the agent ls subcommand
+func handleAgentList(cmd *cobra.Command, args []string) error {
+	utils.SetupLogging()
+
+	logging.Info("Fetching agents from API server: %s", config.Global.APIAddr)
+
+	// Create API client and get agents
+	apiClient := createAPIClient()
+	agents, err := apiClient.GetAgents()
+	if err != nil {
+		return err
+	}
+
+	displayAgents(agents)
+	logging.Success("Successfully retrieved %d agents", len(agents))
+	return nil
+}
+
+// handleAgentInfo handles the agent info subcommand
+func handleAgentInfo(cmd *cobra.Command, args []string) error {
+	utils.SetupLogging()
+
+	// TODO: Implement agent info logic
+	// This will call the /api/v1/agents/{id} GET endpoint
+	logging.Info("Agent info command - implementation pending")
+	return fmt.Errorf("agent info command not yet implemented")
+}
+
+// handleAgentUpdate handles the agent update subcommand
+func handleAgentUpdate(cmd *cobra.Command, args []string) error {
+	utils.SetupLogging()
+
+	// TODO: Implement agent update logic
+	// This will call the /api/v1/agents/{id} PUT endpoint
+	logging.Info("Agent update command - implementation pending")
+	return fmt.Errorf("agent update command not yet implemented")
+}
+
+// handleAgentDelete handles the agent delete subcommand
+func handleAgentDelete(cmd *cobra.Command, args []string) error {
+	utils.SetupLogging()
+
+	// TODO: Implement agent delete logic
+	// This will call the /api/v1/agents/{id} DELETE endpoint
+	logging.Info("Agent delete command - implementation pending")
+	return fmt.Errorf("agent delete command not yet implemented")
 }
 
 // main is the main entry point
