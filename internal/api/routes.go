@@ -67,10 +67,11 @@ func (s *Server) setupRoutes(router *gin.Engine) {
 	agents := v1.Group("/agents")
 	{
 		agentMgr := s.GetAgentManager()
-		agents.POST("", handlers.CreateAgent(agentMgr))
+		nodeID := s.GetNodeID()
+		agents.POST("", handlers.CreateAgent(agentMgr, nodeID))
 		agents.GET("", handlers.ListAgents(agentMgr))
 		agents.GET("/:id", handlers.GetAgent(agentMgr))
-		agents.PUT("/:id", handlers.UpdateAgent(agentMgr))
-		agents.DELETE("/:id", handlers.DeleteAgent(agentMgr))
+		agents.PUT("/:id", handlers.UpdateAgent(agentMgr, nodeID))
+		agents.DELETE("/:id", handlers.DeleteAgent(agentMgr, nodeID))
 	}
 }

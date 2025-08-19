@@ -27,8 +27,6 @@
 package raft
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -36,6 +34,7 @@ import (
 	"time"
 
 	"github.com/concave-dev/prism/internal/logging"
+	"github.com/concave-dev/prism/internal/utils"
 	"github.com/hashicorp/raft"
 )
 
@@ -348,7 +347,7 @@ func (a *AgentFSM) processCreateCommand(cmd Command) interface{} {
 	}
 
 	// Generate unique agent ID using crypto-secure random hex (like node IDs)
-	agentID, err := generateAgentID()
+	agentID, err := utils.GenerateID()
 	if err != nil {
 		logging.Error("AgentFSM: Failed to generate agent ID: %v", err)
 		return fmt.Errorf("failed to generate agent ID: %w", err)
@@ -729,21 +728,4 @@ func copyIntMap(m map[string]int) map[string]int {
 		copy[k] = v
 	}
 	return copy
-}
-
-// generateAgentID creates a cryptographically secure 12-character hex identifier
-// for cluster agents, consistent with node ID generation. Uses crypto/rand to
-// ensure uniqueness across distributed systems and prevent collisions.
-//
-// Essential for agent identification, logging correlation, and API operations
-// where agents need to be uniquely referenced. Matches the format used for
-// node IDs to maintain consistency across the orchestration platform.
-func generateAgentID() (string, error) {
-	// Generate 6 bytes of random data (12 hex characters, consistent with node IDs)
-	bytes := make([]byte, 6)
-	_, err := rand.Read(bytes)
-	if err != nil {
-		return "", fmt.Errorf("failed to generate random bytes: %w", err)
-	}
-	return hex.EncodeToString(bytes), nil
 }

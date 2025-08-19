@@ -3,6 +3,8 @@ package serf
 import (
 	"testing"
 	"time"
+
+	"github.com/concave-dev/prism/internal/utils"
 )
 
 // TestNewSerfManager tests SerfManager creation with valid configuration
@@ -66,30 +68,30 @@ func TestNewSerfManager_InvalidConfig(t *testing.T) {
 	}
 }
 
-// TestGenerateNodeID tests node ID generation
-func TestGenerateNodeID(t *testing.T) {
-	nodeID1, err := generateNodeID()
+// TestGenerateID tests ID generation using unified utils
+func TestGenerateID(t *testing.T) {
+	id1, err := utils.GenerateID()
 	if err != nil {
-		t.Errorf("generateNodeID() error = %v, want nil", err)
+		t.Errorf("utils.GenerateID() error = %v, want nil", err)
 	}
 
-	if nodeID1 == "" {
-		t.Error("generateNodeID() should not return empty string")
+	if id1 == "" {
+		t.Error("utils.GenerateID() should not return empty string")
 	}
 
 	// Should be 12 hex characters (6 bytes * 2)
-	if len(nodeID1) != 12 {
-		t.Errorf("generateNodeID() length = %d, want 12", len(nodeID1))
+	if len(id1) != 12 {
+		t.Errorf("utils.GenerateID() length = %d, want 12", len(id1))
 	}
 
 	// Generate another ID to ensure uniqueness
-	nodeID2, err := generateNodeID()
+	id2, err := utils.GenerateID()
 	if err != nil {
-		t.Errorf("generateNodeID() second call error = %v, want nil", err)
+		t.Errorf("utils.GenerateID() second call error = %v, want nil", err)
 	}
 
-	if nodeID1 == nodeID2 {
-		t.Error("generateNodeID() should generate unique IDs")
+	if id1 == id2 {
+		t.Error("utils.GenerateID() should generate unique IDs")
 	}
 }
 

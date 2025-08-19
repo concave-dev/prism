@@ -101,7 +101,7 @@ type AgentListResponse struct {
 // Essential for agent lifecycle management as it provides the primary
 // interface for external systems to request agent creation. Integrates
 // with Raft consensus to ensure consistent agent state across the cluster.
-func CreateAgent(agentMgr AgentManager) gin.HandlerFunc {
+func CreateAgent(agentMgr AgentManager, nodeID string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Parse request body
 		var req AgentCreateRequest
@@ -174,7 +174,7 @@ func CreateAgent(agentMgr AgentManager) gin.HandlerFunc {
 			Operation: "create",
 			Data:      json.RawMessage(cmdData),
 			Timestamp: time.Now(),
-			NodeID:    getNodeID(c), // TODO: Implement proper node ID extraction
+			NodeID:    nodeID,
 		}
 
 		// Marshal complete command
@@ -310,7 +310,7 @@ func GetAgent(agentMgr AgentManager) gin.HandlerFunc {
 //
 // Essential for agent lifecycle management as it provides the interface
 // for status transitions, placement updates, and metadata modifications.
-func UpdateAgent(agentMgr AgentManager) gin.HandlerFunc {
+func UpdateAgent(agentMgr AgentManager, nodeID string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		agentID := c.Param("id")
 		if agentID == "" {
@@ -384,7 +384,7 @@ func UpdateAgent(agentMgr AgentManager) gin.HandlerFunc {
 			Operation: "update",
 			Data:      json.RawMessage(cmdData),
 			Timestamp: time.Now(),
-			NodeID:    getNodeID(c),
+			NodeID:    nodeID,
 		}
 
 		// Marshal complete command
@@ -426,7 +426,7 @@ func UpdateAgent(agentMgr AgentManager) gin.HandlerFunc {
 //
 // Essential for agent lifecycle management as it provides clean agent
 // removal with proper state cleanup across the distributed cluster.
-func DeleteAgent(agentMgr AgentManager) gin.HandlerFunc {
+func DeleteAgent(agentMgr AgentManager, nodeID string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		agentID := c.Param("id")
 		if agentID == "" {
@@ -505,7 +505,7 @@ func DeleteAgent(agentMgr AgentManager) gin.HandlerFunc {
 			Operation: "delete",
 			Data:      json.RawMessage(cmdData),
 			Timestamp: time.Now(),
-			NodeID:    getNodeID(c),
+			NodeID:    nodeID,
 		}
 
 		// Marshal complete command
@@ -537,16 +537,4 @@ func DeleteAgent(agentMgr AgentManager) gin.HandlerFunc {
 			"message":  "Agent deletion submitted to cluster consensus",
 		})
 	}
-}
-
-// getNodeID extracts the node ID from the request context or configuration.
-// TODO: Implement proper node ID extraction from request context or
-// configuration. This will be used for command attribution and auditing.
-//
-// Essential for command attribution and distributed operation tracking.
-// Should extract node ID from authenticated context or configuration.
-func getNodeID(_ *gin.Context) string {
-	// TODO: Extract from authenticated context or configuration
-	// For now, return a placeholder that will be replaced with proper implementation
-	return "unknown-node"
 }
