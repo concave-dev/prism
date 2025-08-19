@@ -94,6 +94,9 @@ func (n *NodeServiceImpl) GetResources(ctx context.Context, req *proto.GetResour
 		MaxJobs:        int32(nodeResources.MaxJobs),
 		CurrentJobs:    int32(nodeResources.CurrentJobs),
 		AvailableSlots: int32(nodeResources.AvailableSlots),
+
+		// Resource Score
+		Score: nodeResources.Score,
 	}
 
 	return response, nil

@@ -187,16 +187,9 @@ func ValidateConfig() error {
 		return fmt.Errorf("cannot use --bootstrap and --join together: bootstrap creates a new cluster, join connects to existing cluster")
 	}
 
-	// Validate bootstrap-expect configuration
-	if Global.BootstrapExpect > 0 {
-		if Global.BootstrapExpect < 1 {
-			return fmt.Errorf("--bootstrap-expect must be >= 1, got %d", Global.BootstrapExpect)
-		}
-
-		// For bootstrap-expect > 1, require --join for peer discovery
-		if Global.BootstrapExpect > 1 && len(Global.JoinAddrs) == 0 {
-			return fmt.Errorf("--bootstrap-expect=%d requires --join addresses for peer discovery. All nodes should use the same join addresses to find each other", Global.BootstrapExpect)
-		}
+	// For bootstrap-expect > 1, require --join for peer discovery
+	if Global.BootstrapExpect > 1 && len(Global.JoinAddrs) == 0 {
+		return fmt.Errorf("--bootstrap-expect=%d requires --join addresses for peer discovery. All nodes should use the same join addresses to find each other", Global.BootstrapExpect)
 	}
 
 	// Configure persistent data directory for cluster state and logs.

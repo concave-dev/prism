@@ -50,6 +50,7 @@ func SetupCommands() {
 	RootCmd.AddCommand(infoCmd)
 	RootCmd.AddCommand(nodeCmd)
 	RootCmd.AddCommand(peerCmd)
+	RootCmd.AddCommand(agentCmd)
 }
 
 // SetupGlobalFlags configures all global persistent flags

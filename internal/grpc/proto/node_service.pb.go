@@ -163,8 +163,10 @@ type GetResourcesResponse struct {
 	MaxJobs        int32 `protobuf:"varint,24,opt,name=max_jobs,json=maxJobs,proto3" json:"max_jobs,omitempty"`                      // Maximum concurrent AI agent jobs
 	CurrentJobs    int32 `protobuf:"varint,25,opt,name=current_jobs,json=currentJobs,proto3" json:"current_jobs,omitempty"`          // Currently running AI agent jobs
 	AvailableSlots int32 `protobuf:"varint,26,opt,name=available_slots,json=availableSlots,proto3" json:"available_slots,omitempty"` // Available job slots (max_jobs - current_jobs)
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Resource Score for Intelligent Scheduling
+	Score         float64 `protobuf:"fixed64,27,opt,name=score,proto3" json:"score,omitempty"` // Composite resource score for workload placement (0.0-100.0)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GetResourcesResponse) Reset() {
@@ -379,6 +381,13 @@ func (x *GetResourcesResponse) GetAvailableSlots() int32 {
 	return 0
 }
 
+func (x *GetResourcesResponse) GetScore() float64 {
+	if x != nil {
+		return x.Score
+	}
+	return 0
+}
+
 // GetHealthRequest allows selective execution of specific health checks.
 type GetHealthRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -588,7 +597,7 @@ const file_internal_grpc_proto_node_service_proto_rawDesc = "" +
 	"\n" +
 	"&internal/grpc/proto/node_service.proto\x12\rprism.node.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"<\n" +
 	"\x13GetResourcesRequest\x12%\n" +
-	"\x0eresource_types\x18\x01 \x03(\tR\rresourceTypes\"\xee\x06\n" +
+	"\x0eresource_types\x18\x01 \x03(\tR\rresourceTypes\"\x84\a\n" +
 	"\x14GetResourcesResponse\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1b\n" +
 	"\tnode_name\x18\x02 \x01(\tR\bnodeName\x128\n" +
@@ -623,7 +632,8 @@ const file_internal_grpc_proto_node_service_proto_rawDesc = "" +
 	"\x06load15\x18\x17 \x01(\x01R\x06load15\x12\x19\n" +
 	"\bmax_jobs\x18\x18 \x01(\x05R\amaxJobs\x12!\n" +
 	"\fcurrent_jobs\x18\x19 \x01(\x05R\vcurrentJobs\x12'\n" +
-	"\x0favailable_slots\x18\x1a \x01(\x05R\x0eavailableSlots\"3\n" +
+	"\x0favailable_slots\x18\x1a \x01(\x05R\x0eavailableSlots\x12\x14\n" +
+	"\x05score\x18\x1b \x01(\x01R\x05score\"3\n" +
 	"\x10GetHealthRequest\x12\x1f\n" +
 	"\vcheck_types\x18\x01 \x03(\tR\n" +
 	"checkTypes\"\xec\x01\n" +

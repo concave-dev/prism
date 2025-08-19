@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/concave-dev/prism/internal/grpc"
@@ -63,6 +65,9 @@ type NodeResourcesResponse struct {
 	DiskTotalMB       int `json:"diskTotalMB"`
 	DiskUsedMB        int `json:"diskUsedMB"`
 	DiskAvailableMB   int `json:"diskAvailableMB"`
+
+	// Resource Score
+	Score float64 `json:"score"` // Composite resource score for workload placement
 }
 
 // convertToAPIResponse converts resources.NodeResources to API response format
@@ -114,6 +119,9 @@ func convertToAPIResponse(nodeRes *resources.NodeResources) NodeResourcesRespons
 		DiskTotalMB:       int(nodeRes.DiskTotal / (1024 * 1024)),
 		DiskUsedMB:        int(nodeRes.DiskUsed / (1024 * 1024)),
 		DiskAvailableMB:   int(nodeRes.DiskAvailable / (1024 * 1024)),
+
+		// Resource Score
+		Score: nodeRes.Score,
 	}
 }
 
@@ -174,10 +182,32 @@ func HandleClusterResources(clientPool *grpc.ClientPool, serfManager *serf.SerfM
 			}
 		}
 
-		// Sort by node name for consistent output
-		sort.Slice(resList, func(i, j int) bool {
-			return resList[i].NodeName < resList[j].NodeName
-		})
+		// Sort based on query parameter
+		sortBy := c.DefaultQuery("sort", "uptime")
+		switch sortBy {
+		case "score":
+			sort.Slice(resList, func(i, j int) bool {
+				return resList[i].Score > resList[j].Score // Highest scores first
+			})
+		case "name":
+			sort.Slice(resList, func(i, j int) bool {
+				return resList[i].NodeName < resList[j].NodeName
+			})
+		case "uptime":
+			sort.Slice(resList, func(i, j int) bool {
+				// Parse uptime strings and sort by duration (shortest uptime first - newest nodes)
+				uptimeA := parseUptimeString(resList[i].Uptime)
+				uptimeB := parseUptimeString(resList[j].Uptime)
+				return uptimeA < uptimeB
+			})
+		default:
+			// Default to uptime sorting for unknown sort parameters
+			sort.Slice(resList, func(i, j int) bool {
+				uptimeA := parseUptimeString(resList[i].Uptime)
+				uptimeB := parseUptimeString(resList[j].Uptime)
+				return uptimeA < uptimeB
+			})
+		}
 
 		c.JSON(http.StatusOK, gin.H{
 			"status": "success",
@@ -301,5 +331,69 @@ func convertFromGRPCResponse(grpcRes *proto.GetResourcesResponse) NodeResourcesR
 		DiskTotalMB:       int(grpcRes.DiskTotal / (1024 * 1024)),
 		DiskUsedMB:        int(grpcRes.DiskUsed / (1024 * 1024)),
 		DiskAvailableMB:   int(grpcRes.DiskAvailable / (1024 * 1024)),
+
+		// Resource Score
+		Score: grpcRes.Score,
 	}
+}
+
+// parseUptimeString converts uptime strings like "5h30m", "2d1h", "45s" to duration in seconds
+// for comparison purposes. Uses robust parsing with proper edge case handling.
+// Returns 0 if parsing fails to ensure consistent sorting behavior.
+func parseUptimeString(uptimeStr string) int64 {
+	if uptimeStr == "" {
+		return 0
+	}
+
+	// Try to parse as Go duration first (handles h, m, s, ms, ns)
+	if duration, err := time.ParseDuration(uptimeStr); err == nil {
+		return int64(duration.Seconds())
+	}
+
+	// Handle day formats using custom parsing with better error handling
+	// Convert "2d1h30m" format by preprocessing to remove days
+	if strings.Contains(uptimeStr, "d") {
+		return parseDurationWithDays(uptimeStr)
+	}
+
+	// If all parsing fails, return 0 for consistent sorting
+	logging.Warn("Failed to parse uptime string: %s", uptimeStr)
+	return 0
+}
+
+// parseDurationWithDays handles duration strings containing days (e.g., "2d1h30m")
+// Converts days to hours and uses Go's standard parser for the rest
+func parseDurationWithDays(uptimeStr string) int64 {
+	var totalSeconds int64
+
+	// Split by 'd' to separate days from the rest
+	parts := strings.Split(uptimeStr, "d")
+	if len(parts) != 2 {
+		return 0 // Invalid format
+	}
+
+	// Parse days part
+	daysStr := strings.TrimSpace(parts[0])
+	if daysStr == "" {
+		return 0 // No number before 'd'
+	}
+
+	days, err := strconv.ParseInt(daysStr, 10, 64)
+	if err != nil {
+		return 0 // Invalid number
+	}
+
+	totalSeconds += days * 24 * 3600 // Convert days to seconds
+
+	// Parse remaining duration (hours, minutes, seconds)
+	remainder := strings.TrimSpace(parts[1])
+	if remainder != "" {
+		if duration, err := time.ParseDuration(remainder); err == nil {
+			totalSeconds += int64(duration.Seconds())
+		} else {
+			return 0 // Invalid remainder format
+		}
+	}
+
+	return totalSeconds
 }

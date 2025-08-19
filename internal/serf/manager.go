@@ -19,8 +19,6 @@ package serf
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"maps"
@@ -29,6 +27,7 @@ import (
 	"time"
 
 	"github.com/concave-dev/prism/internal/logging"
+	"github.com/concave-dev/prism/internal/utils"
 	"github.com/hashicorp/serf/serf"
 )
 
@@ -96,7 +95,7 @@ func NewSerfManager(config *Config) (*SerfManager, error) {
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
 
-	nodeID, err := generateNodeID()
+	nodeID, err := utils.GenerateID()
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate node ID: %w", err)
 	}
@@ -424,21 +423,4 @@ func (sm *SerfManager) buildNodeTags() map[string]string {
 	}
 
 	return tags
-}
-
-// generateNodeID creates a cryptographically secure 12-character hex identifier
-// for cluster nodes, similar to Docker container IDs but shorter for readability.
-// Uses crypto/rand to ensure uniqueness across distributed systems and prevent collisions.
-//
-// Essential for node identification, logging correlation, and API operations where
-// nodes need to be uniquely referenced without requiring complex name management.
-// Short format balances uniqueness with human readability in logs and interfaces.
-func generateNodeID() (string, error) {
-	// Generate 6 bytes of random data (12 hex characters, like Docker short IDs)
-	bytes := make([]byte, 6)
-	_, err := rand.Read(bytes)
-	if err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(bytes), nil
 }

@@ -33,6 +33,7 @@ func init() {
 	commands.SetupCommands()
 	commands.SetupNodeCommands()
 	commands.SetupPeerCommands()
+	commands.SetupAgentCommands()
 
 	// Setup global flags
 	commands.SetupGlobalFlags(rootCmd, &config.Global.APIAddr, &config.Global.LogLevel,
@@ -41,7 +42,11 @@ func init() {
 	// Setup node command flags
 	nodeLsCmd, nodeTopCmd, nodeInfoCmd := commands.GetNodeCommands()
 	commands.SetupNodeFlags(nodeLsCmd, nodeTopCmd, nodeInfoCmd,
-		&config.Node.Watch, &config.Node.StatusFilter, &config.Node.Verbose)
+		&config.Node.Watch, &config.Node.StatusFilter, &config.Node.Verbose, &config.Node.Sort)
+
+	// Setup agent command flags
+	agentCreateCmd, agentLsCmd, agentInfoCmd, agentDeleteCmd := commands.GetAgentCommands()
+	setupAgentFlags(agentCreateCmd, agentLsCmd, agentInfoCmd, agentDeleteCmd)
 
 	// Setup command handlers
 	setupCommandHandlers()
@@ -53,6 +58,7 @@ func setupCommandHandlers() {
 	nodeLsCmd, nodeTopCmd, nodeInfoCmd := commands.GetNodeCommands()
 	peerLsCmd, peerInfoCmd := commands.GetPeerCommands()
 	infoCmd := commands.GetInfoCommand()
+	agentCreateCmd, agentLsCmd, agentInfoCmd, agentDeleteCmd := commands.GetAgentCommands()
 
 	// Assign handlers
 	nodeLsCmd.RunE = handleMembers
@@ -61,6 +67,10 @@ func setupCommandHandlers() {
 	peerLsCmd.RunE = handlePeerList
 	peerInfoCmd.RunE = handlePeerInfo
 	infoCmd.RunE = handleClusterInfo
+	agentCreateCmd.RunE = handleAgentCreate
+	agentLsCmd.RunE = handleAgentList
+	agentInfoCmd.RunE = handleAgentInfo
+	agentDeleteCmd.RunE = handleAgentDelete
 }
 
 // API response types that match the server responses
@@ -97,6 +107,29 @@ type ClusterInfo struct {
 	StartTime  time.Time       `json:"startTime"`
 	RaftLeader string          `json:"raftLeader,omitempty"`
 	ClusterID  string          `json:"clusterId,omitempty"`
+}
+
+// Agent response types
+type Agent struct {
+	ID       string            `json:"id"`
+	Name     string            `json:"name"`
+	Type     string            `json:"type"`
+	Status   string            `json:"status"`
+	Created  time.Time         `json:"created"`
+	Updated  time.Time         `json:"updated"`
+	Metadata map[string]string `json:"metadata,omitempty"`
+}
+
+type AgentCreateResponse struct {
+	AgentID   string `json:"agent_id"`
+	AgentName string `json:"agent_name"`
+	Status    string `json:"status"`
+	Message   string `json:"message"`
+}
+
+type AgentListResponse struct {
+	Agents []Agent `json:"agents"`
+	Count  int     `json:"count"`
 }
 
 // API type for raft peers response
@@ -169,6 +202,9 @@ type NodeResources struct {
 	DiskTotalMB       int `json:"diskTotalMB"`
 	DiskUsedMB        int `json:"diskUsedMB"`
 	DiskAvailableMB   int `json:"diskAvailableMB"`
+
+	// Resource Score
+	Score float64 `json:"score"`
 }
 
 // NodeHealth represents node health information from the API
@@ -408,13 +444,20 @@ func (api *PrismAPIClient) GetRaftPeers() (*RaftPeersResponse, error) {
 	return nil, fmt.Errorf("unexpected response format for raft peers")
 }
 
-// GetClusterResources fetches cluster resources from the API
-func (api *PrismAPIClient) GetClusterResources() ([]NodeResources, error) {
+// GetClusterResources fetches cluster resources from the API with optional sorting
+func (api *PrismAPIClient) GetClusterResources(sortBy string) ([]NodeResources, error) {
 	var response APIResponse
 
-	resp, err := api.client.R().
-		SetResult(&response).
-		Get("/cluster/resources")
+	req := api.client.R().SetResult(&response)
+	if sortBy != "" {
+		// Validate sort parameter - return error for invalid options
+		validSorts := map[string]bool{"name": true, "score": true, "uptime": true}
+		if !validSorts[sortBy] {
+			return nil, fmt.Errorf("invalid sort parameter '%s'. Valid options: name, score, uptime", sortBy)
+		}
+		req.SetQueryParam("sort", sortBy)
+	}
+	resp, err := req.Get("/cluster/resources")
 
 	if err != nil {
 		logging.Error("Failed to connect to API server: %v", err)
@@ -465,6 +508,9 @@ func (api *PrismAPIClient) GetClusterResources() ([]NodeResources, error) {
 					DiskTotalMB:       utils.GetInt(resourceMap, "diskTotalMB"),
 					DiskUsedMB:        utils.GetInt(resourceMap, "diskUsedMB"),
 					DiskAvailableMB:   utils.GetInt(resourceMap, "diskAvailableMB"),
+
+					// Resource Score
+					Score: utils.GetFloat(resourceMap, "score"),
 				}
 				resources = append(resources, resource)
 			}
@@ -761,7 +807,7 @@ func handleNodeTop(cmd *cobra.Command, args []string) error {
 
 		// Create API client and get cluster resources
 		apiClient := createAPIClient()
-		resources, err := apiClient.GetClusterResources()
+		resources, err := apiClient.GetClusterResources(config.Node.Sort)
 		if err != nil {
 			return err
 		}
@@ -991,10 +1037,7 @@ func displayClusterResourcesFromAPI(resources []NodeResources) {
 		return
 	}
 
-	// Sort resources by node name for consistent output
-	sort.Slice(resources, func(i, j int) bool {
-		return resources[i].NodeName < resources[j].NodeName
-	})
+	// Note: Resources are already sorted by the API based on the sort query parameter
 
 	if config.Global.Output == "json" {
 		// JSON output
@@ -1009,43 +1052,56 @@ func displayClusterResourcesFromAPI(resources []NodeResources) {
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 		defer w.Flush()
 
-		// Header
+		// Header - always show SCORE column for consistent UX
 		if config.Node.Verbose {
-			fmt.Fprintln(w, "ID\tNAME\tCPU\tMEMORY\tDISK\tJOBS\tUPTIME\tGOROUTINES")
+			fmt.Fprintln(w, "ID\tNAME\tCPU\tMEMORY\tDISK\tJOBS\tSCORE\tUPTIME\tGOROUTINES")
 		} else {
-			fmt.Fprintln(w, "ID\tNAME\tCPU\tMEMORY\tDISK\tJOBS\tUPTIME")
+			fmt.Fprintln(w, "ID\tNAME\tCPU\tMEMORY\tDISK\tJOBS\tSCORE\tUPTIME")
 		}
 
 		// Display each node's resources
 		for _, resource := range resources {
-			memoryWithPercent := fmt.Sprintf("%s/%s (%.1f%%)",
-				humanize.IBytes(uint64(resource.MemoryUsedMB)*1024*1024),
-				humanize.IBytes(uint64(resource.MemoryTotalMB)*1024*1024),
-				resource.MemoryUsage)
-			diskWithPercent := fmt.Sprintf("%s/%s (%.1f%%)",
-				humanize.IBytes(uint64(resource.DiskUsedMB)*1024*1024),
-				humanize.IBytes(uint64(resource.DiskTotalMB)*1024*1024),
-				resource.DiskUsage)
+			var memoryDisplay, diskDisplay string
+			if config.Node.Verbose {
+				memoryDisplay = fmt.Sprintf("%s/%s (%.1f%%)",
+					humanize.IBytes(uint64(resource.MemoryUsedMB)*1024*1024),
+					humanize.IBytes(uint64(resource.MemoryTotalMB)*1024*1024),
+					resource.MemoryUsage)
+				diskDisplay = fmt.Sprintf("%s/%s (%.1f%%)",
+					humanize.IBytes(uint64(resource.DiskUsedMB)*1024*1024),
+					humanize.IBytes(uint64(resource.DiskTotalMB)*1024*1024),
+					resource.DiskUsage)
+			} else {
+				memoryDisplay = fmt.Sprintf("%s/%s",
+					humanize.IBytes(uint64(resource.MemoryUsedMB)*1024*1024),
+					humanize.IBytes(uint64(resource.MemoryTotalMB)*1024*1024))
+				diskDisplay = fmt.Sprintf("%s/%s",
+					humanize.IBytes(uint64(resource.DiskUsedMB)*1024*1024),
+					humanize.IBytes(uint64(resource.DiskTotalMB)*1024*1024))
+			}
 			jobs := fmt.Sprintf("%d/%d", resource.CurrentJobs, resource.MaxJobs)
 
+			// Always show score column for consistent UX
 			if config.Node.Verbose {
-				fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%s\t%d\n",
-					resource.NodeID,
+				fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%.1f\t%s\t%d\n",
+					resource.NodeID[:12],
 					resource.NodeName,
 					resource.CPUCores,
-					memoryWithPercent,
-					diskWithPercent,
+					memoryDisplay,
+					diskDisplay,
 					jobs,
+					resource.Score,
 					resource.Uptime,
 					resource.GoRoutines)
 			} else {
-				fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%s\n",
-					resource.NodeID,
+				fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%.1f\t%s\n",
+					resource.NodeID[:12],
 					resource.NodeName,
 					resource.CPUCores,
-					memoryWithPercent,
-					diskWithPercent,
+					memoryDisplay,
+					diskDisplay,
 					jobs,
+					resource.Score,
 					resource.Uptime)
 			}
 		}
@@ -1258,6 +1314,381 @@ func (api *PrismAPIClient) GetNodeHealth(nodeID string) (*NodeHealth, error) {
 	}
 
 	return nil, fmt.Errorf("unexpected response format for node health")
+}
+
+// GetAgents fetches all agents from the API
+func (api *PrismAPIClient) GetAgents() ([]Agent, error) {
+	var response AgentListResponse
+
+	resp, err := api.client.R().
+		SetResult(&response).
+		Get("/agents")
+
+	if err != nil {
+		logging.Error("Failed to connect to API server: %v", err)
+		logging.Error("Make sure a Prism daemon with API server is running at %s", api.baseURL)
+		return nil, fmt.Errorf("connection failed")
+	}
+
+	if resp.StatusCode() != 200 {
+		logging.Error("API request failed with status %d: %s", resp.StatusCode(), resp.String())
+		return nil, fmt.Errorf("API request failed")
+	}
+
+	return response.Agents, nil
+}
+
+// GetAgent fetches a specific agent by ID from the API
+func (api *PrismAPIClient) GetAgent(agentID string) (*Agent, error) {
+	var agent Agent
+
+	resp, err := api.client.R().
+		SetResult(&agent).
+		Get(fmt.Sprintf("/agents/%s", agentID))
+
+	if err != nil {
+		logging.Error("Failed to connect to API server: %v", err)
+		logging.Error("Make sure a Prism daemon with API server is running at %s", api.baseURL)
+		return nil, fmt.Errorf("connection failed")
+	}
+
+	if resp.StatusCode() == 404 {
+		return nil, fmt.Errorf("agent not found: %s", agentID)
+	}
+
+	if resp.StatusCode() != 200 {
+		logging.Error("API request failed with status %d: %s", resp.StatusCode(), resp.String())
+		return nil, fmt.Errorf("API request failed")
+	}
+
+	return &agent, nil
+}
+
+// CreateAgent creates a new agent via the API
+func (api *PrismAPIClient) CreateAgent(name, agentType string, metadata map[string]string) (*AgentCreateResponse, error) {
+	var response AgentCreateResponse
+
+	// Prepare request payload
+	payload := map[string]interface{}{
+		"name": name,
+		"type": agentType,
+	}
+	if len(metadata) > 0 {
+		payload["metadata"] = metadata
+	}
+
+	resp, err := api.client.R().
+		SetBody(payload).
+		SetResult(&response).
+		Post("/agents")
+
+	if err != nil {
+		logging.Error("Failed to connect to API server: %v", err)
+		logging.Error("Make sure a Prism daemon with API server is running at %s", api.baseURL)
+		return nil, fmt.Errorf("connection failed")
+	}
+
+	if resp.StatusCode() == 400 {
+		logging.Error("Invalid request: %s", resp.String())
+		return nil, fmt.Errorf("invalid request")
+	}
+
+	if resp.StatusCode() == 307 {
+		logging.Error("Not cluster leader, request redirected")
+		return nil, fmt.Errorf("not cluster leader - retry request")
+	}
+
+	if resp.StatusCode() != 202 {
+		logging.Error("API request failed with status %d: %s", resp.StatusCode(), resp.String())
+		return nil, fmt.Errorf("API request failed")
+	}
+
+	return &response, nil
+}
+
+// DeleteAgent deletes an agent via the API
+func (api *PrismAPIClient) DeleteAgent(agentID string) error {
+	resp, err := api.client.R().
+		Delete(fmt.Sprintf("/agents/%s", agentID))
+
+	if err != nil {
+		logging.Error("Failed to connect to API server: %v", err)
+		logging.Error("Make sure a Prism daemon with API server is running at %s", api.baseURL)
+		return fmt.Errorf("connection failed")
+	}
+
+	if resp.StatusCode() == 404 {
+		logging.Error("Agent '%s' not found", agentID)
+		return fmt.Errorf("agent not found")
+	}
+
+	if resp.StatusCode() == 307 {
+		logging.Error("Not cluster leader, request redirected")
+		return fmt.Errorf("not cluster leader - retry request")
+	}
+
+	if resp.StatusCode() != 200 {
+		logging.Error("API request failed with status %d: %s", resp.StatusCode(), resp.String())
+		return fmt.Errorf("API request failed")
+	}
+
+	return nil
+}
+
+// displayAgents displays agents in table or JSON format
+func displayAgents(agents []Agent) {
+	if len(agents) == 0 {
+		if config.Global.Output == "json" {
+			fmt.Println("[]")
+		} else {
+			fmt.Println("No agents found")
+		}
+		return
+	}
+
+	// Sort agents by name for consistent output
+	sort.Slice(agents, func(i, j int) bool {
+		return agents[i].Name < agents[j].Name
+	})
+
+	if config.Global.Output == "json" {
+		// JSON output
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		if err := encoder.Encode(agents); err != nil {
+			logging.Error("Failed to encode JSON: %v", err)
+			fmt.Println("Error encoding JSON output")
+		}
+	} else {
+		// Table output
+		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+		defer w.Flush()
+
+		// Header
+		fmt.Fprintln(w, "ID\tNAME\tTYPE\tSTATUS\tCREATED\tUPDATED")
+
+		// Display each agent
+		for _, agent := range agents {
+			created := utils.FormatDuration(time.Since(agent.Created))
+			updated := utils.FormatDuration(time.Since(agent.Updated))
+
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+				agent.ID, agent.Name, agent.Type, agent.Status, created, updated)
+		}
+	}
+}
+
+// setupAgentFlags configures flags for agent commands
+func setupAgentFlags(createCmd, lsCmd, infoCmd, deleteCmd *cobra.Command) {
+	// Agent create flags
+	createCmd.Flags().StringVar(&config.Agent.Name, "name", "", "Agent name (auto-generated if not provided)")
+	createCmd.Flags().StringVar(&config.Agent.Type, "type", "task", "Agent type: task or service")
+
+	// Agent list flags (for future filtering)
+	lsCmd.Flags().BoolVar(&config.Agent.Watch, "watch", false, "Watch for live updates")
+	lsCmd.Flags().StringVar(&config.Agent.StatusFilter, "status", "", "Filter by status")
+	lsCmd.Flags().StringVar(&config.Agent.TypeFilter, "type", "", "Filter by type")
+}
+
+// ============================================================================
+// AGENT COMMAND HANDLERS
+// ============================================================================
+
+// handleAgentCreate handles the agent create subcommand
+func handleAgentCreate(cmd *cobra.Command, args []string) error {
+	utils.SetupLogging()
+
+	// Validate agent type
+	if config.Agent.Type != "task" && config.Agent.Type != "service" {
+		return fmt.Errorf("agent type must be 'task' or 'service'")
+	}
+
+	// Use provided name or let server auto-generate
+	agentName := config.Agent.Name
+	if agentName == "" {
+		logging.Info("Creating agent with auto-generated name of type '%s' on API server: %s",
+			config.Agent.Type, config.Global.APIAddr)
+	} else {
+		logging.Info("Creating agent '%s' of type '%s' on API server: %s",
+			agentName, config.Agent.Type, config.Global.APIAddr)
+	}
+
+	// Create API client and create agent
+	apiClient := createAPIClient()
+	response, err := apiClient.CreateAgent(agentName, config.Agent.Type, config.Agent.Metadata)
+	if err != nil {
+		return err
+	}
+
+	// Display result
+	if config.Global.Output == "json" {
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		if err := encoder.Encode(response); err != nil {
+			logging.Error("Failed to encode JSON: %v", err)
+			return fmt.Errorf("failed to encode response")
+		}
+	} else {
+		fmt.Printf("Agent created successfully:\n")
+		fmt.Printf("  ID:      %s\n", response.AgentID)
+		fmt.Printf("  Name:    %s\n", response.AgentName)
+		fmt.Printf("  Status:  %s\n", response.Status)
+		fmt.Printf("  Message: %s\n", response.Message)
+	}
+
+	logging.Success("Successfully created agent '%s' with ID: %s", response.AgentName, response.AgentID)
+	return nil
+}
+
+// handleAgentList handles the agent ls subcommand
+func handleAgentList(cmd *cobra.Command, args []string) error {
+	utils.SetupLogging()
+
+	logging.Info("Fetching agents from API server: %s", config.Global.APIAddr)
+
+	// Create API client and get agents
+	apiClient := createAPIClient()
+	agents, err := apiClient.GetAgents()
+	if err != nil {
+		return err
+	}
+
+	displayAgents(agents)
+	logging.Success("Successfully retrieved %d agents", len(agents))
+	return nil
+}
+
+// handleAgentInfo handles the agent info subcommand
+func handleAgentInfo(cmd *cobra.Command, args []string) error {
+	utils.SetupLogging()
+
+	if len(args) < 1 {
+		return fmt.Errorf("agent identifier (ID or name) required")
+	}
+	agentIdentifier := args[0]
+
+	// Create API client
+	apiClient := createAPIClient()
+
+	// Try to get agent directly by ID first
+	agent, err := apiClient.GetAgent(agentIdentifier)
+	if err != nil {
+		// If direct lookup fails, try to resolve by name
+		if strings.Contains(err.Error(), "agent not found") {
+			agent, err = resolveAgentByName(apiClient, agentIdentifier)
+			if err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+	}
+
+	logging.Info("Retrieved info for agent '%s' (%s) from API server: %s", agent.Name, agent.ID, config.Global.APIAddr)
+
+	// Display agent info based on output format
+	if config.Global.Output == "json" {
+		// JSON output
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		if err := encoder.Encode(agent); err != nil {
+			return fmt.Errorf("failed to encode JSON: %w", err)
+		}
+	} else {
+		// Table output
+		displayAgentInfo(agent)
+	}
+
+	logging.Success("Successfully retrieved info for agent '%s' (%s)", agent.Name, agent.ID)
+	return nil
+}
+
+// resolveAgentByName attempts to find an agent by name when direct ID lookup fails
+func resolveAgentByName(apiClient *PrismAPIClient, agentName string) (*Agent, error) {
+	agents, err := apiClient.GetAgents()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, agent := range agents {
+		if agent.Name == agentName {
+			return &agent, nil
+		}
+	}
+
+	return nil, fmt.Errorf("agent not found: %s (searched by both ID and name)", agentName)
+}
+
+// displayAgentInfo displays agent information in table format
+func displayAgentInfo(agent *Agent) {
+	fmt.Printf("Agent Information:\n")
+	fmt.Printf("  ID:      %s\n", agent.ID)
+	fmt.Printf("  Name:    %s\n", agent.Name)
+	fmt.Printf("  Type:    %s\n", agent.Type)
+	fmt.Printf("  Status:  %s\n", agent.Status)
+	fmt.Printf("  Created: %s\n", agent.Created.Format("2006-01-02 15:04:05 MST"))
+	fmt.Printf("  Updated: %s\n", agent.Updated.Format("2006-01-02 15:04:05 MST"))
+
+	if len(agent.Metadata) > 0 {
+		fmt.Printf("  Metadata:\n")
+		for key, value := range agent.Metadata {
+			fmt.Printf("    %s: %s\n", key, value)
+		}
+	}
+}
+
+// handleAgentDelete handles the agent delete subcommand
+func handleAgentDelete(cmd *cobra.Command, args []string) error {
+	utils.SetupLogging()
+
+	agentIdentifier := args[0]
+
+	// Create API client
+	apiClient := createAPIClient()
+
+	// Get all agents to resolve name to ID if needed
+	agents, err := apiClient.GetAgents()
+	if err != nil {
+		return err
+	}
+
+	// Resolve agent identifier (could be ID or name)
+	resolvedAgentID, agentName, err := resolveAgentIdentifier(agents, agentIdentifier)
+	if err != nil {
+		return err
+	}
+
+	logging.Info("Deleting agent '%s' (%s) from API server: %s", agentName, resolvedAgentID, config.Global.APIAddr)
+
+	// Delete agent using resolved ID
+	if err := apiClient.DeleteAgent(resolvedAgentID); err != nil {
+		return err
+	}
+
+	fmt.Printf("Agent '%s' (%s) deleted successfully\n", agentName, resolvedAgentID)
+	logging.Success("Successfully deleted agent '%s' (%s)", agentName, resolvedAgentID)
+	return nil
+}
+
+// resolveAgentIdentifier resolves an agent identifier (ID or name) to the actual agent ID
+// Returns the resolved ID, agent name, and any error
+// Only supports exact matches for safety - no partial ID matching for destructive operations
+func resolveAgentIdentifier(agents []Agent, identifier string) (string, string, error) {
+	// First try exact ID match
+	for _, agent := range agents {
+		if agent.ID == identifier {
+			return agent.ID, agent.Name, nil
+		}
+	}
+
+	// Then try exact name match
+	for _, agent := range agents {
+		if agent.Name == identifier {
+			return agent.ID, agent.Name, nil
+		}
+	}
+
+	return "", "", fmt.Errorf("agent '%s' not found (use exact ID or name for deletion)", identifier)
 }
 
 // main is the main entry point

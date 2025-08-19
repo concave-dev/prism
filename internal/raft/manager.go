@@ -197,8 +197,8 @@ func (m *RaftManager) Start() error {
 	}
 
 	// Initialize FSM (Finite State Machine)
-	// TODO: Implement actual business logic FSM for AI agent state management
-	m.fsm = &simpleFSM{}
+	// Use PrismFSM for comprehensive agent lifecycle and orchestration management
+	m.fsm = NewPrismFSM()
 
 	// Setup transport layer for Raft communication
 	if err := m.setupTransport(raftLogWriter); err != nil {
@@ -233,7 +233,11 @@ func (m *RaftManager) Start() error {
 		// Note: Actual bootstrap will be triggered by Serf integration when peer count reached
 	}
 
-	// TODO: Add periodic status monitoring
+	// Start periodic FSM state logging for debugging (only in DEBUG mode)
+	if os.Getenv("DEBUG") == "true" {
+		m.StartStateLogging()
+	}
+
 	// TODO: Implement automatic peer discovery via Serf integration
 
 	logging.Info("Raft manager started successfully")
@@ -445,7 +449,7 @@ func (m *RaftManager) computeEligibleBootstrapPeers(serfMembers map[string]*serf
 		}
 	}
 
-	// Sort for stable hashing (order-independent)
+	// Sort to ensure deterministic ordering for consistent hashing across nodes
 	if len(eligibleIDs) > 1 {
 		slices.Sort(eligibleIDs)
 	}
@@ -1547,4 +1551,44 @@ func (m *RaftManager) isRaftPeerReachable(address string) bool {
 func (m *RaftManager) IsRaftHealthy() bool {
 	status := m.GetHealthStatus()
 	return status.IsHealthy
+}
+
+// GetFSM returns the PrismFSM instance for direct state access and operations.
+// Provides access to the finite state machine for agent queries and state
+// monitoring without requiring distributed Raft operations.
+//
+// Essential for local state queries and monitoring operations that need
+// to access current FSM state without triggering consensus operations.
+// Used by API handlers and monitoring systems for read-only state access.
+func (m *RaftManager) GetFSM() *PrismFSM {
+	if prismFSM, ok := m.fsm.(*PrismFSM); ok {
+		return prismFSM
+	}
+	return nil
+}
+
+// StartStateLogging begins periodic logging of FSM state across all nodes
+// for debugging and development monitoring. Logs state information every
+// 30 seconds at debug level for troubleshooting and development purposes.
+//
+// Essential for development and troubleshooting as it provides regular state
+// updates for debugging placement decisions, load distribution, and agent
+// lifecycle tracking. Should only be called when debug logging is desired.
+func (m *RaftManager) StartStateLogging() {
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				if fsm := m.GetFSM(); fsm != nil {
+					fsm.LogCurrentState(m.config.NodeID)
+				}
+			case <-m.shutdown:
+				logging.Debug("FSM state logging shutting down")
+				return
+			}
+		}
+	}()
 }

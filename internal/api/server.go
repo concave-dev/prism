@@ -278,3 +278,32 @@ func (s *Server) handleRaftPeers(c *gin.Context) {
 func (s *Server) getHandlerRaftPeers() gin.HandlerFunc {
 	return handlers.HandleRaftPeers(s.serfManager, s.raftManager)
 }
+
+// ============================================================================
+// AGENT MANAGEMENT INTEGRATION
+// ============================================================================
+
+// GetAgentManager returns an AgentManager implementation for agent lifecycle
+// operations. Creates a bridge between the HTTP API layer and the underlying
+// Raft consensus system for distributed agent management.
+//
+// Essential for agent handlers to access distributed state management
+// capabilities while maintaining clean separation of concerns between
+// HTTP handling and consensus operations.
+func (s *Server) GetAgentManager() AgentManager {
+	return NewServerAgentManager(s.raftManager)
+}
+
+// GetNodeID returns the current node's unique identifier for command attribution
+// and distributed operation tracking. Extracts the node ID from the Serf manager
+// which maintains the cluster membership and node identity information.
+//
+// Essential for command attribution in Raft operations, enabling audit trails
+// and distributed operation tracking across the cluster. Used by API handlers
+// to identify which node originated specific operations.
+func (s *Server) GetNodeID() string {
+	if s.serfManager == nil {
+		return "unknown-node"
+	}
+	return s.serfManager.NodeID
+}
