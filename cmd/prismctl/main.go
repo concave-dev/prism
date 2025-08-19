@@ -417,6 +417,11 @@ func (api *PrismAPIClient) GetClusterResources(sortBy string) ([]NodeResources, 
 
 	req := api.client.R().SetResult(&response)
 	if sortBy != "" && sortBy != "uptime" {
+		// Validate sort parameter and warn for invalid options
+		validSorts := map[string]bool{"name": true, "score": true, "uptime": true}
+		if !validSorts[sortBy] {
+			logging.Warn("Invalid sort parameter '%s', defaulting to 'uptime'. Valid options: uptime, name, score", sortBy)
+		}
 		req.SetQueryParam("sort", sortBy)
 	}
 	resp, err := req.Get("/cluster/resources")
