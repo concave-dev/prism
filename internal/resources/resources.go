@@ -86,6 +86,9 @@ type NodeResources struct {
 	MaxJobs        int `json:"maxJobs"`        // Maximum concurrent jobs this node can handle
 	CurrentJobs    int `json:"currentJobs"`    // Currently running jobs
 	AvailableSlots int `json:"availableSlots"` // Available job slots
+
+	// Resource Score (for intelligent scheduling and ranking)
+	Score float64 `json:"score"` // Composite resource score for workload placement decisions
 }
 
 // GatherSystemResources collects comprehensive resource information for a cluster node
@@ -207,9 +210,12 @@ func GatherSystemResources(nodeID, nodeName string, startTime time.Time) *NodeRe
 		AvailableSlots: 10, // TODO: Calculate based on current load
 	}
 
-	logging.Debug("Gathered resources for node %s: CPU=%.1f%%, Memory=%dMB (%.1f%%), Disk=%dMB (%.1f%%), Load=%.2f, Goroutines=%d",
+	// Calculate composite resource score for intelligent scheduling decisions
+	resources.Score = CalculateNodeScore(resources)
+
+	logging.Debug("Gathered resources for node %s: CPU=%.1f%%, Memory=%dMB (%.1f%%), Disk=%dMB (%.1f%%), Load=%.2f, Score=%.1f, Goroutines=%d",
 		nodeID, resources.CPUUsage, resources.MemoryTotal/(1024*1024), resources.MemoryUsage,
-		resources.DiskTotal/(1024*1024), resources.DiskUsage, resources.Load1, resources.GoRoutines)
+		resources.DiskTotal/(1024*1024), resources.DiskUsage, resources.Load1, resources.Score, resources.GoRoutines)
 
 	return resources
 }
@@ -239,4 +245,76 @@ func NodeResourcesFromJSON(data []byte) (*NodeResources, error) {
 		return nil, err
 	}
 	return &resources, nil
+}
+
+// CalculateNodeScore computes a composite resource score for intelligent workload
+// placement and node ranking decisions. Higher scores indicate nodes with more
+// available resources and better capacity for handling additional workloads.
+//
+// SCORING ALGORITHM:
+// The score combines multiple resource dimensions with weighted importance:
+//   - Available CPU (30%): Higher available CPU percentage increases score
+//   - Available Memory (40%): Available memory has highest weight for AI workloads
+//   - Available Disk (20%): Sufficient storage for artifacts and temporary files
+//   - Load Average (10%): Lower system load indicates better responsiveness
+//
+// Score ranges from 0.0 (fully utilized/unavailable) to 100.0 (maximum capacity).
+// This enables intelligent scheduling by prioritizing nodes with optimal resource
+// availability for AI agent workloads and distributed orchestration tasks.
+func CalculateNodeScore(resources *NodeResources) float64 {
+	if resources == nil {
+		return 0.0
+	}
+
+	// CPU Score: Based on available CPU percentage (0-100)
+	// Weight: 30% - CPU availability is important for compute-intensive AI workloads
+	cpuScore := resources.CPUAvailable * 0.30
+
+	// Memory Score: Based on available memory percentage (0-100)
+	// Weight: 40% - Memory is critical for AI models and agent runtime environments
+	var memoryScore float64
+	if resources.MemoryTotal > 0 {
+		memoryAvailablePercent := (float64(resources.MemoryAvailable) /
+			float64(resources.MemoryTotal)) * 100.0
+		memoryScore = memoryAvailablePercent * 0.40
+	}
+
+	// Disk Score: Based on available disk space percentage (0-100)
+	// Weight: 20% - Storage needed for artifacts, models, and temporary files
+	var diskScore float64
+	if resources.DiskTotal > 0 {
+		diskAvailablePercent := (float64(resources.DiskAvailable) /
+			float64(resources.DiskTotal)) * 100.0
+		diskScore = diskAvailablePercent * 0.20
+	}
+
+	// Load Score: Inverse of normalized load average (lower load = higher score)
+	// Weight: 10% - System responsiveness indicator for real-time agent operations
+	var loadScore float64
+	if resources.CPUCores > 0 {
+		// Normalize load1 by CPU cores (load of 1.0 per core is fully utilized)
+		normalizedLoad := resources.Load1 / float64(resources.CPUCores)
+		// Convert to availability score (1.0 load = 0% availability, 0.0 load = 100%)
+		loadAvailability := (1.0 - normalizedLoad) * 100.0
+		if loadAvailability < 0 {
+			loadAvailability = 0 // Handle overloaded systems
+		}
+		if loadAvailability > 100 {
+			loadAvailability = 100 // Cap at maximum availability
+		}
+		loadScore = loadAvailability * 0.10
+	}
+
+	// Combine all scores into final composite score
+	finalScore := cpuScore + memoryScore + diskScore + loadScore
+
+	// Ensure score stays within valid range [0.0, 100.0]
+	if finalScore < 0.0 {
+		finalScore = 0.0
+	}
+	if finalScore > 100.0 {
+		finalScore = 100.0
+	}
+
+	return finalScore
 }
