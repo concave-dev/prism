@@ -41,7 +41,7 @@ func init() {
 	// Setup node command flags
 	nodeLsCmd, nodeTopCmd, nodeInfoCmd := commands.GetNodeCommands()
 	commands.SetupNodeFlags(nodeLsCmd, nodeTopCmd, nodeInfoCmd,
-		&config.Node.Watch, &config.Node.StatusFilter, &config.Node.Verbose)
+		&config.Node.Watch, &config.Node.StatusFilter, &config.Node.Verbose, &config.Node.Sort)
 
 	// Setup command handlers
 	setupCommandHandlers()
@@ -169,6 +169,9 @@ type NodeResources struct {
 	DiskTotalMB       int `json:"diskTotalMB"`
 	DiskUsedMB        int `json:"diskUsedMB"`
 	DiskAvailableMB   int `json:"diskAvailableMB"`
+
+	// Resource Score
+	Score float64 `json:"score"`
 }
 
 // NodeHealth represents node health information from the API
@@ -408,13 +411,15 @@ func (api *PrismAPIClient) GetRaftPeers() (*RaftPeersResponse, error) {
 	return nil, fmt.Errorf("unexpected response format for raft peers")
 }
 
-// GetClusterResources fetches cluster resources from the API
-func (api *PrismAPIClient) GetClusterResources() ([]NodeResources, error) {
+// GetClusterResources fetches cluster resources from the API with optional sorting
+func (api *PrismAPIClient) GetClusterResources(sortBy string) ([]NodeResources, error) {
 	var response APIResponse
 
-	resp, err := api.client.R().
-		SetResult(&response).
-		Get("/cluster/resources")
+	req := api.client.R().SetResult(&response)
+	if sortBy != "" && sortBy != "uptime" {
+		req.SetQueryParam("sort", sortBy)
+	}
+	resp, err := req.Get("/cluster/resources")
 
 	if err != nil {
 		logging.Error("Failed to connect to API server: %v", err)
@@ -465,6 +470,9 @@ func (api *PrismAPIClient) GetClusterResources() ([]NodeResources, error) {
 					DiskTotalMB:       utils.GetInt(resourceMap, "diskTotalMB"),
 					DiskUsedMB:        utils.GetInt(resourceMap, "diskUsedMB"),
 					DiskAvailableMB:   utils.GetInt(resourceMap, "diskAvailableMB"),
+
+					// Resource Score
+					Score: utils.GetFloat(resourceMap, "score"),
 				}
 				resources = append(resources, resource)
 			}
@@ -761,7 +769,7 @@ func handleNodeTop(cmd *cobra.Command, args []string) error {
 
 		// Create API client and get cluster resources
 		apiClient := createAPIClient()
-		resources, err := apiClient.GetClusterResources()
+		resources, err := apiClient.GetClusterResources(config.Node.Sort)
 		if err != nil {
 			return err
 		}
@@ -991,10 +999,7 @@ func displayClusterResourcesFromAPI(resources []NodeResources) {
 		return
 	}
 
-	// Sort resources by node name for consistent output
-	sort.Slice(resources, func(i, j int) bool {
-		return resources[i].NodeName < resources[j].NodeName
-	})
+	// Note: Resources are already sorted by the API based on the sort query parameter
 
 	if config.Global.Output == "json" {
 		// JSON output
@@ -1009,44 +1014,89 @@ func displayClusterResourcesFromAPI(resources []NodeResources) {
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 		defer w.Flush()
 
-		// Header
-		if config.Node.Verbose {
-			fmt.Fprintln(w, "ID\tNAME\tCPU\tMEMORY\tDISK\tJOBS\tUPTIME\tGOROUTINES")
+		// Header - show SCORE column when sorting by score
+		if config.Node.Sort == "score" {
+			if config.Node.Verbose {
+				fmt.Fprintln(w, "SCORE\tID\tNAME\tCPU\tMEMORY\tDISK\tJOBS\tUPTIME\tGOROUTINES")
+			} else {
+				fmt.Fprintln(w, "SCORE\tID\tNAME\tCPU\tMEMORY\tDISK\tJOBS\tUPTIME")
+			}
 		} else {
-			fmt.Fprintln(w, "ID\tNAME\tCPU\tMEMORY\tDISK\tJOBS\tUPTIME")
+			if config.Node.Verbose {
+				fmt.Fprintln(w, "ID\tNAME\tCPU\tMEMORY\tDISK\tJOBS\tUPTIME\tGOROUTINES")
+			} else {
+				fmt.Fprintln(w, "ID\tNAME\tCPU\tMEMORY\tDISK\tJOBS\tUPTIME")
+			}
 		}
 
 		// Display each node's resources
 		for _, resource := range resources {
-			memoryWithPercent := fmt.Sprintf("%s/%s (%.1f%%)",
-				humanize.IBytes(uint64(resource.MemoryUsedMB)*1024*1024),
-				humanize.IBytes(uint64(resource.MemoryTotalMB)*1024*1024),
-				resource.MemoryUsage)
-			diskWithPercent := fmt.Sprintf("%s/%s (%.1f%%)",
-				humanize.IBytes(uint64(resource.DiskUsedMB)*1024*1024),
-				humanize.IBytes(uint64(resource.DiskTotalMB)*1024*1024),
-				resource.DiskUsage)
+			var memoryDisplay, diskDisplay string
+			if config.Node.Verbose {
+				memoryDisplay = fmt.Sprintf("%s/%s (%.1f%%)",
+					humanize.IBytes(uint64(resource.MemoryUsedMB)*1024*1024),
+					humanize.IBytes(uint64(resource.MemoryTotalMB)*1024*1024),
+					resource.MemoryUsage)
+				diskDisplay = fmt.Sprintf("%s/%s (%.1f%%)",
+					humanize.IBytes(uint64(resource.DiskUsedMB)*1024*1024),
+					humanize.IBytes(uint64(resource.DiskTotalMB)*1024*1024),
+					resource.DiskUsage)
+			} else {
+				memoryDisplay = fmt.Sprintf("%s/%s",
+					humanize.IBytes(uint64(resource.MemoryUsedMB)*1024*1024),
+					humanize.IBytes(uint64(resource.MemoryTotalMB)*1024*1024))
+				diskDisplay = fmt.Sprintf("%s/%s",
+					humanize.IBytes(uint64(resource.DiskUsedMB)*1024*1024),
+					humanize.IBytes(uint64(resource.DiskTotalMB)*1024*1024))
+			}
 			jobs := fmt.Sprintf("%d/%d", resource.CurrentJobs, resource.MaxJobs)
 
-			if config.Node.Verbose {
-				fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%s\t%d\n",
-					resource.NodeID,
-					resource.NodeName,
-					resource.CPUCores,
-					memoryWithPercent,
-					diskWithPercent,
-					jobs,
-					resource.Uptime,
-					resource.GoRoutines)
+			if config.Node.Sort == "score" {
+				// Show score column when sorting by score
+				if config.Node.Verbose {
+					fmt.Fprintf(w, "%.1f\t%s\t%s\t%d\t%s\t%s\t%s\t%s\t%d\n",
+						resource.Score,
+						resource.NodeID[:12],
+						resource.NodeName,
+						resource.CPUCores,
+						memoryDisplay,
+						diskDisplay,
+						jobs,
+						resource.Uptime,
+						resource.GoRoutines)
+				} else {
+					fmt.Fprintf(w, "%.1f\t%s\t%s\t%d\t%s\t%s\t%s\t%s\n",
+						resource.Score,
+						resource.NodeID[:12],
+						resource.NodeName,
+						resource.CPUCores,
+						memoryDisplay,
+						diskDisplay,
+						jobs,
+						resource.Uptime)
+				}
 			} else {
-				fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%s\n",
-					resource.NodeID,
-					resource.NodeName,
-					resource.CPUCores,
-					memoryWithPercent,
-					diskWithPercent,
-					jobs,
-					resource.Uptime)
+				// Normal display without score column
+				if config.Node.Verbose {
+					fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%s\t%d\n",
+						resource.NodeID[:12],
+						resource.NodeName,
+						resource.CPUCores,
+						memoryDisplay,
+						diskDisplay,
+						jobs,
+						resource.Uptime,
+						resource.GoRoutines)
+				} else {
+					fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%s\n",
+						resource.NodeID[:12],
+						resource.NodeName,
+						resource.CPUCores,
+						memoryDisplay,
+						diskDisplay,
+						jobs,
+						resource.Uptime)
+				}
 			}
 		}
 	}
