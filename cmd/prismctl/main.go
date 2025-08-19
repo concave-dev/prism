@@ -1338,6 +1338,32 @@ func (api *PrismAPIClient) GetAgents() ([]Agent, error) {
 	return response.Agents, nil
 }
 
+// GetAgent fetches a specific agent by ID from the API
+func (api *PrismAPIClient) GetAgent(agentID string) (*Agent, error) {
+	var agent Agent
+
+	resp, err := api.client.R().
+		SetResult(&agent).
+		Get(fmt.Sprintf("/agents/%s", agentID))
+
+	if err != nil {
+		logging.Error("Failed to connect to API server: %v", err)
+		logging.Error("Make sure a Prism daemon with API server is running at %s", api.baseURL)
+		return nil, fmt.Errorf("connection failed")
+	}
+
+	if resp.StatusCode() == 404 {
+		return nil, fmt.Errorf("agent not found: %s", agentID)
+	}
+
+	if resp.StatusCode() != 200 {
+		logging.Error("API request failed with status %d: %s", resp.StatusCode(), resp.String())
+		return nil, fmt.Errorf("API request failed")
+	}
+
+	return &agent, nil
+}
+
 // CreateAgent creates a new agent via the API
 func (api *PrismAPIClient) CreateAgent(name, agentType string, metadata map[string]string) (*AgentCreateResponse, error) {
 	var response AgentCreateResponse
@@ -1536,10 +1562,79 @@ func handleAgentList(cmd *cobra.Command, args []string) error {
 func handleAgentInfo(cmd *cobra.Command, args []string) error {
 	utils.SetupLogging()
 
-	// TODO: Implement agent info logic
-	// This will call the /api/v1/agents/{id} GET endpoint
-	logging.Info("Agent info command - implementation pending")
-	return fmt.Errorf("agent info command not yet implemented")
+	if len(args) < 1 {
+		return fmt.Errorf("agent identifier (ID or name) required")
+	}
+	agentIdentifier := args[0]
+
+	// Create API client
+	apiClient := createAPIClient()
+
+	// Try to get agent directly by ID first
+	agent, err := apiClient.GetAgent(agentIdentifier)
+	if err != nil {
+		// If direct lookup fails, try to resolve by name
+		if strings.Contains(err.Error(), "agent not found") {
+			agent, err = resolveAgentByName(apiClient, agentIdentifier)
+			if err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+	}
+
+	logging.Info("Retrieved info for agent '%s' (%s) from API server: %s", agent.Name, agent.ID, config.Global.APIAddr)
+
+	// Display agent info based on output format
+	if config.Global.Output == "json" {
+		// JSON output
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		if err := encoder.Encode(agent); err != nil {
+			return fmt.Errorf("failed to encode JSON: %w", err)
+		}
+	} else {
+		// Table output
+		displayAgentInfo(agent)
+	}
+
+	logging.Success("Successfully retrieved info for agent '%s' (%s)", agent.Name, agent.ID)
+	return nil
+}
+
+// resolveAgentByName attempts to find an agent by name when direct ID lookup fails
+func resolveAgentByName(apiClient *PrismAPIClient, agentName string) (*Agent, error) {
+	agents, err := apiClient.GetAgents()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, agent := range agents {
+		if agent.Name == agentName {
+			return &agent, nil
+		}
+	}
+
+	return nil, fmt.Errorf("agent not found: %s (searched by both ID and name)", agentName)
+}
+
+// displayAgentInfo displays agent information in table format
+func displayAgentInfo(agent *Agent) {
+	fmt.Printf("Agent Information:\n")
+	fmt.Printf("  ID:      %s\n", agent.ID)
+	fmt.Printf("  Name:    %s\n", agent.Name)
+	fmt.Printf("  Type:    %s\n", agent.Type)
+	fmt.Printf("  Status:  %s\n", agent.Status)
+	fmt.Printf("  Created: %s\n", agent.Created.Format("2006-01-02 15:04:05 MST"))
+	fmt.Printf("  Updated: %s\n", agent.Updated.Format("2006-01-02 15:04:05 MST"))
+
+	if len(agent.Metadata) > 0 {
+		fmt.Printf("  Metadata:\n")
+		for key, value := range agent.Metadata {
+			fmt.Printf("    %s: %s\n", key, value)
+		}
+	}
 }
 
 // handleAgentDelete handles the agent delete subcommand
