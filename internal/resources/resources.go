@@ -261,6 +261,10 @@ func NodeResourcesFromJSON(data []byte) (*NodeResources, error) {
 // Score ranges from 0.0 (fully utilized/unavailable) to 100.0 (maximum capacity).
 // This enables intelligent scheduling by prioritizing nodes with optimal resource
 // availability for AI agent workloads and distributed orchestration tasks.
+//
+// Note: If the system load average exceeds the number of CPU cores, the load availability
+// score becomes negative and is capped at 0 to handle overloaded systems. This ensures
+// that nodes under heavy load do not receive artificially high scores.
 func CalculateNodeScore(resources *NodeResources) float64 {
 	if resources == nil {
 		return 0.0
@@ -296,8 +300,10 @@ func CalculateNodeScore(resources *NodeResources) float64 {
 		normalizedLoad := resources.Load1 / float64(resources.CPUCores)
 		// Convert to availability score (1.0 load = 0% availability, 0.0 load = 100%)
 		loadAvailability := (1.0 - normalizedLoad) * 100.0
+		// When load exceeds CPU cores (overloaded system), availability becomes negative.
+		// Cap at 0 to ensure overloaded nodes don't get placement priority.
 		if loadAvailability < 0 {
-			loadAvailability = 0 // Handle overloaded systems
+			loadAvailability = 0 // Handle overloaded systems (load > CPU cores)
 		}
 		if loadAvailability > 100 {
 			loadAvailability = 100 // Cap at maximum availability
