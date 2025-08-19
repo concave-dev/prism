@@ -1052,19 +1052,11 @@ func displayClusterResourcesFromAPI(resources []NodeResources) {
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 		defer w.Flush()
 
-		// Header - show SCORE column when sorting by score
-		if config.Node.Sort == "score" {
-			if config.Node.Verbose {
-				fmt.Fprintln(w, "SCORE\tID\tNAME\tCPU\tMEMORY\tDISK\tJOBS\tUPTIME\tGOROUTINES")
-			} else {
-				fmt.Fprintln(w, "SCORE\tID\tNAME\tCPU\tMEMORY\tDISK\tJOBS\tUPTIME")
-			}
+		// Header - always show SCORE column for consistent UX
+		if config.Node.Verbose {
+			fmt.Fprintln(w, "ID\tNAME\tCPU\tMEMORY\tDISK\tJOBS\tSCORE\tUPTIME\tGOROUTINES")
 		} else {
-			if config.Node.Verbose {
-				fmt.Fprintln(w, "ID\tNAME\tCPU\tMEMORY\tDISK\tJOBS\tUPTIME\tGOROUTINES")
-			} else {
-				fmt.Fprintln(w, "ID\tNAME\tCPU\tMEMORY\tDISK\tJOBS\tUPTIME")
-			}
+			fmt.Fprintln(w, "ID\tNAME\tCPU\tMEMORY\tDISK\tJOBS\tSCORE\tUPTIME")
 		}
 
 		// Display each node's resources
@@ -1089,52 +1081,28 @@ func displayClusterResourcesFromAPI(resources []NodeResources) {
 			}
 			jobs := fmt.Sprintf("%d/%d", resource.CurrentJobs, resource.MaxJobs)
 
-			if config.Node.Sort == "score" {
-				// Show score column when sorting by score
-				if config.Node.Verbose {
-					fmt.Fprintf(w, "%.1f\t%s\t%s\t%d\t%s\t%s\t%s\t%s\t%d\n",
-						resource.Score,
-						resource.NodeID[:12],
-						resource.NodeName,
-						resource.CPUCores,
-						memoryDisplay,
-						diskDisplay,
-						jobs,
-						resource.Uptime,
-						resource.GoRoutines)
-				} else {
-					fmt.Fprintf(w, "%.1f\t%s\t%s\t%d\t%s\t%s\t%s\t%s\n",
-						resource.Score,
-						resource.NodeID[:12],
-						resource.NodeName,
-						resource.CPUCores,
-						memoryDisplay,
-						diskDisplay,
-						jobs,
-						resource.Uptime)
-				}
+			// Always show score column for consistent UX
+			if config.Node.Verbose {
+				fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%.1f\t%s\t%d\n",
+					resource.NodeID[:12],
+					resource.NodeName,
+					resource.CPUCores,
+					memoryDisplay,
+					diskDisplay,
+					jobs,
+					resource.Score,
+					resource.Uptime,
+					resource.GoRoutines)
 			} else {
-				// Normal display without score column
-				if config.Node.Verbose {
-					fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%s\t%d\n",
-						resource.NodeID[:12],
-						resource.NodeName,
-						resource.CPUCores,
-						memoryDisplay,
-						diskDisplay,
-						jobs,
-						resource.Uptime,
-						resource.GoRoutines)
-				} else {
-					fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%s\n",
-						resource.NodeID[:12],
-						resource.NodeName,
-						resource.CPUCores,
-						memoryDisplay,
-						diskDisplay,
-						jobs,
-						resource.Uptime)
-				}
+				fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%.1f\t%s\n",
+					resource.NodeID[:12],
+					resource.NodeName,
+					resource.CPUCores,
+					memoryDisplay,
+					diskDisplay,
+					jobs,
+					resource.Score,
+					resource.Uptime)
 			}
 		}
 	}
