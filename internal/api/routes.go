@@ -21,6 +21,7 @@
 package api
 
 import (
+	"github.com/concave-dev/prism/internal/api/handlers"
 	"github.com/gin-gonic/gin"
 )
 
@@ -60,5 +61,16 @@ func (s *Server) setupRoutes(router *gin.Engine) {
 		nodes.GET("/:id", s.handleNodeByID)
 		nodes.GET("/:id/resources", s.handleNodeResources)
 		nodes.GET("/:id/health", s.handleNodeHealth)
+	}
+
+	// Agent lifecycle management endpoints
+	agents := v1.Group("/agents")
+	{
+		agentMgr := s.GetAgentManager()
+		agents.POST("", handlers.CreateAgent(agentMgr))
+		agents.GET("", handlers.ListAgents(agentMgr))
+		agents.GET("/:id", handlers.GetAgent(agentMgr))
+		agents.PUT("/:id", handlers.UpdateAgent(agentMgr))
+		agents.DELETE("/:id", handlers.DeleteAgent(agentMgr))
 	}
 }
