@@ -193,17 +193,17 @@ func HandleClusterResources(clientPool *grpc.ClientPool, serfManager *serf.SerfM
 			})
 		case "uptime":
 			sort.Slice(resList, func(i, j int) bool {
-				// Parse uptime strings and sort by duration (longest uptime first)
+				// Parse uptime strings and sort by duration (shortest uptime first - newest nodes)
 				uptimeA := parseUptimeString(resList[i].Uptime)
 				uptimeB := parseUptimeString(resList[j].Uptime)
-				return uptimeA > uptimeB
+				return uptimeA < uptimeB
 			})
 		default:
 			// Default to uptime sorting for unknown sort parameters
 			sort.Slice(resList, func(i, j int) bool {
 				uptimeA := parseUptimeString(resList[i].Uptime)
 				uptimeB := parseUptimeString(resList[j].Uptime)
-				return uptimeA > uptimeB
+				return uptimeA < uptimeB
 			})
 		}
 
