@@ -1494,9 +1494,6 @@ func setupAgentFlags(createCmd, lsCmd, infoCmd, deleteCmd *cobra.Command) {
 	lsCmd.Flags().BoolVar(&config.Agent.Watch, "watch", false, "Watch for live updates")
 	lsCmd.Flags().StringVar(&config.Agent.StatusFilter, "status", "", "Filter by status")
 	lsCmd.Flags().StringVar(&config.Agent.TypeFilter, "type", "", "Filter by type")
-
-	// Agent delete flags
-	deleteCmd.Flags().BoolVar(&config.Agent.Force, "force", false, "Force delete without confirmation")
 }
 
 // ============================================================================
@@ -1581,18 +1578,54 @@ func handleAgentInfo(cmd *cobra.Command, args []string) error {
 func handleAgentDelete(cmd *cobra.Command, args []string) error {
 	utils.SetupLogging()
 
-	agentID := args[0]
-	logging.Info("Deleting agent '%s' from API server: %s", agentID, config.Global.APIAddr)
+	agentIdentifier := args[0]
 
-	// Create API client and delete agent
+	// Create API client
 	apiClient := createAPIClient()
-	if err := apiClient.DeleteAgent(agentID); err != nil {
+
+	// Get all agents to resolve name to ID if needed
+	agents, err := apiClient.GetAgents()
+	if err != nil {
 		return err
 	}
 
-	fmt.Printf("Agent '%s' deleted successfully\n", agentID)
-	logging.Success("Successfully deleted agent '%s'", agentID)
+	// Resolve agent identifier (could be ID or name)
+	resolvedAgentID, agentName, err := resolveAgentIdentifier(agents, agentIdentifier)
+	if err != nil {
+		return err
+	}
+
+	logging.Info("Deleting agent '%s' (%s) from API server: %s", agentName, resolvedAgentID, config.Global.APIAddr)
+
+	// Delete agent using resolved ID
+	if err := apiClient.DeleteAgent(resolvedAgentID); err != nil {
+		return err
+	}
+
+	fmt.Printf("Agent '%s' (%s) deleted successfully\n", agentName, resolvedAgentID)
+	logging.Success("Successfully deleted agent '%s' (%s)", agentName, resolvedAgentID)
 	return nil
+}
+
+// resolveAgentIdentifier resolves an agent identifier (ID or name) to the actual agent ID
+// Returns the resolved ID, agent name, and any error
+// Only supports exact matches for safety - no partial ID matching for destructive operations
+func resolveAgentIdentifier(agents []Agent, identifier string) (string, string, error) {
+	// First try exact ID match
+	for _, agent := range agents {
+		if agent.ID == identifier {
+			return agent.ID, agent.Name, nil
+		}
+	}
+
+	// Then try exact name match
+	for _, agent := range agents {
+		if agent.Name == identifier {
+			return agent.ID, agent.Name, nil
+		}
+	}
+
+	return "", "", fmt.Errorf("agent '%s' not found (use exact ID or name for deletion)", identifier)
 }
 
 // main is the main entry point

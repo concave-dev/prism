@@ -105,20 +105,19 @@ Provides comprehensive agent details for monitoring and troubleshooting.`,
 
 // Agent delete command
 var agentDeleteCmd = &cobra.Command{
-	Use:   "delete AGENT_ID",
+	Use:   "delete AGENT_ID_OR_NAME",
 	Short: "Delete an agent from the cluster",
 	Long: `Delete an agent from the Prism cluster.
 
 Removes the agent and cleans up all associated state including placement
-history and resource tracking. This operation cannot be undone.`,
-	Example: `  # Delete an agent
+history and resource tracking. This operation cannot be undone.
+
+You can specify either the agent ID or agent name.`,
+	Example: `  # Delete by agent ID
   prismctl agent delete a1b2c3d4e5f6
 
-  # Delete with confirmation prompt
-  prismctl agent delete a1b2c3d4e5f6 --confirm
-
-  # Force delete without confirmation
-  prismctl agent delete a1b2c3d4e5f6 --force`,
+  # Delete by agent name
+  prismctl agent delete my-agent-name`,
 	Args: cobra.ExactArgs(1),
 	// RunE will be set by the main package that imports this
 }
