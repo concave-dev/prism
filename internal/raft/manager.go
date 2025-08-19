@@ -238,7 +238,6 @@ func (m *RaftManager) Start() error {
 		m.StartStateLogging()
 	}
 
-	// TODO: Add periodic status monitoring
 	// TODO: Implement automatic peer discovery via Serf integration
 
 	logging.Info("Raft manager started successfully")
@@ -450,7 +449,7 @@ func (m *RaftManager) computeEligibleBootstrapPeers(serfMembers map[string]*serf
 		}
 	}
 
-	// Sort for stable hashing (order-independent)
+	// Sort to ensure deterministic ordering for consistent hashing across nodes
 	if len(eligibleIDs) > 1 {
 		slices.Sort(eligibleIDs)
 	}
