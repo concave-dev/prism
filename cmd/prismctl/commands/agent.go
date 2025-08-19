@@ -103,26 +103,6 @@ Provides comprehensive agent details for monitoring and troubleshooting.`,
 	// RunE will be set by the main package that imports this
 }
 
-// Agent update command
-var agentUpdateCmd = &cobra.Command{
-	Use:   "update AGENT_ID [flags]",
-	Short: "Update an existing agent",
-	Long: `Update an existing agent's status, placement, or metadata.
-
-Allows modification of agent state for lifecycle management and operational
-updates across the distributed cluster.`,
-	Example: `  # Update agent status
-  prismctl agent update a1b2c3d4e5f6 --status=running
-
-  # Update agent metadata
-  prismctl agent update a1b2c3d4e5f6 --metadata=phase=production,version=2.0
-
-  # Update multiple fields
-  prismctl agent update a1b2c3d4e5f6 --status=completed --metadata=result=success`,
-	Args: cobra.ExactArgs(1),
-	// RunE will be set by the main package that imports this
-}
-
 // Agent delete command
 var agentDeleteCmd = &cobra.Command{
 	Use:   "delete AGENT_ID",
@@ -148,11 +128,10 @@ func SetupAgentCommands() {
 	agentCmd.AddCommand(agentCreateCmd)
 	agentCmd.AddCommand(agentLsCmd)
 	agentCmd.AddCommand(agentInfoCmd)
-	agentCmd.AddCommand(agentUpdateCmd)
 	agentCmd.AddCommand(agentDeleteCmd)
 }
 
 // GetAgentCommands returns the agent command structures for handler assignment
-func GetAgentCommands() (*cobra.Command, *cobra.Command, *cobra.Command, *cobra.Command, *cobra.Command) {
-	return agentCreateCmd, agentLsCmd, agentInfoCmd, agentUpdateCmd, agentDeleteCmd
+func GetAgentCommands() (*cobra.Command, *cobra.Command, *cobra.Command, *cobra.Command) {
+	return agentCreateCmd, agentLsCmd, agentInfoCmd, agentDeleteCmd
 }

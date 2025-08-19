@@ -45,8 +45,8 @@ func init() {
 		&config.Node.Watch, &config.Node.StatusFilter, &config.Node.Verbose, &config.Node.Sort)
 
 	// Setup agent command flags
-	agentCreateCmd, agentLsCmd, agentInfoCmd, agentUpdateCmd, agentDeleteCmd := commands.GetAgentCommands()
-	setupAgentFlags(agentCreateCmd, agentLsCmd, agentInfoCmd, agentUpdateCmd, agentDeleteCmd)
+	agentCreateCmd, agentLsCmd, agentInfoCmd, agentDeleteCmd := commands.GetAgentCommands()
+	setupAgentFlags(agentCreateCmd, agentLsCmd, agentInfoCmd, agentDeleteCmd)
 
 	// Setup command handlers
 	setupCommandHandlers()
@@ -58,7 +58,7 @@ func setupCommandHandlers() {
 	nodeLsCmd, nodeTopCmd, nodeInfoCmd := commands.GetNodeCommands()
 	peerLsCmd, peerInfoCmd := commands.GetPeerCommands()
 	infoCmd := commands.GetInfoCommand()
-	agentCreateCmd, agentLsCmd, agentInfoCmd, agentUpdateCmd, agentDeleteCmd := commands.GetAgentCommands()
+	agentCreateCmd, agentLsCmd, agentInfoCmd, agentDeleteCmd := commands.GetAgentCommands()
 
 	// Assign handlers
 	nodeLsCmd.RunE = handleMembers
@@ -70,7 +70,6 @@ func setupCommandHandlers() {
 	agentCreateCmd.RunE = handleAgentCreate
 	agentLsCmd.RunE = handleAgentList
 	agentInfoCmd.RunE = handleAgentInfo
-	agentUpdateCmd.RunE = handleAgentUpdate
 	agentDeleteCmd.RunE = handleAgentDelete
 }
 
@@ -1457,7 +1456,7 @@ func displayAgents(agents []Agent) {
 }
 
 // setupAgentFlags configures flags for agent commands
-func setupAgentFlags(createCmd, lsCmd, infoCmd, updateCmd, deleteCmd *cobra.Command) {
+func setupAgentFlags(createCmd, lsCmd, infoCmd, deleteCmd *cobra.Command) {
 	// Agent create flags
 	createCmd.Flags().StringVar(&config.Agent.Name, "name", "", "Agent name (auto-generated if not provided)")
 	createCmd.Flags().StringVar(&config.Agent.Type, "type", "task", "Agent type: task or service")
@@ -1547,16 +1546,6 @@ func handleAgentInfo(cmd *cobra.Command, args []string) error {
 	// This will call the /api/v1/agents/{id} GET endpoint
 	logging.Info("Agent info command - implementation pending")
 	return fmt.Errorf("agent info command not yet implemented")
-}
-
-// handleAgentUpdate handles the agent update subcommand
-func handleAgentUpdate(cmd *cobra.Command, args []string) error {
-	utils.SetupLogging()
-
-	// TODO: Implement agent update logic
-	// This will call the /api/v1/agents/{id} PUT endpoint
-	logging.Info("Agent update command - implementation pending")
-	return fmt.Errorf("agent update command not yet implemented")
 }
 
 // handleAgentDelete handles the agent delete subcommand

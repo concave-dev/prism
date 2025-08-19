@@ -71,7 +71,7 @@ func (s *Server) setupRoutes(router *gin.Engine) {
 		agents.POST("", handlers.CreateAgent(agentMgr, nodeID))
 		agents.GET("", handlers.ListAgents(agentMgr))
 		agents.GET("/:id", handlers.GetAgent(agentMgr))
-		agents.PUT("/:id", handlers.UpdateAgent(agentMgr, nodeID))
 		agents.DELETE("/:id", handlers.DeleteAgent(agentMgr, nodeID))
+		// TODO: Add update endpoint when placement logic is implemented
 	}
 }
