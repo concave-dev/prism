@@ -83,6 +83,9 @@ message GetResourcesResponse {
   int32 max_jobs = 24;           // Maximum concurrent AI agent jobs
   int32 current_jobs = 25;       // Currently running AI agent jobs
   int32 available_slots = 26;    // Available job slots (max_jobs - current_jobs)
+  
+  // Resource Score for Intelligent Scheduling
+  double score = 27;             // Composite resource score for workload placement (0.0-100.0)
 }
 
 // GetHealthRequest allows selective execution of specific health checks.
