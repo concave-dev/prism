@@ -39,6 +39,11 @@ func init() {
 	agentCreateCmd, agentLsCmd, agentInfoCmd, agentDeleteCmd := commands.GetAgentCommands()
 	setupAgentFlags(agentCreateCmd, agentLsCmd, agentInfoCmd, agentDeleteCmd)
 
+	// Setup peer command flags
+	peerLsCmd, peerInfoCmd := commands.GetPeerCommands()
+	commands.SetupPeerFlags(peerLsCmd, peerInfoCmd,
+		&config.Peer.Watch, &config.Peer.StatusFilter, &config.Peer.RoleFilter)
+
 	// Setup command handlers
 	setupCommandHandlers()
 }

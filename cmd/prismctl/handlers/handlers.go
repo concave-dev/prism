@@ -23,8 +23,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/concave-dev/prism/cmd/prismctl/client"
 	"github.com/concave-dev/prism/cmd/prismctl/config"
@@ -38,49 +38,34 @@ import (
 func HandlePeerList(cmd *cobra.Command, args []string) error {
 	utils.SetupLogging()
 
-	apiClient := client.CreateAPIClient()
-	resp, err := apiClient.GetRaftPeers()
-	if err != nil {
-		return err
-	}
+	fetchAndDisplayPeers := func() error {
+		logging.Info("Fetching Raft peers from API server: %s", config.Global.APIAddr)
 
-	if config.Global.Output == "json" {
-		encoder := json.NewEncoder(os.Stdout)
-		encoder.SetIndent("", "  ")
-		return encoder.Encode(resp)
-	}
+		// Create API client and get peers
+		apiClient := client.CreateAPIClient()
+		resp, err := apiClient.GetRaftPeers()
+		if err != nil {
+			return err
+		}
 
-	// table output
-	if len(resp.Peers) == 0 {
-		fmt.Println("No Raft peers found")
+		// Apply filters and sorting
+		filtered := filterPeers(resp.Peers, resp.Leader)
+		sorted := sortPeers(filtered, resp.Leader)
+
+		// Create response with filtered/sorted peers
+		filteredResp := &client.RaftPeersResponse{
+			Leader: resp.Leader,
+			Peers:  sorted,
+		}
+
+		display.DisplayRaftPeers(filteredResp)
+		if !config.Peer.Watch {
+			logging.Success("Successfully retrieved %d Raft peers (%d after filtering)", len(resp.Peers), len(sorted))
+		}
 		return nil
 	}
 
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	defer w.Flush()
-
-	// Header - show NAME column only in verbose mode, but always show LEADER
-	if config.Global.Verbose {
-		fmt.Fprintln(w, "ID\tNAME\tADDRESS\tREACHABLE\tLEADER")
-	} else {
-		fmt.Fprintln(w, "ID\tADDRESS\tREACHABLE\tLEADER")
-	}
-
-	for _, p := range resp.Peers {
-		name := p.Name
-		leader := "false"
-		if resp.Leader == p.ID {
-			name = p.Name + "*"
-			leader = "true"
-		}
-
-		if config.Global.Verbose {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%t\t%s\n", p.ID, name, p.Address, p.Reachable, leader)
-		} else {
-			fmt.Fprintf(w, "%s\t%s\t%t\t%s\n", p.ID, p.Address, p.Reachable, leader)
-		}
-	}
-	return nil
+	return utils.RunWithWatch(fetchAndDisplayPeers, config.Peer.Watch)
 }
 
 // HandlePeerInfo handles peer info command
@@ -552,4 +537,52 @@ func filterAgents(agents []client.Agent) []client.Agent {
 		filtered = append(filtered, a)
 	}
 	return filtered
+}
+
+// filterPeers applies reachability and role filters to peers
+func filterPeers(peers []client.RaftPeer, leader string) []client.RaftPeer {
+	if config.Peer.StatusFilter == "" && config.Peer.RoleFilter == "" {
+		return peers
+	}
+
+	var filtered []client.RaftPeer
+	for _, peer := range peers {
+		// Filter by reachability status
+		if config.Peer.StatusFilter == "reachable" && !peer.Reachable {
+			continue
+		}
+		if config.Peer.StatusFilter == "unreachable" && peer.Reachable {
+			continue
+		}
+
+		// Filter by role
+		isLeader := (leader == peer.ID)
+		if config.Peer.RoleFilter == "leader" && !isLeader {
+			continue
+		}
+		if config.Peer.RoleFilter == "follower" && isLeader {
+			continue
+		}
+
+		filtered = append(filtered, peer)
+	}
+	return filtered
+}
+
+// sortPeers sorts peers by name for consistent output
+func sortPeers(peers []client.RaftPeer, leader string) []client.RaftPeer {
+	if len(peers) == 0 {
+		return peers
+	}
+
+	// Make a copy to avoid modifying the original slice
+	sorted := make([]client.RaftPeer, len(peers))
+	copy(sorted, peers)
+
+	// Always sort by name for consistent output
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].Name < sorted[j].Name
+	})
+
+	return sorted
 }

@@ -482,3 +482,52 @@ func DisplayAgentInfo(agent *client.Agent) {
 		}
 	}
 }
+
+// DisplayRaftPeers displays Raft peers in table or JSON format with enhanced formatting
+func DisplayRaftPeers(resp *client.RaftPeersResponse) {
+	if len(resp.Peers) == 0 {
+		if config.Global.Output == "json" {
+			fmt.Println("[]")
+		} else {
+			fmt.Println("No Raft peers found")
+		}
+		return
+	}
+
+	if config.Global.Output == "json" {
+		// JSON output
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		if err := encoder.Encode(resp); err != nil {
+			logging.Error("Failed to encode JSON: %v", err)
+			fmt.Println("Error encoding JSON output")
+		}
+	} else {
+		// Table output
+		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+		defer w.Flush()
+
+		// Header - show NAME column only in verbose mode, but always show LEADER
+		if config.Global.Verbose {
+			fmt.Fprintln(w, "ID\tNAME\tADDRESS\tREACHABLE\tLEADER")
+		} else {
+			fmt.Fprintln(w, "ID\tADDRESS\tREACHABLE\tLEADER")
+		}
+
+		// Display each peer
+		for _, p := range resp.Peers {
+			name := p.Name
+			leader := "false"
+			if resp.Leader == p.ID {
+				name = p.Name + "*"
+				leader = "true"
+			}
+
+			if config.Global.Verbose {
+				fmt.Fprintf(w, "%s\t%s\t%s\t%t\t%s\n", p.ID, name, p.Address, p.Reachable, leader)
+			} else {
+				fmt.Fprintf(w, "%s\t%s\t%t\t%s\n", p.ID, p.Address, p.Reachable, leader)
+			}
+		}
+	}
+}

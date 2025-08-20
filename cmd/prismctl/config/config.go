@@ -38,3 +38,10 @@ var Agent struct {
 	Force        bool     // Force operations without confirmation
 	Output       string   // Output format: table, json
 }
+
+// Peer holds the peer command configuration
+var Peer struct {
+	Watch        bool   // Enable watch mode for live updates
+	StatusFilter string // Filter peers by reachability (reachable, unreachable)
+	RoleFilter   string // Filter peers by role (leader, follower)
+}
