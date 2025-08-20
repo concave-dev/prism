@@ -2,14 +2,13 @@
 //
 // This file implements agent lifecycle management commands for the distributed
 // AI orchestration platform. Provides CLI interfaces for creating, listing,
-// updating, and deleting agents across the Prism cluster through REST API calls.
+// and deleting agents across the Prism cluster through REST API calls.
 //
 // AGENT COMMAND STRUCTURE:
 // The agent commands follow the resource-based hierarchy pattern:
-//   - agent create: Create new agents with type and resource specifications
+//   - agent create: Create new agents with kind specifications
 //   - agent ls: List all agents with filtering and status information
 //   - agent info: Get detailed information about specific agents
-//   - agent update: Update agent status, placement, and metadata
 //   - agent delete: Remove agents from the cluster
 //
 // All commands integrate with the cluster's REST API endpoints and provide
@@ -42,17 +41,17 @@ var agentCreateCmd = &cobra.Command{
 Agents can be either tasks (short-lived workloads) or services (long-running
 workloads). The agent will be scheduled on the best available node based on
 resource scoring and capacity.`,
-	Example: `  # Create a task agent (default type)
+	Example: `  # Create a task agent (default kind)
   prismctl agent create --name=my-task
 
   # Create a service agent
-  prismctl agent create --name=my-service --type=service
+  prismctl agent create --name=my-service --kind=service
 
-  # Create with metadata
-  prismctl agent create --name=my-agent --type=task --metadata=env=prod,version=1.0
+  # Create an agent with metadata
+  prismctl agent create --name=my-agent --metadata=env=prod --metadata=team=ai
 
-  # Create with resource requirements
-  prismctl agent create --name=my-agent --cpu=2.0 --memory=1024 --disk=500`,
+  # Create an agent with multiple metadata pairs
+  prismctl agent create --name=my-agent --metadata=env=prod --metadata=team=ai --metadata=version=1.0`,
 	Args: cobra.NoArgs,
 	// RunE will be set by the main package that imports this
 }
@@ -63,22 +62,25 @@ var agentLsCmd = &cobra.Command{
 	Short: "List all agents in the cluster",
 	Long: `List all agents in the Prism cluster.
 
-Shows agent status, type, placement information, and operational metadata
-for monitoring and management purposes.`,
-	Example: `  # List all agents
+Shows agent status, kind, and placement information for monitoring 
+and management purposes.`,
+	Example: `  # List all agents (sorted by creation time, newest first - default)
   prismctl agent ls
+
+  # List agents sorted by name
+  prismctl agent ls --sort=name
 
   # List agents with live updates
   prismctl agent ls --watch
 
-  # Filter agents by type
-  prismctl agent ls --type=service
+  # Filter agents by kind
+  prismctl agent ls --kind=service
 
   # Filter agents by status
   prismctl agent ls --status=running
 
   # Show detailed output
-  prismctl agent ls --verbose`,
+  prismctl --verbose agent ls`,
 	Args: cobra.NoArgs,
 	// RunE will be set by the main package that imports this
 }
@@ -88,14 +90,11 @@ var agentInfoCmd = &cobra.Command{
 	Use:   "info AGENT_ID",
 	Short: "Get detailed information about a specific agent",
 	Long: `Get detailed information about a specific agent including placement
-history, resource usage, and operational metadata.
+history and resource usage.
 
 Provides comprehensive agent details for monitoring and troubleshooting.`,
 	Example: `  # Get agent details
   prismctl agent info a1b2c3d4e5f6
-
-  # Get agent details with placement history
-  prismctl agent info a1b2c3d4e5f6 --history
 
   # Output as JSON
   prismctl agent info a1b2c3d4e5f6 --output=json`,

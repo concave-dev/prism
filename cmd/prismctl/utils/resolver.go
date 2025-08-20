@@ -20,6 +20,12 @@ type PeerLike interface {
 	GetName() string
 }
 
+// AgentLike represents anything with ID and Name for agent resolution
+type AgentLike interface {
+	GetID() string
+	GetName() string
+}
+
 // ResolveNodeIdentifierFromMembers resolves a node identifier from existing members list
 // This avoids duplicate API calls when members are already available
 func ResolveNodeIdentifierFromMembers(members []MemberLike, identifier string) (string, error) {
@@ -89,6 +95,42 @@ func ResolvePeerIdentifierFromPeers(peers []PeerLike, identifier string) (string
 
 	// No partial match found, return original identifier
 	// (will be handled by the API as either full ID or peer name)
+	return identifier, nil
+}
+
+// ResolveAgentIdentifierFromAgents resolves an agent identifier from existing agents list
+// This avoids duplicate API calls when agents are already available
+func ResolveAgentIdentifierFromAgents(agents []AgentLike, identifier string) (string, error) {
+	// Check for partial ID matches (only for identifiers that look like hex and have valid length)
+	if IsHexString(identifier) && IsValidPartialIDLength(identifier) {
+		var matches []AgentLike
+		for _, agent := range agents {
+			if strings.HasPrefix(agent.GetID(), identifier) {
+				matches = append(matches, agent)
+			}
+		}
+
+		if len(matches) == 1 {
+			// Unique partial match found
+			logging.Info("Resolved partial ID '%s' to full ID '%s' (agent: %s)",
+				identifier, matches[0].GetID(), matches[0].GetName())
+			return matches[0].GetID(), nil
+		} else if len(matches) > 1 {
+			// Multiple matches - not unique
+			var matchIDs []string
+			for _, match := range matches {
+				matchIDs = append(matchIDs, fmt.Sprintf("%s (%s)", match.GetID(), match.GetName()))
+			}
+			logging.Error("Partial ID '%s' is not unique, matches multiple agents:", identifier)
+			for _, matchID := range matchIDs {
+				logging.Error("  %s", matchID)
+			}
+			return "", fmt.Errorf("partial ID not unique")
+		}
+	}
+
+	// No partial match found, return original identifier
+	// (will be handled by the API as either full ID or agent name)
 	return identifier, nil
 }
 

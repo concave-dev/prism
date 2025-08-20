@@ -69,7 +69,7 @@ including CPU cores, memory usage, job capacity, and runtime statistics.`,
   prismctl node top --status=alive
 
   # Show verbose output including goroutines
-  prismctl node top --verbose
+  prismctl --verbose node top
 
   # Show resource overview from specific API server
   prismctl --api=192.168.1.100:8008 node top
@@ -95,7 +95,7 @@ for a single node specified by name or ID.`,
   prismctl node info abc123def456
 
   # Show verbose output including runtime and health checks
-  prismctl node info node1 --verbose
+  prismctl --verbose node info node1
 
   # Show info from specific API server
   prismctl --api=192.168.1.100:8008 node info node1
@@ -127,7 +127,7 @@ func GetNodeCommands() (*cobra.Command, *cobra.Command, *cobra.Command) {
 
 // SetupNodeFlags configures flags for node commands
 func SetupNodeFlags(nodeLsCmd, nodeTopCmd, nodeInfoCmd *cobra.Command,
-	watchPtr *bool, statusFilterPtr *string, verbosePtr *bool, sortPtr *string) {
+	watchPtr *bool, statusFilterPtr *string, sortPtr *string) {
 	// Add flags to node ls command
 	nodeLsCmd.Flags().BoolVarP(watchPtr, "watch", "w", false,
 		"Watch for changes and continuously update the display")
@@ -139,12 +139,9 @@ func SetupNodeFlags(nodeLsCmd, nodeTopCmd, nodeInfoCmd *cobra.Command,
 		"Watch for changes and continuously update the display")
 	nodeTopCmd.Flags().StringVar(statusFilterPtr, "status", "",
 		"Filter nodes by status (alive, failed, left)")
-	nodeTopCmd.Flags().BoolVarP(verbosePtr, "verbose", "v", false,
-		"Show verbose output including goroutines")
 	nodeTopCmd.Flags().StringVar(sortPtr, "sort", "uptime",
 		"Sort nodes by: uptime, name, score")
 
-	// Add flags to node info command
-	nodeInfoCmd.Flags().BoolVarP(verbosePtr, "verbose", "v", false,
-		"Show verbose output including runtime and health checks")
+	// Note: verbose flag is now handled globally via --verbose/-v
+	// No node-specific verbose flags to avoid ambiguity
 }

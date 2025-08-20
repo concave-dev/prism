@@ -70,12 +70,12 @@ func ParseBindAddress(addr string) (*NetworkAddress, error) {
 
 	host, portStr, err := net.SplitHostPort(addr)
 	if err != nil {
-		return nil, fmt.Errorf("invalid address format '%s': %w", addr, err)
+		return nil, fmt.Errorf("invalid address format for '%s' - expected host:port", addr)
 	}
 
 	port, err := strconv.Atoi(portStr)
 	if err != nil {
-		return nil, fmt.Errorf("invalid port '%s': %w", portStr, err)
+		return nil, fmt.Errorf("invalid port '%s' - must be a number: %w", portStr, err)
 	}
 
 	netAddr := &NetworkAddress{

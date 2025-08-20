@@ -15,6 +15,7 @@
 //   - Mythology: Legendary references for memorable identification in large clusters
 //   - Technology/Computing: Technical terms aligned with the orchestration domain
 //   - Elements/Minerals: Scientific nomenclature for systematic node classification
+//   - Optical/Photographic: Visual and photographic terms for clarity-focused naming
 //
 // NAME GENERATION STRATEGY:
 // Uses secure random selection for unpredictable name patterns. Implements collision
@@ -25,7 +26,7 @@
 // and administrative interfaces. The human-readable format reduces operational overhead
 // by enabling intuitive node recognition compared to UUID-based identification systems.
 //
-// Examples: "cosmic-dragon", "quantum-nebula", "divine-titanium", "neural-phoenix"
+// Examples: "cosmic-dragon", "quantum-nebula", "divine-titanium", "neural-phoenix", "focused-lens", "prismatic-ray"
 
 package names
 
@@ -44,8 +45,8 @@ var adjectives = []string{
 	"cool", "compassionate", "competent", "confident",
 	"cranky", "crazy", "dazzling", "determined", "distracted",
 	"dreamy", "eager", "ecstatic", "elastic", "elated",
-	"elegant", "eloquent", "epic", "exciting", "fervent",
-	"festive", "flamboyant", "focused", "friendly", "frosty",
+	"elegant", "eloquent", "exciting", "fervent",
+	"festive", "flamboyant", "friendly", "frosty",
 	"funny", "gallant", "gifted", "goofy", "gracious",
 	"great", "happy", "hardcore", "heuristic", "hopeful",
 	"hungry", "infallible", "inspiring", "intelligent",
@@ -55,7 +56,7 @@ var adjectives = []string{
 	"nostalgic", "objective", "optimistic", "peaceful", "pedantic",
 	"pensive", "practical", "priceless", "quirky", "quizzical",
 	"recursing", "relaxed", "reverent", "romantic",
-	"serene", "sharp", "silly", "sleepy", "stoic",
+	"serene", "silly", "sleepy", "stoic",
 	"strange", "stupefied", "suspicious", "sweet", "tender",
 	"thirsty", "trusting", "unruffled", "upbeat", "vibrant",
 	"vigilant", "vigorous", "wizardly", "wonderful", "xenodochial",
@@ -64,13 +65,13 @@ var adjectives = []string{
 	// Space/Astronomical adjectives
 	"cosmic", "stellar", "galactic", "lunar", "solar",
 	"nebular", "orbital", "celestial", "astral", "interstellar",
-	"supernova", "radiant", "luminous", "infinite", "dark",
-	"void", "plasma", "magnetic", "gravitational", "binary",
+	"supernova", "radiant", "infinite", "dark",
+	"void", "gravitational",
 
 	// Mythology adjectives
 	"divine", "mythic", "legendary", "heroic", "ancient",
 	"immortal", "eternal", "sacred", "mystical", "arcane",
-	"epic", "fabled", "blessed", "cursed", "prophetic",
+	"fabled", "blessed", "cursed", "prophetic",
 	"titanesque", "olympian", "nordic", "runic", "ethereal",
 
 	// Tech/Computing adjectives
@@ -81,9 +82,32 @@ var adjectives = []string{
 
 	// Elements/Minerals adjectives
 	"crystalline", "metallic", "precious", "rare", "pure",
-	"refined", "alloy", "composite", "molecular", "atomic",
+	"refined", "alloy", "composite", "molecular",
 	"radioactive", "stable", "reactive", "inert", "conductive",
 	"magnetic", "transparent", "opaque", "lustrous", "malleable",
+
+	// Optical/Photographic adjectives
+	"focused", "refracted", "reflected", "prismatic", "luminous",
+	"brilliant", "clear", "wide", "telephoto",
+	"macro", "panoramic", "filtered", "exposed", "developed",
+	"chromatic", "monochrome", "saturated", "vivid", "crisp",
+	"aberrant", "achromatic", "aspheric", "birefringent", "collimated",
+	"coherent", "convergent", "divergent", "diffused", "dispersive",
+	"fluorescent", "holographic", "infrared", "interferometric", "iridescent",
+	"isotropic", "laser", "magnified", "microscopic", "mirrored",
+	"optical", "orthoscopic", "parabolic", "photonic", "polarized",
+	"refractive", "spherical", "spectral", "telescopic", "ultraviolet",
+	"wavelength", "zoomed", "calibrated", "corrected",
+	"anamorphic", "anastigmatic", "antireflective", "apochromatic", "axial",
+	"catoptric", "catadioptric", "dioptric", "elliptical", "gaussian",
+	"hyperbolic", "immersive", "interferential", "multispectral", "nonlinear",
+	"optoelectronic", "photorefractive", "planar", "radial", "spheroidal",
+	"telecentric", "toric", "varifocal", "vignetting", "wavefront",
+	"aspherical", "coaxial", "compound", "concentric", "confocal",
+	"conjugate", "dispersed", "distorted", "equiconvex", "equiconcave",
+	"gradient", "homogeneous", "immersion", "infinity", "marginal",
+	"meniscoid", "paraxial", "peripheral", "principal", "sagittal",
+	"tangential", "thick", "thin", "tilted", "zonal",
 }
 
 // Nouns from multiple themes for name generation
@@ -127,7 +151,7 @@ var nouns = []string{
 	"cosmos", "void", "plasma", "photon", "neutron",
 	"orbit", "eclipse", "constellation", "andromeda", "milkyway",
 	"venus", "mars", "jupiter", "saturn", "uranus",
-	"neptune", "pluto", "apollo", "hubble", "voyager",
+	"neptune", "pluto", "hubble", "voyager",
 
 	// Mythology creatures and objects
 	"titan", "phoenix", "dragon", "griffin", "kraken",
@@ -142,7 +166,7 @@ var nouns = []string{
 	"circuit", "processor", "matrix", "vector", "algorithm",
 	"protocol", "framework", "kernel", "daemon", "thread",
 	"pipeline", "buffer", "cache", "registry", "compiler",
-	"parser", "scanner", "lexer", "debugger", "profiler",
+	"parser", "lexer", "debugger", "profiler",
 	"database", "server", "client", "proxy", "gateway",
 	"router", "firewall", "cluster", "node", "pod",
 	"container", "microservice", "api", "endpoint", "webhook",
@@ -155,6 +179,34 @@ var nouns = []string{
 	"gold", "mercury", "lead", "uranium", "plutonium",
 	"crystal", "quartz", "ruby", "emerald", "sapphire",
 	"topaz", "amethyst", "garnet", "jade", "opal",
+
+	// Optical/Photographic equipment and concepts
+	"canvas", "convex", "concave", "lens", "ray", "light",
+	"prism", "mirror", "filter", "shutter", "aperture",
+	"viewfinder", "sensor", "flash", "tripod",
+	"focus", "exposure", "frame", "image", "pixel",
+	"spectrum", "refraction", "reflection", "diffraction", "polarizer",
+	"aberration", "achromat", "adapter", "amplifier", "analyzer",
+	"beam", "binocular", "camera", "condenser",
+	"dichroic", "diode", "eyepiece", "fiber", "grating",
+	"hologram", "illuminator", "interferometer", "laser", "loupe",
+	"magnifier", "microscope", "monochromator", "objective", "ocular",
+	"periscope", "photocell", "photodiode", "photometer", "projector",
+	"rangefinder", "reflector", "retina", "scanner", "scope",
+	"spectrometer", "splitter", "telescope", "viewer", "wavelength",
+	"beamsplitter", "collimation", "detector", "emitter",
+	"goniometer", "interferogram", "kaleidoscope", "luminescence", "monocle",
+	"optic", "resonator",
+	"scintillator", "spectrograph", "stereoscope", "telecentric", "ultrascope",
+	"videoscope", "waveguide", "xenon",
+	"anamorphic", "biconvex", "biconcave", "cylindrical", "doublet",
+	"fisheye", "fresnel", "meniscus", "planoconvex", "planoconcave",
+	"telephoto", "triplet", "varifocal", "wideangle", "zeiss",
+	"astigmat", "chromat", "compensator", "corrector",
+	"curvature", "diopter", "element", "field",
+	"focal", "gradient", "index", "medium", "nodal",
+	"optics", "power", "pupil", "radius", "surface",
+	"thickness", "transmission", "vertex", "zone", "spheroid",
 }
 
 // Generate creates a random Docker-style name in "adjective-noun" format from

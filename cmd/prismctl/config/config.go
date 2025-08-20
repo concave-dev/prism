@@ -23,23 +23,25 @@ var Global struct {
 var Node struct {
 	Watch        bool   // Enable watch mode for live updates
 	StatusFilter string // Filter nodes by status (alive, failed, left)
-	Verbose      bool   // Show verbose output including goroutines
 	Sort         string // Sort nodes by: uptime, name, score
 }
 
 // Agent holds the agent command configuration
 var Agent struct {
-	Name         string            // Agent name for creation
-	Type         string            // Agent type: task or service (default: task)
-	Metadata     map[string]string // Agent metadata key-value pairs
-	CPUCores     float64           // Required CPU cores
-	MemoryMB     int64             // Required memory in MB
-	DiskMB       int64             // Required disk space in MB
-	NetworkMbps  int               // Required network bandwidth
-	Watch        bool              // Enable watch mode for live updates
-	StatusFilter string            // Filter agents by status
-	TypeFilter   string            // Filter agents by type
-	Verbose      bool              // Show verbose output
-	Force        bool              // Force operations without confirmation
-	Output       string            // Output format: table, json
+	Name         string   // Agent name for creation
+	Kind         string   // Agent kind: task or service (default: task)
+	Metadata     []string // Agent metadata as key=value pairs
+	Watch        bool     // Enable watch mode for live updates
+	StatusFilter string   // Filter agents by status
+	KindFilter   string   // Filter agents by kind
+	Sort         string   // Sort agents by: created, name (default: created)
+	Force        bool     // Force operations without confirmation
+	Output       string   // Output format: table, json
+}
+
+// Peer holds the peer command configuration
+var Peer struct {
+	Watch        bool   // Enable watch mode for live updates
+	StatusFilter string // Filter peers by reachability (reachable, unreachable)
+	RoleFilter   string // Filter peers by role (leader, follower)
 }
