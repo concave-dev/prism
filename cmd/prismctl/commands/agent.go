@@ -58,8 +58,11 @@ var agentLsCmd = &cobra.Command{
 
 Shows agent status, type, and placement information for monitoring 
 and management purposes.`,
-	Example: `  # List all agents
+	Example: `  # List all agents (sorted by creation time, newest first - default)
   prismctl agent ls
+
+  # List agents sorted by name
+  prismctl agent ls --sort=name
 
   # List agents with live updates
   prismctl agent ls --watch

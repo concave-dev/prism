@@ -424,10 +424,21 @@ func DisplayAgents(agents []client.Agent) {
 		return
 	}
 
-	// Sort agents by name for consistent output
-	sort.Slice(agents, func(i, j int) bool {
-		return agents[i].Name < agents[j].Name
-	})
+	// Sort agents based on configured sort option
+	switch config.Agent.Sort {
+	case "created":
+		// Sort by creation time (newest first)
+		sort.Slice(agents, func(i, j int) bool {
+			return agents[i].Created.After(agents[j].Created)
+		})
+	case "name":
+		fallthrough
+	default:
+		// Sort by name (default)
+		sort.Slice(agents, func(i, j int) bool {
+			return agents[i].Name < agents[j].Name
+		})
+	}
 
 	if config.Global.Output == "json" {
 		// JSON output
