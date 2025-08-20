@@ -4,7 +4,7 @@ Distributed runtime platform for AI agents and workflows.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://github.com/user-attachments/assets/3ee44401-f613-431d-811b-510b0f3c5b14">
-  <source media="(prefers-color-scheme: light)" srcset="https://github.com/user-attachments/assets/1964ca37-21ee-41cf-a7dc-9744ab82178d">
+  <source media="(prefers-color-scheme: light)" srcset="https://github.com/user-attachments/assets/1b42b694-eb66-4c6e-bf21-bbd2a22f23ab">
   <img alt="prismd screenshot" src="https://github.com/user-attachments/assets/3ee44401-f613-431d-811b-510b0f3c5b14">
 </picture>
 
