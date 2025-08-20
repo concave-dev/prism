@@ -6,7 +6,7 @@
 // could cause cluster formation failures or communication breakdowns.
 //
 // VALIDATION FEATURES:
-//   - IP Address: IPv4 and IPv6 format validation
+//   - IP Address: IPv4 format validation (IPv6 not currently supported)
 //   - Port Range: Valid port numbers (0-65535)
 //   - Address Lists: Multiple addresses for cluster joining
 //   - Format: Proper "host:port" address formatting
@@ -83,9 +83,26 @@ func ParseBindAddress(addr string) (*NetworkAddress, error) {
 		Port: port,
 	}
 
-	// Validate using struct tags
+	// Validate using struct tags with user-friendly error messages
 	if err := validate.Struct(netAddr); err != nil {
-		return nil, fmt.Errorf("validation failed: %w", err)
+		// Convert validation errors to user-friendly messages
+		if validationErrors, ok := err.(validator.ValidationErrors); ok {
+			for _, fieldErr := range validationErrors {
+				switch fieldErr.Tag() {
+				case "ip":
+					return nil, fmt.Errorf("invalid IP address '%s' - must be a valid IPv4 address (e.g., 192.168.1.1 or 127.0.0.1)", fieldErr.Value())
+				case "min":
+					return nil, fmt.Errorf("port %d is too low - must be between 0 and 65535", fieldErr.Value())
+				case "max":
+					return nil, fmt.Errorf("port %d is too high - must be between 0 and 65535", fieldErr.Value())
+				case "required":
+					return nil, fmt.Errorf("missing required field: %s", fieldErr.Field())
+				default:
+					return nil, fmt.Errorf("invalid %s: %v", fieldErr.Field(), fieldErr.Value())
+				}
+			}
+		}
+		return nil, fmt.Errorf("address validation failed: %w", err)
 	}
 
 	return netAddr, nil

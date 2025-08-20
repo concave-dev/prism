@@ -385,6 +385,15 @@ func Run() error {
 
 	logging.Info("Starting HTTP API server with pre-bound listener on %s", apiListener.Addr().String())
 
+	// Warn about localhost binding breaking leader forwarding in multi-node clusters
+	if config.Global.APIAddr == "127.0.0.1" || config.Global.APIAddr == "localhost" {
+		logging.Warn("API server bound to localhost (%s) - leader forwarding will not work in multi-node clusters", config.Global.APIAddr)
+		logging.Warn("Write requests to non-leader nodes will fail. Workarounds:")
+		logging.Warn("  1. Use cluster-wide binding: --api=0.0.0.0:8008 (recommended)")
+		logging.Warn("  2. Connect directly to leader node's API")
+		logging.Warn("  3. Future versions will use gRPC for internal request routing")
+	}
+
 	// Create and start HTTP API server with pre-bound listener
 	var apiServer *api.Server
 
