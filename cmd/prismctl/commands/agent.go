@@ -45,7 +45,13 @@ resource scoring and capacity.`,
   prismctl agent create --name=my-task
 
   # Create a service agent
-  prismctl agent create --name=my-service --type=service`,
+  prismctl agent create --name=my-service --type=service
+
+  # Create an agent with metadata
+  prismctl agent create --name=my-agent --metadata=env=prod --metadata=team=ai
+
+  # Create an agent with multiple metadata pairs
+  prismctl agent create --name=my-agent --metadata=env=prod --metadata=team=ai --metadata=version=1.0`,
 	Args: cobra.NoArgs,
 	// RunE will be set by the main package that imports this
 }

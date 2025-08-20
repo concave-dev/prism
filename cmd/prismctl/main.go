@@ -69,6 +69,7 @@ func setupAgentFlags(createCmd, lsCmd, infoCmd, deleteCmd *cobra.Command) {
 	// Agent create flags
 	createCmd.Flags().StringVar(&config.Agent.Name, "name", "", "Agent name (auto-generated if not provided)")
 	createCmd.Flags().StringVar(&config.Agent.Type, "type", "task", "Agent type: task or service")
+	createCmd.Flags().StringSliceVar(&config.Agent.Metadata, "metadata", nil, "Agent metadata (key=value format)")
 
 	// Agent list flags
 	lsCmd.Flags().BoolVarP(&config.Agent.Watch, "watch", "w", false, "Watch for live updates")

@@ -304,9 +304,19 @@ func HandleAgentCreate(cmd *cobra.Command, args []string) error {
 			agentName, config.Agent.Type, config.Global.APIAddr)
 	}
 
+	// Parse metadata from string slice to map
+	metadata := make(map[string]string)
+	for _, item := range config.Agent.Metadata {
+		parts := strings.SplitN(item, "=", 2)
+		if len(parts) != 2 {
+			return fmt.Errorf("invalid metadata format '%s', expected key=value", item)
+		}
+		metadata[parts[0]] = parts[1]
+	}
+
 	// Create API client and create agent
 	apiClient := client.CreateAPIClient()
-	response, err := apiClient.CreateAgent(agentName, config.Agent.Type, nil)
+	response, err := apiClient.CreateAgent(agentName, config.Agent.Type, metadata)
 	if err != nil {
 		return err
 	}
