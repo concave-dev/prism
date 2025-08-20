@@ -1488,6 +1488,9 @@ func setupAgentFlags(createCmd, lsCmd, infoCmd, deleteCmd *cobra.Command) {
 	lsCmd.Flags().BoolVar(&config.Agent.Watch, "watch", false, "Watch for live updates")
 	lsCmd.Flags().StringVar(&config.Agent.StatusFilter, "status", "", "Filter by status")
 	lsCmd.Flags().StringVar(&config.Agent.TypeFilter, "type", "", "Filter by type")
+
+	// Agent info and delete commands use global flags only for now
+	// infoCmd and deleteCmd parameters reserved for future flag additions
 }
 
 // ============================================================================

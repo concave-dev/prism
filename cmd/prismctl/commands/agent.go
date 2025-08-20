@@ -94,9 +94,6 @@ Provides comprehensive agent details for monitoring and troubleshooting.`,
 	Example: `  # Get agent details
   prismctl agent info a1b2c3d4e5f6
 
-  # Get agent details with placement history
-  prismctl agent info a1b2c3d4e5f6 --history
-
   # Output as JSON
   prismctl agent info a1b2c3d4e5f6 --output=json`,
 	Args: cobra.ExactArgs(1),
