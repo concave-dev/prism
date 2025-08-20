@@ -147,8 +147,10 @@ func CreateAgent(agentMgr AgentManager, nodeID string) gin.HandlerFunc {
 
 		logging.Info("Agent creation request: name=%s type=%s id=%s", agentName, req.Type, agentID)
 
-		// Leadership check is now handled by the leader forwarding middleware
-		// This handler only executes if we're the leader or forwarding succeeded
+		// Leadership check is now handled by the leader forwarding middleware.
+		// This demonstrates the architectural separation: middleware handles
+		// request routing concerns, while handlers focus on business logic.
+		// This handler only executes if we're the leader or forwarding succeeded.
 
 		// Create Raft command for agent creation with pre-generated ID and name
 		createCmd := raft.AgentCreateCommand{

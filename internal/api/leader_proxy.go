@@ -45,11 +45,28 @@ const (
 // Provides transparent request routing that allows clients to connect to any node
 // while ensuring write operations are processed by the authoritative leader.
 //
+// ARCHITECTURAL INTEGRATION:
+// LeaderForwarder demonstrates the clean layering pattern used throughout Prism:
+//
+//	HTTP Request → LeaderForwarder → AgentManager → RaftManager
+//
+// The forwarder uses AgentManager interface rather than directly accessing
+// RaftManager, maintaining proper separation of concerns and enabling future
+// extensibility where different resource types (agents, MCP, memory, storage)
+// can each have their own manager following the same pattern.
+//
+// FORWARDING STRATEGY:
+// 1. Check leadership via AgentManager.IsLeader()
+// 2. Get leader ID via AgentManager.Leader()
+// 3. Resolve leader ID to network address via SerfMembershipProvider
+// 4. Forward HTTP request to leader's API endpoint
+// 5. Stream response back to client transparently
+//
 // Essential for distributed consistency as it maintains the Raft requirement that
 // only leaders process write operations while providing seamless client experience.
 type LeaderForwarder struct {
-	agentManager AgentManager           // Interface to check leadership and get leader address
-	serfManager  SerfMembershipProvider // Interface to resolve node addresses and ports
+	agentManager AgentManager           // Interface to check leadership and get leader ID
+	serfManager  SerfMembershipProvider // Interface to resolve node IDs to network addresses
 	nodeID       string                 // Current node ID for loop prevention
 }
 
