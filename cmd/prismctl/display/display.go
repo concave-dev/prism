@@ -132,6 +132,8 @@ func DisplayClusterInfoFromAPI(info client.ClusterInfo) {
 		}
 		if info.RaftLeader != "" {
 			fmt.Printf("  Raft Leader: %s\n", info.RaftLeader)
+		} else {
+			fmt.Printf("  Raft Leader: No leader\n")
 		}
 		fmt.Printf("  Total Nodes: %d\n\n", info.Status.TotalNodes)
 
