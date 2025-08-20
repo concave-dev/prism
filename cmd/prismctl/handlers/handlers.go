@@ -114,7 +114,8 @@ func HandlePeerInfo(cmd *cobra.Command, args []string) error {
 	}
 
 	if targetPeer == nil {
-		return fmt.Errorf("peer '%s' not found in Raft configuration (searched by both ID and name)", peerIdentifier)
+		logging.Error("Peer '%s' not found in cluster", peerIdentifier)
+		return fmt.Errorf("peer not found")
 	}
 
 	if config.Global.Output == "json" {
