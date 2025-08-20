@@ -71,7 +71,7 @@ func setupAgentFlags(createCmd, lsCmd, infoCmd, deleteCmd *cobra.Command) {
 	createCmd.Flags().StringVar(&config.Agent.Type, "type", "task", "Agent type: task or service")
 
 	// Agent list flags (for future filtering)
-	lsCmd.Flags().BoolVar(&config.Agent.Watch, "watch", false, "Watch for live updates")
+	lsCmd.Flags().BoolVarP(&config.Agent.Watch, "watch", "w", false, "Watch for live updates")
 	lsCmd.Flags().StringVar(&config.Agent.StatusFilter, "status", "", "Filter by status")
 	lsCmd.Flags().StringVar(&config.Agent.TypeFilter, "type", "", "Filter by type")
 

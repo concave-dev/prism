@@ -335,18 +335,30 @@ func HandleAgentCreate(cmd *cobra.Command, args []string) error {
 func HandleAgentList(cmd *cobra.Command, args []string) error {
 	utils.SetupLogging()
 
-	logging.Info("Fetching agents from API server: %s", config.Global.APIAddr)
+	fetchAndDisplayAgents := func() error {
+		logging.Info("Fetching agents from API server: %s", config.Global.APIAddr)
 
-	// Create API client and get agents
-	apiClient := client.CreateAPIClient()
-	agents, err := apiClient.GetAgents()
-	if err != nil {
-		return err
+		// Create API client and get agents
+		apiClient := client.CreateAPIClient()
+		agents, err := apiClient.GetAgents()
+		if err != nil {
+			return err
+		}
+
+		// Apply filters
+		filtered := filterAgents(agents)
+
+		display.DisplayAgents(filtered)
+		if !config.Agent.Watch {
+			logging.Success(
+				"Successfully retrieved %d agents (%d after filtering)",
+				len(agents), len(filtered),
+			)
+		}
+		return nil
 	}
 
-	display.DisplayAgents(agents)
-	logging.Success("Successfully retrieved %d agents", len(agents))
-	return nil
+	return utils.RunWithWatch(fetchAndDisplayAgents, config.Agent.Watch)
 }
 
 // HandleAgentInfo handles the agent info subcommand
@@ -509,6 +521,25 @@ func filterResources(resources []client.NodeResources, members []client.ClusterM
 		}
 
 		filtered = append(filtered, resource)
+	}
+	return filtered
+}
+
+// filterAgents applies status and type filters to agents
+func filterAgents(agents []client.Agent) []client.Agent {
+	if config.Agent.StatusFilter == "" && config.Agent.TypeFilter == "" {
+		return agents
+	}
+
+	var filtered []client.Agent
+	for _, a := range agents {
+		if config.Agent.StatusFilter != "" && a.Status != config.Agent.StatusFilter {
+			continue
+		}
+		if config.Agent.TypeFilter != "" && a.Type != config.Agent.TypeFilter {
+			continue
+		}
+		filtered = append(filtered, a)
 	}
 	return filtered
 }
