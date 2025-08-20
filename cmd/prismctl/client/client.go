@@ -623,7 +623,8 @@ func (api *PrismAPIClient) GetAgent(agentID string) (*Agent, error) {
 	}
 
 	if resp.StatusCode() == 404 {
-		return nil, fmt.Errorf("agent not found: %s", agentID)
+		logging.Error("Agent '%s' not found in cluster", agentID)
+		return nil, fmt.Errorf("agent not found")
 	}
 
 	if resp.StatusCode() != 200 {

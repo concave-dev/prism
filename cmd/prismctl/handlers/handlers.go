@@ -461,7 +461,7 @@ func resolveAgentByName(apiClient *client.PrismAPIClient, agentName string) (*cl
 		}
 	}
 
-	return nil, fmt.Errorf("agent not found: %s (searched by both ID and name)", agentName)
+	return nil, fmt.Errorf("agent not found")
 }
 
 // resolveAgentIdentifier resolves an agent identifier (ID or name) to the actual agent ID
