@@ -33,7 +33,7 @@ func init() {
 	// Setup node command flags
 	nodeLsCmd, nodeTopCmd, nodeInfoCmd := commands.GetNodeCommands()
 	commands.SetupNodeFlags(nodeLsCmd, nodeTopCmd, nodeInfoCmd,
-		&config.Node.Watch, &config.Node.StatusFilter, &config.Node.Verbose, &config.Node.Sort)
+		&config.Node.Watch, &config.Node.StatusFilter, &config.Node.Sort)
 
 	// Setup agent command flags
 	agentCreateCmd, agentLsCmd, agentInfoCmd, agentDeleteCmd := commands.GetAgentCommands()

@@ -199,7 +199,7 @@ func DisplayClusterResourcesFromAPI(resources []client.NodeResources) {
 		defer w.Flush()
 
 		// Header - always show SCORE column for consistent UX
-		if config.Node.Verbose {
+		if config.Global.Verbose {
 			fmt.Fprintln(w, "ID\tNAME\tCPU\tMEMORY\tDISK\tJOBS\tSCORE\tUPTIME\tGOROUTINES")
 		} else {
 			fmt.Fprintln(w, "ID\tNAME\tCPU\tMEMORY\tDISK\tJOBS\tSCORE\tUPTIME")
@@ -208,7 +208,7 @@ func DisplayClusterResourcesFromAPI(resources []client.NodeResources) {
 		// Display each node's resources
 		for _, resource := range resources {
 			var memoryDisplay, diskDisplay string
-			if config.Node.Verbose {
+			if config.Global.Verbose {
 				memoryDisplay = fmt.Sprintf("%s/%s (%.1f%%)",
 					humanize.IBytes(uint64(resource.MemoryUsedMB)*1024*1024),
 					humanize.IBytes(uint64(resource.MemoryTotalMB)*1024*1024),
@@ -228,7 +228,7 @@ func DisplayClusterResourcesFromAPI(resources []client.NodeResources) {
 			jobs := fmt.Sprintf("%d/%d", resource.CurrentJobs, resource.MaxJobs)
 
 			// Always show score column for consistent UX
-			if config.Node.Verbose {
+			if config.Global.Verbose {
 				fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%.1f\t%s\t%d\n",
 					resource.NodeID[:12],
 					resource.NodeName,
@@ -382,7 +382,7 @@ func DisplayNodeInfo(resource client.NodeResources, isLeader bool, health *clien
 		fmt.Printf("  Available Slots: %d\n", resource.AvailableSlots)
 
 		// Only show Runtime and Health sections in verbose mode
-		if config.Node.Verbose {
+		if config.Global.Verbose {
 			fmt.Println()
 
 			// Runtime Information

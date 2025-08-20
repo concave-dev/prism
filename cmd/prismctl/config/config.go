@@ -23,7 +23,6 @@ var Global struct {
 var Node struct {
 	Watch        bool   // Enable watch mode for live updates
 	StatusFilter string // Filter nodes by status (alive, failed, left)
-	Verbose      bool   // Show verbose output including goroutines
 	Sort         string // Sort nodes by: uptime, name, score
 }
 
