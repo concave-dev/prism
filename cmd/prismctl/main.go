@@ -7,17 +7,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"sort"
 	"strings"
 	"text/tabwriter"
-	"time"
 
 	"github.com/concave-dev/prism/cmd/prismctl/client"
 	"github.com/concave-dev/prism/cmd/prismctl/commands"
 	"github.com/concave-dev/prism/cmd/prismctl/config"
+	"github.com/concave-dev/prism/cmd/prismctl/display"
 	"github.com/concave-dev/prism/cmd/prismctl/utils"
 	"github.com/concave-dev/prism/internal/logging"
-	"github.com/dustin/go-humanize"
 	"github.com/spf13/cobra"
 )
 
@@ -257,7 +255,7 @@ func handleMembers(cmd *cobra.Command, args []string) error {
 		// Apply filters
 		filtered := filterMembers(members)
 
-		displayMembersFromAPI(filtered)
+		display.DisplayMembersFromAPI(filtered)
 		if !config.Node.Watch {
 			logging.Success("Successfully retrieved %d cluster nodes (%d after filtering)", len(members), len(filtered))
 		}
@@ -280,7 +278,7 @@ func handleClusterInfo(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	displayClusterInfoFromAPI(*info)
+	display.DisplayClusterInfoFromAPI(*info)
 	logging.Success("Successfully retrieved cluster information (%d total nodes)", info.Status.TotalNodes)
 	return nil
 }
@@ -308,7 +306,7 @@ func handleNodeTop(cmd *cobra.Command, args []string) error {
 		// Apply filters
 		filtered := filterResources(resources, members)
 
-		displayClusterResourcesFromAPI(filtered)
+		display.DisplayClusterResourcesFromAPI(filtered)
 		if !config.Node.Watch {
 			logging.Success("Successfully retrieved information for %d cluster nodes (%d after filtering)", len(resources), len(filtered))
 		}
@@ -371,430 +369,9 @@ func handleNodeInfo(cmd *cobra.Command, args []string) error {
 		logging.Warn("Failed to fetch node health: %v", err)
 	}
 
-	displayNodeInfo(*resource, isLeader, health, nodeAddress, nodeTags)
+	display.DisplayNodeInfo(*resource, isLeader, health, nodeAddress, nodeTags)
 	logging.Success("Successfully retrieved information for node '%s'", resource.NodeName)
 	return nil
-}
-
-// displayMembersFromAPI displays cluster nodes from API response, annotating the Raft leader
-func displayMembersFromAPI(members []client.ClusterMember) {
-	if len(members) == 0 {
-		if config.Global.Output == "json" {
-			fmt.Println("[]")
-		} else {
-			fmt.Println("No cluster nodes found")
-		}
-		return
-	}
-
-	// Sort members by name for consistent output
-	sort.Slice(members, func(i, j int) bool {
-		return members[i].Name < members[j].Name
-	})
-
-	if config.Global.Output == "json" {
-		// JSON output
-		encoder := json.NewEncoder(os.Stdout)
-		encoder.SetIndent("", "  ")
-		if err := encoder.Encode(members); err != nil {
-			logging.Error("Failed to encode JSON: %v", err)
-			fmt.Println("Error encoding JSON output")
-		}
-	} else {
-		// Table output
-		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		defer w.Flush()
-
-		// Header - show SERF and RAFT columns only in verbose mode
-		if config.Global.Verbose {
-			fmt.Fprintln(w, "ID\tNAME\tADDRESS\tSTATUS\tSERF\tRAFT\tLAST SEEN\tLEADER")
-		} else {
-			fmt.Fprintln(w, "ID\tNAME\tADDRESS\tSTATUS\tLAST SEEN")
-		}
-
-		// Display each member
-		for _, member := range members {
-			lastSeen := utils.FormatDuration(time.Since(member.LastSeen))
-			name := member.Name
-			leader := "false"
-			if member.IsLeader {
-				name = name + "*"
-				leader = "true"
-			}
-
-			if config.Global.Verbose {
-				// Use the new three-state status values directly
-				serfStatus := member.SerfStatus
-				if serfStatus == "" {
-					serfStatus = "unknown" // Fallback for missing data
-				}
-
-				raftStatus := member.RaftStatus
-				if raftStatus == "" {
-					raftStatus = "unknown" // Fallback for missing data
-				}
-
-				// Map display of Serf status to ensure 'left' -> 'dead' for consistency
-				// NOTE: API already maps this, but this also guards older servers
-				serfDisplay := member.SerfStatus
-				if serfDisplay == "left" {
-					serfDisplay = "dead"
-				}
-
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-					member.ID, name, member.Address, member.Status,
-					serfDisplay, raftStatus, lastSeen, leader)
-			} else {
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-					member.ID, name, member.Address, member.Status, lastSeen)
-			}
-		}
-	}
-}
-
-// displayClusterInfoFromAPI displays comprehensive cluster information from API response
-func displayClusterInfoFromAPI(info client.ClusterInfo) {
-	if config.Global.Output == "json" {
-		// JSON output
-		encoder := json.NewEncoder(os.Stdout)
-		encoder.SetIndent("", "  ")
-		if err := encoder.Encode(info); err != nil {
-			logging.Error("Failed to encode JSON: %v", err)
-			fmt.Println("Error encoding JSON output")
-		}
-	} else {
-		// Table output
-		fmt.Printf("Cluster Information:\n")
-		fmt.Printf("  Version:     %s\n", info.Version)
-		if info.ClusterID != "" {
-			fmt.Printf("  Cluster ID:  %s\n", info.ClusterID)
-		}
-		fmt.Printf("  Uptime:      %s\n", utils.FormatDuration(info.Uptime))
-		if !info.StartTime.IsZero() {
-			fmt.Printf("  Started:     %s\n", info.StartTime.Format(time.RFC3339))
-		}
-		if info.RaftLeader != "" {
-			fmt.Printf("  Raft Leader: %s\n", info.RaftLeader)
-		}
-		fmt.Printf("  Total Nodes: %d\n\n", info.Status.TotalNodes)
-
-		fmt.Printf("Nodes by Status:\n")
-		for nodeStatus, count := range info.Status.NodesByStatus {
-			fmt.Printf("  %-12s: %d\n", nodeStatus, count)
-		}
-		fmt.Println()
-
-		// Show detailed member information in verbose mode
-		if config.Global.Verbose && len(info.Members) > 0 {
-			fmt.Printf("Cluster Members:\n")
-			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-			defer w.Flush()
-
-			fmt.Fprintln(w, "ID\tNAME\tADDRESS\tSTATUS\tSERF\tRAFT\tLAST SEEN")
-
-			for _, member := range info.Members {
-				lastSeen := utils.FormatDuration(time.Since(member.LastSeen))
-
-				serfStatus := member.SerfStatus
-				if serfStatus == "" {
-					serfStatus = "unknown"
-				}
-
-				raftStatus := member.RaftStatus
-				if raftStatus == "" {
-					raftStatus = "unknown"
-				}
-
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-					member.ID, member.Name, member.Address, member.Status,
-					serfStatus, raftStatus, lastSeen)
-			}
-		}
-	}
-}
-
-// displayClusterResourcesFromAPI displays cluster node information from API response
-func displayClusterResourcesFromAPI(resources []client.NodeResources) {
-	if len(resources) == 0 {
-		if config.Global.Output == "json" {
-			fmt.Println("[]")
-		} else {
-			fmt.Println("No cluster node information found")
-		}
-		return
-	}
-
-	// Note: Resources are already sorted by the API based on the sort query parameter
-
-	if config.Global.Output == "json" {
-		// JSON output
-		encoder := json.NewEncoder(os.Stdout)
-		encoder.SetIndent("", "  ")
-		if err := encoder.Encode(resources); err != nil {
-			logging.Error("Failed to encode JSON: %v", err)
-			fmt.Println("Error encoding JSON output")
-		}
-	} else {
-		// Table output
-		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		defer w.Flush()
-
-		// Header - always show SCORE column for consistent UX
-		if config.Node.Verbose {
-			fmt.Fprintln(w, "ID\tNAME\tCPU\tMEMORY\tDISK\tJOBS\tSCORE\tUPTIME\tGOROUTINES")
-		} else {
-			fmt.Fprintln(w, "ID\tNAME\tCPU\tMEMORY\tDISK\tJOBS\tSCORE\tUPTIME")
-		}
-
-		// Display each node's resources
-		for _, resource := range resources {
-			var memoryDisplay, diskDisplay string
-			if config.Node.Verbose {
-				memoryDisplay = fmt.Sprintf("%s/%s (%.1f%%)",
-					humanize.IBytes(uint64(resource.MemoryUsedMB)*1024*1024),
-					humanize.IBytes(uint64(resource.MemoryTotalMB)*1024*1024),
-					resource.MemoryUsage)
-				diskDisplay = fmt.Sprintf("%s/%s (%.1f%%)",
-					humanize.IBytes(uint64(resource.DiskUsedMB)*1024*1024),
-					humanize.IBytes(uint64(resource.DiskTotalMB)*1024*1024),
-					resource.DiskUsage)
-			} else {
-				memoryDisplay = fmt.Sprintf("%s/%s",
-					humanize.IBytes(uint64(resource.MemoryUsedMB)*1024*1024),
-					humanize.IBytes(uint64(resource.MemoryTotalMB)*1024*1024))
-				diskDisplay = fmt.Sprintf("%s/%s",
-					humanize.IBytes(uint64(resource.DiskUsedMB)*1024*1024),
-					humanize.IBytes(uint64(resource.DiskTotalMB)*1024*1024))
-			}
-			jobs := fmt.Sprintf("%d/%d", resource.CurrentJobs, resource.MaxJobs)
-
-			// Always show score column for consistent UX
-			if config.Node.Verbose {
-				fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%.1f\t%s\t%d\n",
-					resource.NodeID[:12],
-					resource.NodeName,
-					resource.CPUCores,
-					memoryDisplay,
-					diskDisplay,
-					jobs,
-					resource.Score,
-					resource.Uptime,
-					resource.GoRoutines)
-			} else {
-				fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%.1f\t%s\n",
-					resource.NodeID[:12],
-					resource.NodeName,
-					resource.CPUCores,
-					memoryDisplay,
-					diskDisplay,
-					jobs,
-					resource.Score,
-					resource.Uptime)
-			}
-		}
-	}
-}
-
-// displayNodeInfo displays detailed information for a single node
-// isLeader indicates whether this node is the current Raft leader
-func displayNodeInfo(resource client.NodeResources, isLeader bool, health *client.NodeHealth, address string, tags map[string]string) {
-	if config.Global.Output == "json" {
-		// JSON output
-		obj := map[string]interface{}{
-			"resource": resource,
-			"leader":   isLeader,
-		}
-		if health != nil {
-			obj["health"] = health
-		}
-		if address != "" {
-			obj["address"] = address
-		}
-		if tags != nil {
-			obj["tags"] = tags
-		}
-		encoder := json.NewEncoder(os.Stdout)
-		encoder.SetIndent("", "  ")
-		if err := encoder.Encode(obj); err != nil {
-			logging.Error("Failed to encode JSON: %v", err)
-			fmt.Println("Error encoding JSON output")
-		}
-	} else {
-		// Table output
-		name := resource.NodeName
-		if isLeader {
-			name = name + "*"
-		}
-		fmt.Printf("Node: %s (%s)\n", name, resource.NodeID)
-		fmt.Printf("Leader: %t\n", isLeader)
-		fmt.Printf("Timestamp: %s\n", resource.Timestamp.Format(time.RFC3339))
-		if health != nil {
-			// Count check statuses for detailed health reporting
-			healthyCount := 0
-			unhealthyCount := 0
-			unknownCount := 0
-			totalChecks := len(health.Checks)
-
-			for _, check := range health.Checks {
-				switch strings.ToLower(check.Status) {
-				case "healthy":
-					healthyCount++
-				case "unhealthy":
-					unhealthyCount++
-				case "unknown":
-					unknownCount++
-				}
-			}
-
-			// Display status with check counts
-			status := strings.ToLower(health.Status)
-			if totalChecks > 0 {
-				fmt.Printf("Status: %s (%d/%d)\n", status, healthyCount, totalChecks)
-			} else {
-				fmt.Printf("Status: %s\n", status)
-			}
-		}
-		// Network information (best-effort based on Serf tags)
-		// TODO: Add explicit api_port and serf_port tags in the future for clarity
-		if address != "" || (tags != nil && (tags["raft_port"] != "" || tags["grpc_port"] != "" || tags["api_port"] != "")) {
-			fmt.Println()
-			fmt.Printf("Network:\n")
-			if address != "" {
-				fmt.Printf("  Serf:       %s\n", address)
-			}
-			// Derive host from address if available
-			host := ""
-			if parts := strings.Split(address, ":"); len(parts) == 2 {
-				host = parts[0]
-			}
-			if tags != nil {
-				if rp, ok := tags["raft_port"]; ok && rp != "" {
-					if host != "" {
-						fmt.Printf("  Raft:       %s:%s\n", host, rp)
-					} else {
-						fmt.Printf("  Raft Port:  %s\n", rp)
-					}
-				}
-				if gp, ok := tags["grpc_port"]; ok && gp != "" {
-					if host != "" {
-						fmt.Printf("  gRPC:       %s:%s\n", host, gp)
-					} else {
-						fmt.Printf("  gRPC Port:  %s\n", gp)
-					}
-				}
-				if ap, ok := tags["api_port"]; ok && ap != "" {
-					if host != "" {
-						fmt.Printf("  API:        %s:%s\n", host, ap)
-					} else {
-						fmt.Printf("  API Port:   %s\n", ap)
-					}
-				}
-			}
-		}
-		fmt.Println()
-
-		// CPU Information
-		fmt.Printf("CPU:\n")
-		fmt.Printf("  Cores:     %d\n", resource.CPUCores)
-		fmt.Printf("  Usage:     %.1f%%\n", resource.CPUUsage)
-		fmt.Printf("  Available: %.1f%%\n", resource.CPUAvailable)
-		fmt.Println()
-
-		// Memory Information
-		fmt.Printf("Memory:\n")
-		fmt.Printf("  Total:     %s\n", humanize.IBytes(uint64(resource.MemoryTotalMB)*1024*1024))
-		fmt.Printf("  Used:      %s\n", humanize.IBytes(uint64(resource.MemoryUsedMB)*1024*1024))
-		fmt.Printf("  Available: %s\n", humanize.IBytes(uint64(resource.MemoryAvailableMB)*1024*1024))
-		fmt.Printf("  Usage:     %.1f%%\n", resource.MemoryUsage)
-		fmt.Println()
-
-		// Disk Information
-		fmt.Printf("Disk:\n")
-		fmt.Printf("  Total:     %s\n", humanize.IBytes(uint64(resource.DiskTotalMB)*1024*1024))
-		fmt.Printf("  Used:      %s\n", humanize.IBytes(uint64(resource.DiskUsedMB)*1024*1024))
-		fmt.Printf("  Available: %s\n", humanize.IBytes(uint64(resource.DiskAvailableMB)*1024*1024))
-		fmt.Printf("  Usage:     %.1f%%\n", resource.DiskUsage)
-		fmt.Println()
-
-		// Job Capacity
-		fmt.Printf("Capacity:\n")
-		fmt.Printf("  Max Jobs:        %d\n", resource.MaxJobs)
-		fmt.Printf("  Current Jobs:    %d\n", resource.CurrentJobs)
-		fmt.Printf("  Available Slots: %d\n", resource.AvailableSlots)
-
-		// Only show Runtime and Health sections in verbose mode
-		if config.Node.Verbose {
-			fmt.Println()
-
-			// Runtime Information
-			fmt.Printf("Runtime:\n")
-			fmt.Printf("  Uptime:     %s\n", resource.Uptime)
-			fmt.Printf("  Goroutines: %d\n", resource.GoRoutines)
-			fmt.Printf("  Go Memory:  %s allocated, %s from system\n",
-				humanize.IBytes(resource.GoMemAlloc), humanize.IBytes(resource.GoMemSys))
-			fmt.Printf("  GC Cycles:  %d (last pause: %.2fms)\n", resource.GoGCCycles, resource.GoGCPause)
-
-			if resource.Load1 > 0 || resource.Load5 > 0 || resource.Load15 > 0 {
-				fmt.Printf("  Load Avg:   %.2f, %.2f, %.2f\n", resource.Load1, resource.Load5, resource.Load15)
-			}
-
-			// Health checks (if available)
-			if health != nil && len(health.Checks) > 0 {
-				fmt.Println()
-				fmt.Printf("Health Checks:\n")
-				w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-				defer w.Flush()
-				fmt.Fprintln(w, "NAME\tSTATUS\tMESSAGE\tTIMESTAMP")
-				for _, chk := range health.Checks {
-					fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
-						chk.Name, strings.ToLower(chk.Status), chk.Message, chk.Timestamp.Format(time.RFC3339))
-				}
-			}
-		}
-	}
-}
-
-// displayAgents displays agents in table or JSON format
-func displayAgents(agents []client.Agent) {
-	if len(agents) == 0 {
-		if config.Global.Output == "json" {
-			fmt.Println("[]")
-		} else {
-			fmt.Println("No agents found")
-		}
-		return
-	}
-
-	// Sort agents by name for consistent output
-	sort.Slice(agents, func(i, j int) bool {
-		return agents[i].Name < agents[j].Name
-	})
-
-	if config.Global.Output == "json" {
-		// JSON output
-		encoder := json.NewEncoder(os.Stdout)
-		encoder.SetIndent("", "  ")
-		if err := encoder.Encode(agents); err != nil {
-			logging.Error("Failed to encode JSON: %v", err)
-			fmt.Println("Error encoding JSON output")
-		}
-	} else {
-		// Table output
-		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		defer w.Flush()
-
-		// Header
-		fmt.Fprintln(w, "ID\tNAME\tTYPE\tSTATUS\tCREATED\tUPDATED")
-
-		// Display each agent
-		for _, agent := range agents {
-			created := utils.FormatDuration(time.Since(agent.Created))
-			updated := utils.FormatDuration(time.Since(agent.Updated))
-
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
-				agent.ID, agent.Name, agent.Type, agent.Status, created, updated)
-		}
-	}
 }
 
 // setupAgentFlags configures flags for agent commands
@@ -875,7 +452,7 @@ func handleAgentList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	displayAgents(agents)
+	display.DisplayAgents(agents)
 	logging.Success("Successfully retrieved %d agents", len(agents))
 	return nil
 }
@@ -918,7 +495,7 @@ func handleAgentInfo(cmd *cobra.Command, args []string) error {
 		}
 	} else {
 		// Table output
-		displayAgentInfo(agent)
+		display.DisplayAgentInfo(agent)
 	}
 
 	logging.Success("Successfully retrieved info for agent '%s' (%s)", agent.Name, agent.ID)
@@ -939,24 +516,6 @@ func resolveAgentByName(apiClient *client.PrismAPIClient, agentName string) (*cl
 	}
 
 	return nil, fmt.Errorf("agent not found: %s (searched by both ID and name)", agentName)
-}
-
-// displayAgentInfo displays agent information in table format
-func displayAgentInfo(agent *client.Agent) {
-	fmt.Printf("Agent Information:\n")
-	fmt.Printf("  ID:      %s\n", agent.ID)
-	fmt.Printf("  Name:    %s\n", agent.Name)
-	fmt.Printf("  Type:    %s\n", agent.Type)
-	fmt.Printf("  Status:  %s\n", agent.Status)
-	fmt.Printf("  Created: %s\n", agent.Created.Format("2006-01-02 15:04:05 MST"))
-	fmt.Printf("  Updated: %s\n", agent.Updated.Format("2006-01-02 15:04:05 MST"))
-
-	if len(agent.Metadata) > 0 {
-		fmt.Printf("  Metadata:\n")
-		for key, value := range agent.Metadata {
-			fmt.Printf("    %s: %s\n", key, value)
-		}
-	}
 }
 
 // handleAgentDelete handles the agent delete subcommand
