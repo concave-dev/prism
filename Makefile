@@ -1,4 +1,4 @@
-.PHONY: build prismd prismctl clean clean-bin stop delete-dir generate-grpc test run
+.PHONY: build prismd prismctl clean clean-bin stop delete-dir generate-grpc test test-coverage run
 
 BIN_DIR := bin
 PRISMD := $(BIN_DIR)/prismd
@@ -66,6 +66,13 @@ generate-grpc:
 test:
 	@echo "=== Running tests without cache ==="
 	$(GO) test -count=1 ./...
+
+test-coverage:
+	@echo "=== Running tests with coverage analysis ==="
+	$(GO) test -coverprofile=coverage.out ./...
+	@echo "=== Coverage Report ==="
+	$(GO) tool cover -func=coverage.out | tail -1
+	@rm -f coverage.out
 
 run: build stop
 	@echo "=== Starting Prism cluster (1 bootstrap + 2 joining nodes) ==="
