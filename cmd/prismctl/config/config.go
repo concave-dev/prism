@@ -33,7 +33,6 @@ var Agent struct {
 	Watch        bool   // Enable watch mode for live updates
 	StatusFilter string // Filter agents by status
 	TypeFilter   string // Filter agents by type
-	Verbose      bool   // Show verbose output
 	Force        bool   // Force operations without confirmation
 	Output       string // Output format: table, json
 }

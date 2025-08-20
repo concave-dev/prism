@@ -72,7 +72,7 @@ and management purposes.`,
   prismctl agent ls --status=running
 
   # Show detailed output
-  prismctl agent ls --verbose`,
+  prismctl --verbose agent ls`,
 	Args: cobra.NoArgs,
 	// RunE will be set by the main package that imports this
 }
