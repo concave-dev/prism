@@ -372,44 +372,69 @@ func HandleAgentList(cmd *cobra.Command, args []string) error {
 func HandleAgentInfo(cmd *cobra.Command, args []string) error {
 	utils.SetupLogging()
 
-	if len(args) < 1 {
-		return fmt.Errorf("agent identifier (ID or name) required")
-	}
 	agentIdentifier := args[0]
+	logging.Info("Fetching information for agent '%s' from API server: %s", agentIdentifier, config.Global.APIAddr)
 
 	// Create API client
 	apiClient := client.CreateAPIClient()
 
-	// Try to get agent directly by ID first
-	agent, err := apiClient.GetAgent(agentIdentifier)
+	// Get all agents first (we need this for both ID resolution and agent data)
+	agents, err := apiClient.GetAgents()
 	if err != nil {
-		// If direct lookup fails, try to resolve by name
-		if strings.Contains(err.Error(), "agent not found") {
-			agent, err = resolveAgentByName(apiClient, agentIdentifier)
-			if err != nil {
-				return err
-			}
-		} else {
-			return err
+		return err
+	}
+
+	// Convert agents to AgentLike for resolution
+	agentLikes := make([]utils.AgentLike, len(agents))
+	for i, agent := range agents {
+		agentLikes[i] = agent
+	}
+
+	// Resolve partial ID using the agents we already have
+	resolvedAgentID, err := utils.ResolveAgentIdentifierFromAgents(agentLikes, agentIdentifier)
+	if err != nil {
+		return err
+	}
+
+	// Find the resolved agent in the data we already have
+	var targetAgent *client.Agent
+	for _, a := range agents {
+		if a.ID == resolvedAgentID {
+			targetAgent = &a
+			break
 		}
 	}
 
-	logging.Info("Retrieved info for agent '%s' (%s) from API server: %s", agent.Name, agent.ID, config.Global.APIAddr)
+	// If not found by ID, try to find by name (similar to peer info pattern)
+	if targetAgent == nil {
+		for _, a := range agents {
+			if a.Name == agentIdentifier {
+				targetAgent = &a
+				logging.Info("Resolved agent name '%s' to ID '%s'", agentIdentifier, a.ID)
+				break
+			}
+		}
+	}
+
+	if targetAgent == nil {
+		logging.Error("Agent '%s' not found in cluster", agentIdentifier)
+		return fmt.Errorf("agent not found")
+	}
 
 	// Display agent info based on output format
 	if config.Global.Output == "json" {
 		// JSON output
 		encoder := json.NewEncoder(os.Stdout)
 		encoder.SetIndent("", "  ")
-		if err := encoder.Encode(agent); err != nil {
+		if err := encoder.Encode(targetAgent); err != nil {
 			return fmt.Errorf("failed to encode JSON: %w", err)
 		}
 	} else {
 		// Table output
-		display.DisplayAgentInfo(agent)
+		display.DisplayAgentInfo(targetAgent)
 	}
 
-	logging.Success("Successfully retrieved info for agent '%s' (%s)", agent.Name, agent.ID)
+	logging.Success("Successfully retrieved info for agent '%s' (%s)", targetAgent.Name, targetAgent.ID)
 	return nil
 }
 
@@ -447,22 +472,6 @@ func HandleAgentDelete(cmd *cobra.Command, args []string) error {
 }
 
 // Helper functions
-
-// resolveAgentByName attempts to find an agent by name when direct ID lookup fails
-func resolveAgentByName(apiClient *client.PrismAPIClient, agentName string) (*client.Agent, error) {
-	agents, err := apiClient.GetAgents()
-	if err != nil {
-		return nil, err
-	}
-
-	for _, agent := range agents {
-		if agent.Name == agentName {
-			return &agent, nil
-		}
-	}
-
-	return nil, fmt.Errorf("agent not found")
-}
 
 // resolveAgentIdentifier resolves an agent identifier (ID or name) to the actual agent ID
 // Returns the resolved ID, agent name, and any error

@@ -81,6 +81,16 @@ type Agent struct {
 	Metadata map[string]string `json:"metadata,omitempty"`
 }
 
+// GetID returns the ID for AgentLike interface
+func (a Agent) GetID() string {
+	return a.ID
+}
+
+// GetName returns the Name for AgentLike interface
+func (a Agent) GetName() string {
+	return a.Name
+}
+
 type AgentCreateResponse struct {
 	AgentID   string `json:"agent_id"`
 	AgentName string `json:"agent_name"`
