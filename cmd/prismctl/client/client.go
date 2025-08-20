@@ -78,7 +78,6 @@ type Agent struct {
 	Type     string            `json:"type"`
 	Status   string            `json:"status"`
 	Created  time.Time         `json:"created"`
-	Updated  time.Time         `json:"updated"`
 	Metadata map[string]string `json:"metadata,omitempty"`
 }
 

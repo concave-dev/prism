@@ -443,15 +443,14 @@ func DisplayAgents(agents []client.Agent) {
 		defer w.Flush()
 
 		// Header
-		fmt.Fprintln(w, "ID\tNAME\tTYPE\tSTATUS\tCREATED\tUPDATED")
+		fmt.Fprintln(w, "ID\tNAME\tTYPE\tSTATUS\tCREATED")
 
 		// Display each agent
 		for _, agent := range agents {
 			created := utils.FormatDuration(time.Since(agent.Created))
-			updated := utils.FormatDuration(time.Since(agent.Updated))
 
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
-				agent.ID, agent.Name, agent.Type, agent.Status, created, updated)
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+				agent.ID, agent.Name, agent.Type, agent.Status, created)
 		}
 	}
 }
@@ -464,7 +463,6 @@ func DisplayAgentInfo(agent *client.Agent) {
 	fmt.Printf("  Type:    %s\n", agent.Type)
 	fmt.Printf("  Status:  %s\n", agent.Status)
 	fmt.Printf("  Created: %s\n", agent.Created.Format("2006-01-02 15:04:05 MST"))
-	fmt.Printf("  Updated: %s\n", agent.Updated.Format("2006-01-02 15:04:05 MST"))
 
 	if len(agent.Metadata) > 0 {
 		fmt.Printf("  Metadata:\n")

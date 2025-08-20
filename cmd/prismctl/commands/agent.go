@@ -2,14 +2,13 @@
 //
 // This file implements agent lifecycle management commands for the distributed
 // AI orchestration platform. Provides CLI interfaces for creating, listing,
-// updating, and deleting agents across the Prism cluster through REST API calls.
+// and deleting agents across the Prism cluster through REST API calls.
 //
 // AGENT COMMAND STRUCTURE:
 // The agent commands follow the resource-based hierarchy pattern:
 //   - agent create: Create new agents with type specifications
 //   - agent ls: List all agents with filtering and status information
 //   - agent info: Get detailed information about specific agents
-//   - agent update: Update agent status and placement
 //   - agent delete: Remove agents from the cluster
 //
 // All commands integrate with the cluster's REST API endpoints and provide
