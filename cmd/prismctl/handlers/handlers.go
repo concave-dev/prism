@@ -306,7 +306,7 @@ func HandleAgentCreate(cmd *cobra.Command, args []string) error {
 
 	// Create API client and create agent
 	apiClient := client.CreateAPIClient()
-	response, err := apiClient.CreateAgent(agentName, config.Agent.Type, config.Agent.Metadata)
+	response, err := apiClient.CreateAgent(agentName, config.Agent.Type, nil)
 	if err != nil {
 		return err
 	}

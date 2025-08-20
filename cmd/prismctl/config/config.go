@@ -29,17 +29,12 @@ var Node struct {
 
 // Agent holds the agent command configuration
 var Agent struct {
-	Name         string            // Agent name for creation
-	Type         string            // Agent type: task or service (default: task)
-	Metadata     map[string]string // Agent metadata key-value pairs
-	CPUCores     float64           // Required CPU cores
-	MemoryMB     int64             // Required memory in MB
-	DiskMB       int64             // Required disk space in MB
-	NetworkMbps  int               // Required network bandwidth
-	Watch        bool              // Enable watch mode for live updates
-	StatusFilter string            // Filter agents by status
-	TypeFilter   string            // Filter agents by type
-	Verbose      bool              // Show verbose output
-	Force        bool              // Force operations without confirmation
-	Output       string            // Output format: table, json
+	Name         string // Agent name for creation
+	Type         string // Agent type: task or service (default: task)
+	Watch        bool   // Enable watch mode for live updates
+	StatusFilter string // Filter agents by status
+	TypeFilter   string // Filter agents by type
+	Verbose      bool   // Show verbose output
+	Force        bool   // Force operations without confirmation
+	Output       string // Output format: table, json
 }

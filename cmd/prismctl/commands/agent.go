@@ -6,10 +6,10 @@
 //
 // AGENT COMMAND STRUCTURE:
 // The agent commands follow the resource-based hierarchy pattern:
-//   - agent create: Create new agents with type and resource specifications
+//   - agent create: Create new agents with type specifications
 //   - agent ls: List all agents with filtering and status information
 //   - agent info: Get detailed information about specific agents
-//   - agent update: Update agent status, placement, and metadata
+//   - agent update: Update agent status and placement
 //   - agent delete: Remove agents from the cluster
 //
 // All commands integrate with the cluster's REST API endpoints and provide
@@ -46,13 +46,7 @@ resource scoring and capacity.`,
   prismctl agent create --name=my-task
 
   # Create a service agent
-  prismctl agent create --name=my-service --type=service
-
-  # Create with metadata
-  prismctl agent create --name=my-agent --type=task --metadata=env=prod,version=1.0
-
-  # Create with resource requirements
-  prismctl agent create --name=my-agent --cpu=2.0 --memory=1024 --disk=500`,
+  prismctl agent create --name=my-service --type=service`,
 	Args: cobra.NoArgs,
 	// RunE will be set by the main package that imports this
 }
@@ -63,8 +57,8 @@ var agentLsCmd = &cobra.Command{
 	Short: "List all agents in the cluster",
 	Long: `List all agents in the Prism cluster.
 
-Shows agent status, type, placement information, and operational metadata
-for monitoring and management purposes.`,
+Shows agent status, type, and placement information for monitoring 
+and management purposes.`,
 	Example: `  # List all agents
   prismctl agent ls
 
@@ -88,7 +82,7 @@ var agentInfoCmd = &cobra.Command{
 	Use:   "info AGENT_ID",
 	Short: "Get detailed information about a specific agent",
 	Long: `Get detailed information about a specific agent including placement
-history, resource usage, and operational metadata.
+history and resource usage.
 
 Provides comprehensive agent details for monitoring and troubleshooting.`,
 	Example: `  # Get agent details
