@@ -18,10 +18,12 @@ clean-bin:
 
 $(PRISMD):
 	@mkdir -p $(BIN_DIR)
+	@echo "=== Building prismd ==="
 	$(GO) build -o $(PRISMD) ./cmd/prismd
 
 $(PRISMCTL):
 	@mkdir -p $(BIN_DIR)
+	@echo "=== Building prismctl ==="
 	$(GO) build -o $(PRISMCTL) ./cmd/prismctl
 
 stop:
@@ -41,6 +43,8 @@ stop:
 delete-dir:
 	@echo "=== Deleting bin and data directories ==="
 	@rm -rf $(BIN_DIR) data
+	@echo "=== Cleaning coverage files ==="
+	@rm -f coverage.out coverage.html *.prof *.pprof
 
 clean: stop delete-dir
 
