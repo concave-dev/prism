@@ -1,4 +1,4 @@
-.PHONY: build prismd prismctl clean stop delete-dir generate-grpc test run
+.PHONY: build prismd prismctl clean clean-bin stop delete-dir generate-grpc test run
 
 BIN_DIR := bin
 PRISMD := $(BIN_DIR)/prismd
@@ -6,11 +6,15 @@ PRISMCTL := $(BIN_DIR)/prismctl
 PROTO := internal/grpc/proto/node_service.proto
 GO := go
 
-build: $(PRISMD) $(PRISMCTL)
+build: clean-bin $(PRISMD) $(PRISMCTL)
 
-prismd: $(PRISMD)
+prismd: clean-bin $(PRISMD)
 
-prismctl: $(PRISMCTL)
+prismctl: clean-bin $(PRISMCTL)
+
+clean-bin:
+	@echo "=== Removing old binaries ==="
+	@rm -rf $(BIN_DIR)
 
 $(PRISMD):
 	@mkdir -p $(BIN_DIR)
