@@ -5,7 +5,7 @@ Distributed runtime platform for AI agents and workflows.
 ![prismd screenshot](https://github.com/user-attachments/assets/15fb5429-0bd0-4a1e-9b3c-0579f76608b2)
 
 > [!CAUTION]
-> The cluster is not yet stable. Use at your own risk. Test coverage: 8.6%.
+> This is early development software. Agent execution is not implemented yet. Test coverage: 7.8%.
 
 ## Overview
 
@@ -29,6 +29,8 @@ This aligns with [Concave's mission](https://concave.dev/) to build unified infr
 - [x] **Autopilot & Reconciliation**: Automatic dead peer removal and cluster health maintenance
 
 ### Agent Execution
+- [x] **Agent Lifecycle Management**: Complete CRUD operations for agents via REST API and CLI
+- [x] **Agent State Management**: Distributed agent state tracking via Raft consensus (no actual execution)
 - [ ] **Agent Orchestration**: Firecracker microVM lifecycle for secure agent isolation  
 - [ ] **Serverless Scaling**: Dynamic scaling from 0 to 10k agent instances based on demand
 - [ ] **Agent Scheduling**: Intelligent placement and execution of AI agents across cluster
