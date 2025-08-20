@@ -204,8 +204,11 @@ func Run() error {
 	// Store original API port for logging purposes
 	originalAPIPort := config.Global.APIPort
 
-	// Note: API address uses defaults (loopback) unlike other services
-	// No need to set default address as it's already set in flag defaults
+	// SECURITY: API address intentionally defaults to loopback (127.0.0.1:8008)
+	// Unlike other services that inherit Serf's IP, the API stays on localhost
+	// to prevent accidental exposure. Users must explicitly use --api=0.0.0.0:8008
+	// to expose the API externally. This is a security-first design choice since
+	// the API currently has no authentication/authorization mechanisms yet.
 
 	// ============================================================================
 	// ATOMIC PORT BINDING STRATEGY: Eliminating Race Conditions

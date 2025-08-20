@@ -110,7 +110,7 @@ For production use, **explicitly assign all ports and data directory** for predi
 # Production-safe 3-node cluster formation
 # All nodes use the same bootstrap-expect value and join addresses
 
-# Node 1
+# Node 1 - API exposed for management (ensure firewall protection)
 ./bin/prismd \
   --serf=0.0.0.0:4200 \
   --raft=0.0.0.0:4201 \
@@ -121,23 +121,23 @@ For production use, **explicitly assign all ports and data directory** for predi
   --join=10.0.1.100:4200,10.0.1.101:4200,10.0.1.102:4200 \
   --name=prod-node-1
 
-# Node 2
+# Node 2 - API on localhost only (more secure, requires SSH tunnel for remote access)
 ./bin/prismd \
   --serf=0.0.0.0:4200 \
   --raft=0.0.0.0:4201 \
   --grpc=0.0.0.0:4202 \
-  --api=0.0.0.0:8008 \
+  --api=127.0.0.1:8008 \
   --data-dir=/var/lib/prism \
   --bootstrap-expect=3 \
   --join=10.0.1.100:4200,10.0.1.101:4200,10.0.1.102:4200 \
   --name=prod-node-2
 
-# Node 3
+# Node 3 - API on localhost only (more secure, requires SSH tunnel for remote access)
 ./bin/prismd \
   --serf=0.0.0.0:4200 \
   --raft=0.0.0.0:4201 \
   --grpc=0.0.0.0:4202 \
-  --api=0.0.0.0:8008 \
+  --api=127.0.0.1:8008 \
   --data-dir=/var/lib/prism \
   --bootstrap-expect=3 \
   --join=10.0.1.100:4200,10.0.1.101:4200,10.0.1.102:4200 \
@@ -151,7 +151,7 @@ For production use, **explicitly assign all ports and data directory** for predi
   --serf=0.0.0.0:4200 \
   --raft=0.0.0.0:4201 \
   --grpc=0.0.0.0:4202 \
-  --api=0.0.0.0:8008 \
+  --api=127.0.0.1:8008 \
   --data-dir=/var/lib/prism \
   --bootstrap \
   --name=dev-node-1
@@ -187,9 +187,54 @@ Use the CLI:
 DEBUG=true ./bin/prismctl info
 ```
 
+## Security Considerations
+
+### Encryption & Transport Security
+
+- **No TLS/HTTPS**: All HTTP API communication is unencrypted plaintext
+- **No gRPC TLS**: Inter-node gRPC communication is unencrypted 
+- **No Serf Keyring**: Cluster gossip protocol is unencrypted (no keyring configured)
+- **No Raft Transport Encryption**: Consensus protocol communication is unencrypted
+
+**Current Risk**: All network traffic (API requests, inter-node communication, cluster gossip) can be intercepted and read by network attackers.
+
+**Mitigation**: Deploy only on trusted networks (private VLANs, VPNs) until TLS support is implemented.
+
+### API Security
+
+The HTTP API defaults to `127.0.0.1:8008` (localhost only) as a security-first approach to prevent accidental exposure to external networks. This is intentional since the API currently has no authentication or authorization mechanisms (authentication will be implemented soon).
+
+**Local Management (Default - Secure)**:
+```bash
+# API only accessible from localhost
+./bin/prismd  # API binds to 127.0.0.1:8008
+./bin/prismctl info  # Connects to 127.0.0.1:8008
+```
+
+**Remote Management (Explicit - Use with Caution)**:
+```bash
+# Explicitly expose API to all interfaces (production requires firewall/VPN)
+./bin/prismd --api=0.0.0.0:8008
+
+# Connect from remote machine
+./bin/prismctl --api=192.168.1.100:8008 info
+```
+
+**Production Deployment**: When exposing the API externally (`--api=0.0.0.0:8008`), ensure proper network security:
+- Use firewall rules to restrict API access to trusted networks
+- Deploy behind VPN or use SSH tunneling for remote access  
+- Consider using reverse proxy with authentication (nginx, traefik)
+
+### Planned Security Improvements
+
+- **TLS/HTTPS**: Encrypted HTTP API with certificate management
+- **gRPC TLS**: Encrypted inter-node communication with mutual TLS
+- **Serf Keyring**: Encrypted cluster gossip with pre-shared keys
+- **Authentication**: API authentication and authorization mechanisms
+- **Raft Transport Security**: Encrypted consensus protocol communication
+
 ## Known Issues
 
-- **Security (no TLS/Auth):** HTTP API and gRPC are plaintext with no authentication/authorization; Serf gossip is unencrypted (no keyring configured).
 - **Split Brain Risk:** Network partitions can cause Raft leadership conflicts.
 - **Quorum Loss Recovery:** If majority of nodes fail, new nodes cannot join the cluster without manual intervention. The cluster will detect deadlock and provide recovery guidance, but operators must either restart dead nodes or rebuild from backup. Adding new nodes to a quorum-less cluster will fail with "rejecting pre-vote request since node is not in configuration" errors.
 - **Resource aggregation delays on failures:** Aggregation counts all known members; failed nodes are included until reaped, so calls may wait for timeout before returning.
