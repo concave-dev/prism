@@ -454,7 +454,7 @@ func DisplayAgents(agents []client.Agent) {
 		defer w.Flush()
 
 		// Header
-		fmt.Fprintln(w, "ID\tNAME\tTYPE\tSTATUS\tCREATED")
+		fmt.Fprintln(w, "ID\tNAME\tKIND\tSTATUS\tCREATED")
 
 		// Display each agent
 		for _, agent := range agents {
@@ -471,7 +471,7 @@ func DisplayAgentInfo(agent *client.Agent) {
 	fmt.Printf("Agent Information:\n")
 	fmt.Printf("  ID:      %s\n", agent.ID)
 	fmt.Printf("  Name:    %s\n", agent.Name)
-	fmt.Printf("  Type:    %s\n", agent.Type)
+	fmt.Printf("  Kind:    %s\n", agent.Type)
 	fmt.Printf("  Status:  %s\n", agent.Status)
 	fmt.Printf("  Created: %s\n", agent.Created.Format("2006-01-02 15:04:05 MST"))
 

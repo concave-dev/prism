@@ -646,13 +646,13 @@ func (api *PrismAPIClient) GetAgent(agentID string) (*Agent, error) {
 }
 
 // CreateAgent creates a new agent via the API
-func (api *PrismAPIClient) CreateAgent(name, agentType string, metadata map[string]string) (*AgentCreateResponse, error) {
+func (api *PrismAPIClient) CreateAgent(name, agentKind string, metadata map[string]string) (*AgentCreateResponse, error) {
 	var response AgentCreateResponse
 
 	// Prepare request payload
 	payload := map[string]interface{}{
 		"name": name,
-		"type": agentType,
+		"type": agentKind,
 	}
 	if len(metadata) > 0 {
 		payload["metadata"] = metadata

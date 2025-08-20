@@ -73,13 +73,13 @@ func setupCommandHandlers() {
 func setupAgentFlags(createCmd, lsCmd, infoCmd, deleteCmd *cobra.Command) {
 	// Agent create flags
 	createCmd.Flags().StringVar(&config.Agent.Name, "name", "", "Agent name (auto-generated if not provided)")
-	createCmd.Flags().StringVar(&config.Agent.Type, "type", "task", "Agent type: task or service")
+	createCmd.Flags().StringVar(&config.Agent.Kind, "kind", "task", "Agent kind: task or service")
 	createCmd.Flags().StringSliceVar(&config.Agent.Metadata, "metadata", nil, "Agent metadata (key=value format)")
 
 	// Agent list flags
 	lsCmd.Flags().BoolVarP(&config.Agent.Watch, "watch", "w", false, "Watch for live updates")
 	lsCmd.Flags().StringVar(&config.Agent.StatusFilter, "status", "", "Filter by status")
-	lsCmd.Flags().StringVar(&config.Agent.TypeFilter, "type", "", "Filter by type")
+	lsCmd.Flags().StringVar(&config.Agent.KindFilter, "kind", "", "Filter by kind")
 	lsCmd.Flags().StringVar(&config.Agent.Sort, "sort", "created", "Sort agents by: created, name")
 
 	// Agent info and delete commands use global flags only for now

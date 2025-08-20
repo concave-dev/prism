@@ -286,19 +286,19 @@ func HandleNodeInfo(cmd *cobra.Command, args []string) error {
 func HandleAgentCreate(cmd *cobra.Command, args []string) error {
 	utils.SetupLogging()
 
-	// Validate agent type
-	if config.Agent.Type != "task" && config.Agent.Type != "service" {
-		return fmt.Errorf("agent type must be 'task' or 'service'")
+	// Validate agent kind
+	if config.Agent.Kind != "task" && config.Agent.Kind != "service" {
+		return fmt.Errorf("agent kind must be 'task' or 'service'")
 	}
 
 	// Use provided name or let server auto-generate
 	agentName := config.Agent.Name
 	if agentName == "" {
-		logging.Info("Creating agent with auto-generated name of type '%s' on API server: %s",
-			config.Agent.Type, config.Global.APIAddr)
+		logging.Info("Creating agent with auto-generated name of kind '%s' on API server: %s",
+			config.Agent.Kind, config.Global.APIAddr)
 	} else {
-		logging.Info("Creating agent '%s' of type '%s' on API server: %s",
-			agentName, config.Agent.Type, config.Global.APIAddr)
+		logging.Info("Creating agent '%s' of kind '%s' on API server: %s",
+			agentName, config.Agent.Kind, config.Global.APIAddr)
 	}
 
 	// Parse metadata from string slice to map
@@ -313,7 +313,7 @@ func HandleAgentCreate(cmd *cobra.Command, args []string) error {
 
 	// Create API client and create agent
 	apiClient := client.CreateAPIClient()
-	response, err := apiClient.CreateAgent(agentName, config.Agent.Type, metadata)
+	response, err := apiClient.CreateAgent(agentName, config.Agent.Kind, metadata)
 	if err != nil {
 		return err
 	}
@@ -541,9 +541,9 @@ func filterResources(resources []client.NodeResources, members []client.ClusterM
 	return filtered
 }
 
-// filterAgents applies status and type filters to agents
+// filterAgents applies status and kind filters to agents
 func filterAgents(agents []client.Agent) []client.Agent {
-	if config.Agent.StatusFilter == "" && config.Agent.TypeFilter == "" {
+	if config.Agent.StatusFilter == "" && config.Agent.KindFilter == "" {
 		return agents
 	}
 
@@ -552,7 +552,7 @@ func filterAgents(agents []client.Agent) []client.Agent {
 		if config.Agent.StatusFilter != "" && a.Status != config.Agent.StatusFilter {
 			continue
 		}
-		if config.Agent.TypeFilter != "" && a.Type != config.Agent.TypeFilter {
+		if config.Agent.KindFilter != "" && a.Type != config.Agent.KindFilter {
 			continue
 		}
 		filtered = append(filtered, a)

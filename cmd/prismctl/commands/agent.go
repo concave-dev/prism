@@ -6,7 +6,7 @@
 //
 // AGENT COMMAND STRUCTURE:
 // The agent commands follow the resource-based hierarchy pattern:
-//   - agent create: Create new agents with type specifications
+//   - agent create: Create new agents with kind specifications
 //   - agent ls: List all agents with filtering and status information
 //   - agent info: Get detailed information about specific agents
 //   - agent delete: Remove agents from the cluster
@@ -41,11 +41,11 @@ var agentCreateCmd = &cobra.Command{
 Agents can be either tasks (short-lived workloads) or services (long-running
 workloads). The agent will be scheduled on the best available node based on
 resource scoring and capacity.`,
-	Example: `  # Create a task agent (default type)
+	Example: `  # Create a task agent (default kind)
   prismctl agent create --name=my-task
 
   # Create a service agent
-  prismctl agent create --name=my-service --type=service
+  prismctl agent create --name=my-service --kind=service
 
   # Create an agent with metadata
   prismctl agent create --name=my-agent --metadata=env=prod --metadata=team=ai
@@ -62,7 +62,7 @@ var agentLsCmd = &cobra.Command{
 	Short: "List all agents in the cluster",
 	Long: `List all agents in the Prism cluster.
 
-Shows agent status, type, and placement information for monitoring 
+Shows agent status, kind, and placement information for monitoring 
 and management purposes.`,
 	Example: `  # List all agents (sorted by creation time, newest first - default)
   prismctl agent ls
@@ -73,8 +73,8 @@ and management purposes.`,
   # List agents with live updates
   prismctl agent ls --watch
 
-  # Filter agents by type
-  prismctl agent ls --type=service
+  # Filter agents by kind
+  prismctl agent ls --kind=service
 
   # Filter agents by status
   prismctl agent ls --status=running
