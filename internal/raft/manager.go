@@ -1214,6 +1214,14 @@ func (m *RaftManager) performAutopilotCleanup() {
 
 		// Optional: RPC last-contact and log lag gating could be added here. Since
 		// we don't expose those metrics yet, we gate on network reachability as a proxy.
+		//
+		// DESIGN DECISION: Wait indefinitely for TCP-reachable nodes
+		// Trade-off analysis:
+		// - Downside: Minimal memory overhead tracking suspect nodes indefinitely
+		// - Upside: Prevents premature removal of recoverable nodes, maintains cluster
+		//   stability, allows graceful recovery from network partitions or Serf issues
+		// - Result: Prioritize availability and data safety over aggressive cleanup
+		//   The potential for a whole node to recover far outweighs memory tracking costs
 		if m.isRaftPeerReachable(address) {
 			logging.Debug("Autopilot: %s reachable over TCP, deferring removal", nodeID)
 			continue
