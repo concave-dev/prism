@@ -46,13 +46,27 @@ connectivity status and leader information.`,
 
 // Peer info command
 var peerInfoCmd = &cobra.Command{
-	Use:   "info <peer-id>",
+	Use:   "info <peer-id-or-name>",
 	Short: "Show detailed information for a specific Raft peer",
-	Long:  "Display detailed information for a specific Raft peer by ID.",
+	Long: `Display detailed information for a specific Raft peer by ID or name.
+
+This command accepts either a full peer ID, partial peer ID (minimum 1 character),
+or the peer name for identification.`,
+	Example: `  # Show info for specific peer by full ID
+  prismctl peer info 1582aa046d9e
+
+  # Show info for specific peer by partial ID
+  prismctl peer info 1582
+
+  # Show info for specific peer by name
+  prismctl peer info mythic-adapter
+
+  # Output as JSON
+  prismctl peer info mythic-adapter --output=json`,
 	Args: func(cmd *cobra.Command, args []string) error {
 		if len(args) != 1 {
 			cmd.Help()
-			return fmt.Errorf("requires exactly 1 argument (peer ID)")
+			return fmt.Errorf("requires exactly 1 argument (peer ID or name)")
 		}
 		return nil
 	},

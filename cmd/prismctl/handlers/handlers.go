@@ -102,8 +102,19 @@ func HandlePeerInfo(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// If not found by ID, try to find by name (similar to node info pattern)
 	if targetPeer == nil {
-		return fmt.Errorf("peer '%s' not found in Raft configuration", resolvedPeerID)
+		for _, p := range resp.Peers {
+			if p.Name == peerIdentifier {
+				targetPeer = &p
+				logging.Info("Resolved peer name '%s' to ID '%s'", peerIdentifier, p.ID)
+				break
+			}
+		}
+	}
+
+	if targetPeer == nil {
+		return fmt.Errorf("peer '%s' not found in Raft configuration (searched by both ID and name)", peerIdentifier)
 	}
 
 	if config.Global.Output == "json" {
