@@ -1212,9 +1212,25 @@ func (m *RaftManager) performAutopilotCleanup() {
 			continue
 		}
 
-		// Optional: RPC last-contact and log lag gating could be added here. Since
-		// we don't expose those metrics yet, we gate on network reachability as a proxy.
+		// FUTURE ENHANCEMENT: RPC Health Checks
+		// Currently we only test TCP connectivity as a proxy for Raft health.
+		// More sophisticated checks could include:
 		//
+		// 1. RPC Last-Contact: When leader last received successful RPC from this peer
+		//    - Detects hung processes that accept connections but don't respond
+		//    - Threshold: LastContactThreshold (default 1s)
+		//
+		// 2. Log Replication Lag: How far behind this follower is in log entries
+		//    - Identifies nodes that are alive but can't keep up with consensus
+		//    - Threshold: MaxTrailingLogs (default 1024 entries)
+		//
+		// Implementation challenges:
+		// - HashiCorp Raft library doesn't easily expose per-peer metrics
+		// - Would need custom RPC probes or internal metric hooks
+		// - TCP + Serf detection works well enough for most failure scenarios
+		//
+		// Current approach is conservative and appropriate for HA requirements.
+
 		// DESIGN DECISION: Wait indefinitely for TCP-reachable nodes
 		// Trade-off analysis:
 		// - Downside: Minimal memory overhead tracking suspect nodes indefinitely
