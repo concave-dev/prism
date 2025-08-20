@@ -118,6 +118,10 @@ func (s *Server) Start() error {
 	router.Use(s.corsMiddleware())
 	router.Use(gin.Recovery())
 
+	// Add leader forwarding middleware for write operations
+	leaderForwarder := NewLeaderForwarder(s.GetAgentManager(), s.serfManager, s.GetNodeID())
+	router.Use(leaderForwarder.ForwardWriteRequests())
+
 	// Setup routes
 	s.setupRoutes(router)
 

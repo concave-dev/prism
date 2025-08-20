@@ -147,28 +147,8 @@ func CreateAgent(agentMgr AgentManager, nodeID string) gin.HandlerFunc {
 
 		logging.Info("Agent creation request: name=%s type=%s id=%s", agentName, req.Type, agentID)
 
-		// Check if this node is the Raft leader
-		if !agentMgr.IsLeader() {
-			leader := agentMgr.Leader()
-			if leader == "" {
-				logging.Error("Agent creation: No Raft leader available")
-				c.JSON(http.StatusServiceUnavailable, gin.H{
-					"error":   "No cluster leader available",
-					"details": "Cluster is currently electing a leader, please retry",
-				})
-				return
-			}
-
-			// Redirect to leader
-			// TODO: Implement proper leader redirection with full URL construction
-			logging.Info("Agent creation: Redirecting to leader %s", leader)
-			c.JSON(http.StatusTemporaryRedirect, gin.H{
-				"error":   "Not cluster leader",
-				"leader":  leader,
-				"details": fmt.Sprintf("Send request to leader at %s", leader),
-			})
-			return
-		}
+		// Leadership check is now handled by the leader forwarding middleware
+		// This handler only executes if we're the leader or forwarding succeeded
 
 		// Create Raft command for agent creation with pre-generated ID and name
 		createCmd := raft.AgentCreateCommand{
@@ -358,26 +338,8 @@ func UpdateAgent(agentMgr AgentManager, nodeID string) gin.HandlerFunc {
 
 		logging.Info("Agent update request: id=%s", agentID)
 
-		// Check if this node is the Raft leader
-		if !agentMgr.IsLeader() {
-			leader := agentMgr.Leader()
-			if leader == "" {
-				logging.Error("Agent update: No Raft leader available")
-				c.JSON(http.StatusServiceUnavailable, gin.H{
-					"error":   "No cluster leader available",
-					"details": "Cluster is currently electing a leader, please retry",
-				})
-				return
-			}
-
-			logging.Info("Agent update: Redirecting to leader %s", leader)
-			c.JSON(http.StatusTemporaryRedirect, gin.H{
-				"error":   "Not cluster leader",
-				"leader":  leader,
-				"details": fmt.Sprintf("Send request to leader at %s", leader),
-			})
-			return
-		}
+		// Leadership check is now handled by the leader forwarding middleware
+		// This handler only executes if we're the leader or forwarding succeeded
 
 		// Create Raft command for agent update
 		updateCmd := raft.AgentUpdateCommand{
@@ -459,26 +421,8 @@ func DeleteAgent(agentMgr AgentManager, nodeID string) gin.HandlerFunc {
 
 		logging.Info("Agent deletion request: id=%s", agentID)
 
-		// Check if this node is the Raft leader
-		if !agentMgr.IsLeader() {
-			leader := agentMgr.Leader()
-			if leader == "" {
-				logging.Error("Agent deletion: No Raft leader available")
-				c.JSON(http.StatusServiceUnavailable, gin.H{
-					"error":   "No cluster leader available",
-					"details": "Cluster is currently electing a leader, please retry",
-				})
-				return
-			}
-
-			logging.Info("Agent deletion: Redirecting to leader %s", leader)
-			c.JSON(http.StatusTemporaryRedirect, gin.H{
-				"error":   "Not cluster leader",
-				"leader":  leader,
-				"details": fmt.Sprintf("Send request to leader at %s", leader),
-			})
-			return
-		}
+		// Leadership check is now handled by the leader forwarding middleware
+		// This handler only executes if we're the leader or forwarding succeeded
 
 		// Check if agent exists before deletion
 		fsm := agentMgr.GetFSM()

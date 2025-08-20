@@ -204,11 +204,12 @@ func Run() error {
 	// Store original API port for logging purposes
 	originalAPIPort := config.Global.APIPort
 
-	// SECURITY: API address intentionally defaults to loopback (127.0.0.1:8008)
-	// Unlike other services that inherit Serf's IP, the API stays on localhost
-	// to prevent accidental exposure. Users must explicitly use --api=0.0.0.0:8008
-	// to expose the API externally. This is a security-first design choice since
-	// the API currently has no authentication/authorization mechanisms yet.
+	// Set default API address if not explicitly set
+	// API inherits Serf address for cluster-wide accessibility (needed for leader forwarding)
+	// TODO: Add authentication/authorization before production use
+	if !config.Global.IsExplicitlySet(config.APIAddrField) {
+		config.Global.APIAddr = config.Global.SerfAddr
+	}
 
 	// ============================================================================
 	// ATOMIC PORT BINDING STRATEGY: Eliminating Race Conditions

@@ -23,13 +23,12 @@ const (
 	DefaultSerf = configDefaults.DefaultBindAddr + ":4200" // Default serf address
 	DefaultRaft = configDefaults.DefaultBindAddr + ":6969" // Default raft address
 	DefaultGRPC = configDefaults.DefaultBindAddr + ":7117" // Default gRPC address
-	// DefaultAPI uses loopback (127.0.0.1) for security-first approach.
-	// This prevents accidental exposure of the management API to external networks.
-	// Users can explicitly expose the API using --api=0.0.0.0:8008 when needed.
-	// The API should only be exposed on trusted networks until authentication is implemented.
-	DefaultAPI      = "127.0.0.1:8008"               // Default API address (loopback for security)
-	DefaultDataDir  = configDefaults.DefaultDataDir  // Default data directory
-	DefaultLogLevel = configDefaults.DefaultLogLevel // Default log level
+	// DefaultAPI uses the default bind address for cluster-wide accessibility.
+	// This enables leader forwarding to work across nodes in multi-node clusters.
+	// TODO: Add authentication/authorization before production use
+	DefaultAPI      = configDefaults.DefaultBindAddr + ":8008" // Default API address
+	DefaultDataDir  = configDefaults.DefaultDataDir            // Default data directory
+	DefaultLogLevel = configDefaults.DefaultLogLevel           // Default log level
 )
 
 // Config holds all daemon configuration values
