@@ -80,7 +80,7 @@ type SerfManager struct {
 }
 
 // NewSerfManager creates a new SerfManager instance with the provided configuration.
-// Validates configuration parameters, generates a cryptographically secure node ID,
+// Validates configuration parameters, generates a unique node ID,
 // and initializes the dual-channel event processing system for cluster operations.
 //
 // This constructor sets up all internal data structures and channels but does not

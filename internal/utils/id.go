@@ -1,13 +1,13 @@
 // Package utils provides common utility functions for the Prism orchestration platform.
 //
 // This file implements unified ID generation functionality used across the platform
-// for creating cryptographically secure identifiers. Provides consistent ID formats
-// for nodes, agents, and other cluster resources while eliminating code duplication.
+// for creating unique identifiers. Provides consistent ID formats for nodes, agents,
+// and other cluster resources while eliminating code duplication.
 //
 // ID GENERATION STRATEGY:
-// Uses crypto/rand for cryptographically secure random data generation to ensure
-// uniqueness across distributed systems and prevent collisions. All IDs follow
-// the same 12-character hexadecimal format for consistency and readability.
+// Uses crypto/rand for high-quality random data generation to ensure uniqueness
+// across distributed systems and prevent collisions. All IDs follow the same
+// 12-character hexadecimal format for consistency and readability.
 //
 // USAGE PATTERNS:
 // - Node IDs: Unique cluster node identification for membership and routing
@@ -25,9 +25,9 @@ import (
 	"fmt"
 )
 
-// GenerateID creates a cryptographically secure 12-character hex identifier
-// for cluster resources. Uses crypto/rand to ensure uniqueness across
-// distributed systems and prevent collisions.
+// GenerateID creates a unique 12-character hex identifier for cluster resources.
+// Uses crypto/rand to ensure uniqueness across distributed systems and prevent
+// collisions.
 //
 // Essential for resource identification, logging correlation, and API operations
 // where resources need to be uniquely referenced. The 12-character format
