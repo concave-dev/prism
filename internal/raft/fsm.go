@@ -32,10 +32,51 @@ import (
 	"io"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/concave-dev/prism/internal/logging"
 	"github.com/hashicorp/raft"
 )
+
+const (
+	// MaxCommandOutputSize defines the maximum size in bytes for command output
+	// stored in ExecutionRecord. Prevents excessive memory usage from large
+	// command outputs while preserving essential execution information.
+	//
+	// Output exceeding this limit is truncated with an indicator to signal
+	// that the full output was not stored. This helps maintain cluster
+	// performance and prevents memory exhaustion from verbose commands.
+	//
+	// NOTE: This is a temporary solution. Future versions will store only
+	// output IDs in Raft and move full output to a distributed database
+	// to eliminate Raft log bloat and improve cluster scalability.
+	MaxCommandOutputSize = 4096 // 4KB limit for command output storage
+)
+
+// truncateOutput safely truncates command output to MaxCommandOutputSize bytes
+// while preserving UTF-8 character boundaries. Appends truncation indicator
+// when content exceeds the maximum size limit.
+//
+// Ensures stored output never exceeds memory limits while maintaining UTF-8
+// validity. Critical for preventing memory exhaustion from verbose command
+// outputs in distributed execution environments.
+func truncateOutput(output string) string {
+	if len(output) <= MaxCommandOutputSize {
+		return output
+	}
+
+	// Reserve space for truncation indicator
+	truncationIndicator := "...(truncated)"
+	maxContentSize := MaxCommandOutputSize - len(truncationIndicator)
+
+	// Ensure we don't split UTF-8 characters by finding valid boundary
+	truncated := output[:maxContentSize]
+	for len(truncated) > 0 && !utf8.ValidString(truncated) {
+		truncated = truncated[:len(truncated)-1]
+	}
+
+	return truncated + truncationIndicator
+}
 
 // PrismFSM is the root finite state machine that coordinates all distributed
 // state management operations for the Prism orchestration platform. It delegates
@@ -192,14 +233,18 @@ type Sandbox struct {
 // Enables the orchestrator to maintain detailed execution history for debugging,
 // security auditing, and performance optimization of code execution workflows
 // across the distributed cluster infrastructure.
+//
+// TODO: Future optimization - store only execution metadata and output IDs in Raft,
+// move full command output to distributed database to reduce Raft log size and
+// improve cluster performance for large output scenarios.
 type ExecutionRecord struct {
 	Command     string    `json:"command"`      // Executed command
 	ExecutedAt  time.Time `json:"executed_at"`  // Execution timestamp
 	Status      string    `json:"status"`       // Execution status: "pending", "running", "completed", "failed"
 	ExitCode    int       `json:"exit_code"`    // Command exit code (if completed)
 	Duration    int64     `json:"duration_ms"`  // Execution duration in milliseconds
-	Output      string    `json:"output"`       // Command output (truncated for storage)
-	ErrorOutput string    `json:"error_output"` // Command error output (truncated)
+	Output      string    `json:"output"`       // Command output (truncated to MaxCommandOutputSize) - TODO: replace with output_id
+	ErrorOutput string    `json:"error_output"` // Command error output (truncated to MaxCommandOutputSize) - TODO: replace with error_output_id
 }
 
 // Command represents a distributed operation that should be applied consistently
@@ -800,12 +845,13 @@ func (s *SandboxFSM) processExecCommand(cmd Command) interface{} {
 
 	// Create execution record for history tracking
 	execRecord := ExecutionRecord{
-		Command:    execCmd.Command,
-		ExecutedAt: time.Now(),
-		Status:     "pending",
-		ExitCode:   0,
-		Duration:   0,
-		Output:     "", // TODO: Will be populated by runtime execution
+		Command:     execCmd.Command,
+		ExecutedAt:  time.Now(),
+		Status:      "pending",
+		ExitCode:    0,
+		Duration:    0,
+		Output:      truncateOutput(""), // TODO: Will be populated by runtime execution
+		ErrorOutput: truncateOutput(""), // TODO: Will be populated by runtime execution
 	}
 
 	// Add to execution history
@@ -818,6 +864,17 @@ func (s *SandboxFSM) processExecCommand(cmd Command) interface{} {
 	// TODO: Integrate with runtime system for actual command execution
 	// This will coordinate with the Firecracker VM runtime to execute
 	// the command within the secure sandbox environment
+	//
+	// IMPORTANT: When updating ExecutionRecord with actual output, use:
+	//   record.Output = truncateOutput(actualOutput)
+	//   record.ErrorOutput = truncateOutput(actualErrorOutput)
+	// This ensures output never exceeds MaxCommandOutputSize limits.
+	//
+	// FUTURE: Replace direct output storage with distributed database approach:
+	//   1. Store full output in distributed database
+	//   2. Store only output_id and error_output_id in ExecutionRecord
+	//   3. Remove Output/ErrorOutput fields from Raft state entirely
+	// This will dramatically reduce Raft log size and improve cluster performance.
 
 	return map[string]interface{}{
 		"sandbox_id": execCmd.SandboxID,
