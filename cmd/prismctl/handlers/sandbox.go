@@ -239,8 +239,8 @@ func HandleSandboxLogs(cmd *cobra.Command, args []string) error {
 
 	// Convert sandboxes to SandboxLike for resolution
 	sandboxLikes := make([]utils.SandboxLike, len(sandboxes))
-	for i, sandbox := range sandboxes {
-		sandboxLikes[i] = sandbox
+	for i := range sandboxes {
+		sandboxLikes[i] = &sandboxes[i]
 	}
 
 	// TODO: Refactor to use single resolver that returns both ID and sandbox object
@@ -375,8 +375,8 @@ func HandleSandboxInfo(cmd *cobra.Command, args []string) error {
 
 	// Convert sandboxes to SandboxLike for resolution
 	sandboxLikes := make([]utils.SandboxLike, len(sandboxes))
-	for i, sandbox := range sandboxes {
-		sandboxLikes[i] = sandbox
+	for i := range sandboxes {
+		sandboxLikes[i] = &sandboxes[i]
 	}
 
 	// Resolve partial ID using the sandboxes we already have
