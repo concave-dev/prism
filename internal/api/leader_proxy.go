@@ -251,8 +251,7 @@ func (lf *LeaderForwarder) buildLeaderAPIURL(leaderID string) (string, error) {
 			// Node found but no API port advertised - use standard default
 			logging.Warn("Leader node %s (%s) found but no api_port tag, using default port", member.Name, member.ID)
 			leaderIP := member.Addr.String()
-			defaultAPIPort := "8008" // Standard Prism API port
-			return fmt.Sprintf("http://%s:%s", leaderIP, defaultAPIPort), nil
+			return fmt.Sprintf("http://%s:%d", leaderIP, DefaultAPIPort), nil
 		}
 	}
 
