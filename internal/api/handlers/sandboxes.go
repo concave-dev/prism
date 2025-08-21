@@ -591,8 +591,6 @@ func GetSandboxLogs(sandboxMgr SandboxManager) gin.HandlerFunc {
 			logs = append(logs, fmt.Sprintf("Last command: %s", sandbox.LastCommand))
 		}
 
-		logs = append(logs, "TODO: Integrate with runtime log collection system")
-
 		c.JSON(http.StatusOK, gin.H{
 			"logs": logs,
 		})
