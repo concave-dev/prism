@@ -79,9 +79,9 @@ func TestGenerateID(t *testing.T) {
 		t.Error("utils.GenerateID() should not return empty string")
 	}
 
-	// Should be 12 hex characters (6 bytes * 2)
-	if len(id1) != 12 {
-		t.Errorf("utils.GenerateID() length = %d, want 12", len(id1))
+	// Should be 64 hex characters (32 bytes * 2)
+	if len(id1) != 64 {
+		t.Errorf("utils.GenerateID() length = %d, want 64", len(id1))
 	}
 
 	// Generate another ID to ensure uniqueness
