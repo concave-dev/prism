@@ -570,7 +570,12 @@ func DisplaySandboxInfo(sandbox *client.Sandbox) {
 	fmt.Printf("  Updated: %s\n", sandbox.Updated.Format("2006-01-02 15:04:05 MST"))
 
 	if sandbox.LastCommand != "" {
-		fmt.Printf("  Last Command: %s\n", sandbox.LastCommand)
+		// Truncate long commands for readability
+		displayCommand := sandbox.LastCommand
+		if len(displayCommand) > 80 {
+			displayCommand = displayCommand[:77] + "..."
+		}
+		fmt.Printf("  Last Command: %s\n", displayCommand)
 	}
 
 	if len(sandbox.Metadata) > 0 {

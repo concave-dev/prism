@@ -182,7 +182,14 @@ func HandleSandboxExec(cmd *cobra.Command, args []string) error {
 		}
 	} else {
 		fmt.Printf("Command executed in sandbox '%s' (%s):\n", sandboxName, resolvedSandboxID)
-		fmt.Printf("  Command: %s\n", response.Command)
+
+		// Truncate long commands for readability
+		displayCommand := response.Command
+		if len(displayCommand) > 80 {
+			displayCommand = displayCommand[:77] + "..."
+		}
+
+		fmt.Printf("  Command: %s\n", displayCommand)
 		fmt.Printf("  Status:  %s\n", response.Status)
 		fmt.Printf("  Message: %s\n", response.Message)
 		if response.Output != "" {
