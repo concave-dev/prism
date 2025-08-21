@@ -1,6 +1,7 @@
 package validate
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -101,5 +102,56 @@ func TestParseBindAddress(t *testing.T) {
 				t.Errorf("NetworkAddress.String() = %q, want %q", result.String(), expectedString)
 			}
 		})
+	}
+}
+
+// TestMultipleValidationErrors verifies that all validation errors are collected
+// and returned together, rather than just the first error encountered.
+func TestMultipleValidationErrors(t *testing.T) {
+	// Test with an address that should trigger multiple validation errors:
+	// - "invalid_ip" is not a valid IP address
+	// - Port 99999 exceeds the maximum allowed value of 65535
+	_, err := ParseBindAddress("invalid_ip:99999")
+
+	if err == nil {
+		t.Fatal("expected validation errors but got nil")
+	}
+
+	errMsg := err.Error()
+
+	// Verify that both validation errors are present in the error message
+	if !strings.Contains(errMsg, "invalid IP address") {
+		t.Errorf("expected IP validation error in message: %s", errMsg)
+	}
+
+	if !strings.Contains(errMsg, "port") && !strings.Contains(errMsg, "too high") {
+		t.Errorf("expected port validation error in message: %s", errMsg)
+	}
+
+	// Verify that errors are separated by semicolon and space
+	if !strings.Contains(errMsg, "; ") {
+		t.Errorf("expected multiple errors to be separated by '; ' in message: %s", errMsg)
+	}
+}
+
+// TestSingleValidationError ensures single errors still work correctly
+func TestSingleValidationError(t *testing.T) {
+	// Test with only an IP validation error
+	_, err := ParseBindAddress("invalid_ip:8080")
+
+	if err == nil {
+		t.Fatal("expected validation error but got nil")
+	}
+
+	errMsg := err.Error()
+
+	// Should contain IP error but not port error
+	if !strings.Contains(errMsg, "invalid IP address") {
+		t.Errorf("expected IP validation error in message: %s", errMsg)
+	}
+
+	// Should not contain semicolon separator since there's only one error
+	if strings.Contains(errMsg, "; ") {
+		t.Errorf("single error should not contain separator: %s", errMsg)
 	}
 }

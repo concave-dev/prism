@@ -204,8 +204,12 @@ func Run() error {
 	// Store original API port for logging purposes
 	originalAPIPort := config.Global.APIPort
 
-	// Note: API address uses defaults (loopback) unlike other services
-	// No need to set default address as it's already set in flag defaults
+	// Set default API address if not explicitly set
+	// API inherits Serf address for cluster-wide accessibility (needed for leader forwarding)
+	// TODO: Add authentication/authorization before production use
+	if !config.Global.IsExplicitlySet(config.APIAddrField) {
+		config.Global.APIAddr = config.Global.SerfAddr
+	}
 
 	// ============================================================================
 	// ATOMIC PORT BINDING STRATEGY: Eliminating Race Conditions
@@ -380,6 +384,15 @@ func Run() error {
 	grpcClientPool := grpc.NewClientPool(serfManager, config.Global.GRPCPort, grpcConfig)
 
 	logging.Info("Starting HTTP API server with pre-bound listener on %s", apiListener.Addr().String())
+
+	// Warn about localhost binding breaking leader forwarding in multi-node clusters
+	if config.Global.APIAddr == "127.0.0.1" || config.Global.APIAddr == "localhost" {
+		logging.Warn("API server bound to localhost (%s) - leader forwarding will not work in multi-node clusters", config.Global.APIAddr)
+		logging.Warn("Write requests to non-leader nodes will fail. Workarounds:")
+		logging.Warn("  1. Use cluster-wide binding: --api=0.0.0.0:8008 (recommended)")
+		logging.Warn("  2. Connect directly to leader node's API")
+		logging.Warn("  3. Future versions will use gRPC for internal request routing")
+	}
 
 	// Create and start HTTP API server with pre-bound listener
 	var apiServer *api.Server

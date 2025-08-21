@@ -33,7 +33,7 @@ AI-generated code in sandboxes, manage workflows, and inspect cluster state.`,
   # Show detailed node information
   prismctl node info node1
 
-  # Connect to remote API server
+  # Connect to remote API server (any cluster node works due to leader forwarding)
   prismctl --api=192.168.1.100:8008 info
   
   # Output in JSON format
@@ -57,7 +57,7 @@ func SetupCommands() {
 func SetupGlobalFlags(rootCmd *cobra.Command, apiAddrPtr *string, logLevelPtr *string,
 	timeoutPtr *int, verbosePtr *bool, outputPtr *string, defaultAPIAddr string) {
 	rootCmd.PersistentFlags().StringVar(apiAddrPtr, "api", defaultAPIAddr,
-		"Address of Prism API server to connect to")
+		"Address of Prism API server to connect to (default: 127.0.0.1:8008, works with any cluster node due to leader forwarding)")
 	rootCmd.PersistentFlags().StringVar(logLevelPtr, "log-level", "ERROR",
 		"Log level: DEBUG, INFO, WARN, ERROR")
 	rootCmd.PersistentFlags().IntVar(timeoutPtr, "timeout", 8,

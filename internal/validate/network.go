@@ -6,7 +6,7 @@
 // could cause cluster formation failures or communication breakdowns.
 //
 // VALIDATION FEATURES:
-//   - IP Address: IPv4 and IPv6 format validation
+//   - IP Address: IPv4 format validation (IPv6 not currently supported)
 //   - Port Range: Valid port numbers (0-65535)
 //   - Address Lists: Multiple addresses for cluster joining
 //   - Format: Proper "host:port" address formatting
@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"strings"
 
 	"github.com/go-playground/validator/v10"
 )
@@ -70,7 +71,7 @@ func ParseBindAddress(addr string) (*NetworkAddress, error) {
 
 	host, portStr, err := net.SplitHostPort(addr)
 	if err != nil {
-		return nil, fmt.Errorf("invalid address format for '%s' - expected host:port", addr)
+		return nil, fmt.Errorf("expected format 'host:port', got '%s'", addr)
 	}
 
 	port, err := strconv.Atoi(portStr)
@@ -83,9 +84,28 @@ func ParseBindAddress(addr string) (*NetworkAddress, error) {
 		Port: port,
 	}
 
-	// Validate using struct tags
+	// Validate using struct tags with user-friendly error messages
 	if err := validate.Struct(netAddr); err != nil {
-		return nil, fmt.Errorf("validation failed: %w", err)
+		// Convert validation errors to user-friendly messages
+		if validationErrors, ok := err.(validator.ValidationErrors); ok {
+			var errorMessages []string
+			for _, fieldErr := range validationErrors {
+				switch fieldErr.Tag() {
+				case "ip":
+					errorMessages = append(errorMessages, fmt.Sprintf("invalid IP address '%s' - must be a valid IPv4 address (e.g., 192.168.1.1 or 127.0.0.1)", fieldErr.Value()))
+				case "min":
+					errorMessages = append(errorMessages, fmt.Sprintf("port %d is too low - must be between 0 and 65535", fieldErr.Value()))
+				case "max":
+					errorMessages = append(errorMessages, fmt.Sprintf("port %d is too high - must be between 0 and 65535", fieldErr.Value()))
+				case "required":
+					errorMessages = append(errorMessages, fmt.Sprintf("missing required field: %s", fieldErr.Field()))
+				default:
+					errorMessages = append(errorMessages, fmt.Sprintf("invalid %s: %v", fieldErr.Field(), fieldErr.Value()))
+				}
+			}
+			return nil, fmt.Errorf("%s", strings.Join(errorMessages, "; "))
+		}
+		return nil, fmt.Errorf("address validation failed: %w", err)
 	}
 
 	return netAddr, nil

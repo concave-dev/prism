@@ -97,6 +97,7 @@ func ValidateConfig() error {
 	if Global.apiAddrExplicitlySet {
 		apiNetAddr, err := validate.ParseBindAddress(Global.APIAddr)
 		if err != nil {
+			logging.Error("Invalid API address '%s': %v", Global.APIAddr, err)
 			return fmt.Errorf("invalid API address: %w", err)
 		}
 

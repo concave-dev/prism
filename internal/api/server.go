@@ -118,6 +118,13 @@ func (s *Server) Start() error {
 	router.Use(s.corsMiddleware())
 	router.Use(gin.Recovery())
 
+	// Add leader forwarding middleware for write operations
+	// Uses AgentManager interface (not direct RaftManager) to maintain clean layering:
+	// API Layer → AgentManager → RaftManager. This enables future extensibility
+	// where different resource managers can follow the same pattern.
+	leaderForwarder := NewLeaderForwarder(s.GetAgentManager(), s.serfManager, s.GetNodeID())
+	router.Use(leaderForwarder.ForwardWriteRequests())
+
 	// Setup routes
 	s.setupRoutes(router)
 

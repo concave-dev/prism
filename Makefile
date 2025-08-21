@@ -1,10 +1,11 @@
-.PHONY: build prismd prismctl clean clean-bin stop delete-dir generate-grpc test test-coverage run
+.PHONY: build prismd prismctl clean clean-bin stop delete-dir generate-grpc test test-coverage run bootstrap-expect
 
 BIN_DIR := bin
 PRISMD := $(BIN_DIR)/prismd
 PRISMCTL := $(BIN_DIR)/prismctl
 PROTO := internal/grpc/proto/node_service.proto
 GO := go
+BOOTSTRAP := true
 
 build: clean-bin $(PRISMD) $(PRISMCTL)
 
@@ -81,13 +82,37 @@ test-coverage:
 run: build stop
 	@echo "=== Starting Prism cluster (1 bootstrap + 2 joining nodes) ==="
 	@echo "Starting bootstrap node..."
-	@$(PRISMD) --bootstrap &
+	@if [ "$(BOOTSTRAP)" = "true" ]; then \
+		$(PRISMD) --bootstrap & \
+	else \
+		$(PRISMD) --bootstrap-expect=3 & \
+	fi
 	@sleep 3
 	@echo "Starting joining node 1..."
-	@$(PRISMD) --join=0.0.0.0:4200 &
+	@if [ "$(BOOTSTRAP)" = "true" ]; then \
+		$(PRISMD) --join=0.0.0.0:4200 & \
+	else \
+		$(PRISMD) --bootstrap-expect=3 --join=0.0.0.0:4200 & \
+	fi
 	@sleep 2
 	@echo "Starting joining node 2..."
-	@$(PRISMD) --join=0.0.0.0:4200 &
+	@if [ "$(BOOTSTRAP)" = "true" ]; then \
+		$(PRISMD) --join=0.0.0.0:4200 & \
+	else \
+		$(PRISMD) --bootstrap-expect=3 --join=0.0.0.0:4200 & \
+	fi
 	@echo "Cluster started! Use 'make stop' to stop all nodes."
+
+bootstrap-expect: build stop
+	@echo "=== Starting Prism cluster with bootstrap-expect (3 nodes) ==="
+	@echo "Starting node 1 with bootstrap-expect=3..."
+	@$(PRISMD) --serf=0.0.0.0:4200 --bootstrap-expect=3 --join=0.0.0.0:4200,0.0.0.0:4201,0.0.0.0:4202 &
+	@sleep 2
+	@echo "Starting node 2 with bootstrap-expect=3..."
+	@$(PRISMD) --serf=0.0.0.0:4201 --bootstrap-expect=3 --join=0.0.0.0:4200,0.0.0.0:4201,0.0.0.0:4202 &
+	@sleep 2
+	@echo "Starting node 3 with bootstrap-expect=3..."
+	@$(PRISMD) --serf=0.0.0.0:4202 --bootstrap-expect=3 --join=0.0.0.0:4200,0.0.0.0:4201,0.0.0.0:4202 &
+	@echo "Cluster will form once all 3 nodes are discovered. Use 'make stop' to stop all nodes."
 
 

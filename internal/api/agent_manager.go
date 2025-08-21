@@ -29,26 +29,49 @@ import (
 )
 
 // AgentManager provides the interface for agent lifecycle operations and
-// Raft consensus integration. Enables agent handlers to submit commands
-// to the distributed state machine and query current agent state.
+// Raft consensus integration. This interface serves as the abstraction layer
+// between the HTTP API and the core Raft consensus system.
 //
-// Essential for coordinating agent operations across the cluster while
-// maintaining strong consistency through Raft consensus. Provides both
-// write operations through consensus and read operations from local state.
+// ARCHITECTURAL ROLE:
+// AgentManager sits between the API layer and RaftManager, providing a clean
+// separation of concerns where API-specific coordination logic lives separately
+// from pure consensus protocol implementation. This enables:
+//
+//   - Clean layering: API → AgentManager → RaftManager
+//   - Extensible design: Future managers (MCPManager, MemoryManager) follow same pattern
+//   - Interface segregation: API components depend only on what they need
+//   - Single responsibility: Each layer handles its specific concerns
+//
+// USAGE PATTERN:
+// All API operations that require distributed coordination should go through
+// this interface rather than directly accessing RaftManager. This includes
+// leadership checks, command submission, and leader address resolution for
+// request forwarding scenarios.
 type AgentManager interface {
 	SubmitCommand(data string) error // Submit command to Raft for consensus
 	IsLeader() bool                  // Check if this node is the Raft leader
-	Leader() string                  // Get current Raft leader address
+	Leader() string                  // Get current Raft leader address for forwarding
 	GetFSM() *raft.PrismFSM          // Access FSM for read operations
 }
 
 // ServerAgentManager implements the AgentManager interface by delegating
-// to the underlying Raft manager. Provides agent management capabilities
-// for the HTTP API server while maintaining separation of concerns.
+// to the underlying Raft manager. This is the concrete implementation that
+// bridges the HTTP API layer with the distributed consensus system.
 //
-// This implementation bridges the HTTP API layer with the distributed
-// consensus layer, enabling clean agent lifecycle operations through
-// well-defined interfaces without tight coupling to server internals.
+// DESIGN PATTERN:
+// This follows the "Interface Adapter" pattern where ServerAgentManager acts
+// as a thin wrapper that translates API-layer calls into RaftManager calls.
+// This enables:
+//
+//   - Future extensibility: Other managers (MCPManager, MemoryManager) can
+//     follow the same pattern with their own domain-specific logic
+//   - Clean testing: API components can be tested with mock implementations
+//   - Consistent interface: All distributed operations use the same contract
+//
+// DELEGATION STRATEGY:
+// Most methods are simple pass-through calls to RaftManager, but this layer
+// provides the architectural boundary where domain-specific coordination
+// logic can be added in the future without breaking API consumers.
 type ServerAgentManager struct {
 	raftManager *raft.RaftManager // Underlying Raft consensus manager
 }
@@ -94,13 +117,22 @@ func (sam *ServerAgentManager) IsLeader() bool {
 	return sam.raftManager.IsLeader()
 }
 
-// Leader returns the current Raft leader address for client redirection.
-// Implements the AgentManager interface to enable agent handlers to redirect
-// write requests to the appropriate leader node.
+// Leader returns the current Raft leader's node ID for request forwarding.
+// Implements the AgentManager interface to enable the leader forwarding
+// middleware to route write requests to the appropriate leader node.
 //
-// Essential for client applications and load balancers to route write requests
-// to the correct node when this node is not the leader. Provides the endpoint
-// where distributed write operations should be directed.
+// ARCHITECTURAL ROLE:
+// This method is a key component of the transparent leader forwarding system.
+// When a write request arrives at a non-leader node, the LeaderForwarder
+// middleware calls this method to determine where to route the request.
+//
+// RETURN VALUE:
+// Returns the leader's node ID (e.g., "02270a4a3339"), not a network address.
+// The LeaderForwarder resolves this ID to an actual network endpoint using
+// Serf membership data, enabling proper HTTP request forwarding across the cluster.
+//
+// This abstraction allows the AgentManager to remain focused on Raft concepts
+// while the forwarding layer handles network address resolution separately.
 func (sam *ServerAgentManager) Leader() string {
 	if sam.raftManager == nil {
 		return ""
