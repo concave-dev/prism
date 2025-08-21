@@ -54,7 +54,7 @@ func HandlePeerList(cmd *cobra.Command, args []string) error {
 
 		// Apply filters and sorting
 		filtered := filterPeers(resp.Peers, resp.Leader)
-		sorted := sortPeers(filtered, resp.Leader)
+		sorted := sortPeers(filtered)
 
 		// Create response with filtered/sorted peers
 		filteredResp := &client.RaftPeersResponse{
@@ -199,7 +199,7 @@ func filterPeers(peers []client.RaftPeer, leader string) []client.RaftPeer {
 //
 // Critical for operational consistency by providing stable peer ordering
 // that operators can rely on during monitoring and troubleshooting workflows.
-func sortPeers(peers []client.RaftPeer, leader string) []client.RaftPeer {
+func sortPeers(peers []client.RaftPeer) []client.RaftPeer {
 	if len(peers) == 0 {
 		return peers
 	}
