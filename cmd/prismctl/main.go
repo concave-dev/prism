@@ -24,7 +24,9 @@ func init() {
 	commands.SetupCommands()
 	commands.SetupNodeCommands()
 	commands.SetupPeerCommands()
-	commands.SetupAgentCommands()
+	if config.Features.EnableAgent {
+		commands.SetupAgentCommands()
+	}
 
 	// Setup global flags
 	commands.SetupGlobalFlags(rootCmd, &config.Global.APIAddr, &config.Global.LogLevel,
@@ -36,8 +38,10 @@ func init() {
 		&config.Node.Watch, &config.Node.StatusFilter, &config.Node.Sort)
 
 	// Setup agent command flags
-	agentCreateCmd, agentLsCmd, agentInfoCmd, agentDeleteCmd := commands.GetAgentCommands()
-	setupAgentFlags(agentCreateCmd, agentLsCmd, agentInfoCmd, agentDeleteCmd)
+	if config.Features.EnableAgent {
+		agentCreateCmd, agentLsCmd, agentInfoCmd, agentDeleteCmd := commands.GetAgentCommands()
+		setupAgentFlags(agentCreateCmd, agentLsCmd, agentInfoCmd, agentDeleteCmd)
+	}
 
 	// Setup peer command flags
 	peerLsCmd, peerInfoCmd := commands.GetPeerCommands()
@@ -54,7 +58,6 @@ func setupCommandHandlers() {
 	nodeLsCmd, nodeTopCmd, nodeInfoCmd := commands.GetNodeCommands()
 	peerLsCmd, peerInfoCmd := commands.GetPeerCommands()
 	infoCmd := commands.GetInfoCommand()
-	agentCreateCmd, agentLsCmd, agentInfoCmd, agentDeleteCmd := commands.GetAgentCommands()
 
 	// Assign handlers
 	nodeLsCmd.RunE = handlers.HandleMembers
@@ -63,14 +66,17 @@ func setupCommandHandlers() {
 	peerLsCmd.RunE = handlers.HandlePeerList
 	peerInfoCmd.RunE = handlers.HandlePeerInfo
 	infoCmd.RunE = handlers.HandleClusterInfo
-	agentCreateCmd.RunE = handlers.HandleAgentCreate
-	agentLsCmd.RunE = handlers.HandleAgentList
-	agentInfoCmd.RunE = handlers.HandleAgentInfo
-	agentDeleteCmd.RunE = handlers.HandleAgentDelete
+	if config.Features.EnableAgent {
+		agentCreateCmd, agentLsCmd, agentInfoCmd, agentDeleteCmd := commands.GetAgentCommands()
+		agentCreateCmd.RunE = handlers.HandleAgentCreate
+		agentLsCmd.RunE = handlers.HandleAgentList
+		agentInfoCmd.RunE = handlers.HandleAgentInfo
+		agentDeleteCmd.RunE = handlers.HandleAgentDelete
+	}
 }
 
 // setupAgentFlags configures flags for agent commands
-func setupAgentFlags(createCmd, lsCmd, infoCmd, deleteCmd *cobra.Command) {
+func setupAgentFlags(createCmd, lsCmd, _ /* infoCmd */, _ /* deleteCmd */ *cobra.Command) {
 	// Agent create flags
 	createCmd.Flags().StringVar(&config.Agent.Name, "name", "", "Agent name (auto-generated if not provided)")
 	createCmd.Flags().StringVar(&config.Agent.Kind, "kind", "task", "Agent kind: task or service")
