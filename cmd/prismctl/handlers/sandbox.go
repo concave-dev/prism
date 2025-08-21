@@ -202,8 +202,11 @@ func HandleSandboxExec(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  Command: %s\n", displayCommand)
 		fmt.Printf("  Status:  %s\n", response.Status)
 		fmt.Printf("  Message: %s\n", response.Message)
-		if response.Output != "" {
-			fmt.Printf("  Output:\n%s\n", response.Output)
+		if response.Stdout != "" {
+			fmt.Printf("  Stdout:\n%s\n", response.Stdout)
+		}
+		if response.Stderr != "" {
+			fmt.Printf("  Stderr:\n%s\n", response.Stderr)
 		}
 	}
 

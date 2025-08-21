@@ -126,7 +126,8 @@ type SandboxExecResponse struct {
 	Command   string `json:"command"`    // Executed command
 	Status    string `json:"status"`     // Execution status
 	Message   string `json:"message"`    // Human-readable status message
-	Output    string `json:"output"`     // Command execution output (if available)
+	Stdout    string `json:"stdout"`     // Command execution stdout (if available)
+	Stderr    string `json:"stderr"`     // Command execution stderr (if available)
 }
 
 // CreateSandbox handles HTTP requests for creating new sandboxes in the cluster.
@@ -540,7 +541,8 @@ func ExecSandbox(sandboxMgr SandboxManager, nodeID string) gin.HandlerFunc {
 			Command:   req.Command,
 			Status:    "submitted",
 			Message:   "Command execution submitted to cluster",
-			Output:    "", // TODO: Will be populated by runtime execution
+			Stdout:    "", // TODO: Will be populated by runtime execution
+			Stderr:    "", // TODO: Will be populated by runtime execution
 		}
 
 		c.JSON(http.StatusOK, response)

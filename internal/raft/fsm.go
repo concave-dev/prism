@@ -238,13 +238,13 @@ type Sandbox struct {
 // move full command output to distributed database to reduce Raft log size and
 // improve cluster performance for large output scenarios.
 type ExecutionRecord struct {
-	Command     string    `json:"command"`      // Executed command
-	ExecutedAt  time.Time `json:"executed_at"`  // Execution timestamp
-	Status      string    `json:"status"`       // Execution status: "pending", "running", "completed", "failed"
-	ExitCode    int       `json:"exit_code"`    // Command exit code (if completed)
-	Duration    int64     `json:"duration_ms"`  // Execution duration in milliseconds
-	Output      string    `json:"output"`       // Command output (truncated to MaxCommandOutputSize) - TODO: replace with output_id
-	ErrorOutput string    `json:"error_output"` // Command error output (truncated to MaxCommandOutputSize) - TODO: replace with error_output_id
+	Command    string    `json:"command"`     // Executed command
+	ExecutedAt time.Time `json:"executed_at"` // Execution timestamp
+	Status     string    `json:"status"`      // Execution status: "pending", "running", "completed", "failed"
+	ExitCode   int       `json:"exit_code"`   // Command exit code (if completed)
+	Duration   int64     `json:"duration_ms"` // Execution duration in milliseconds
+	Stdout     string    `json:"stdout"`      // Command stdout (truncated to MaxCommandOutputSize) - TODO: replace with stdout_id
+	Stderr     string    `json:"stderr"`      // Command stderr (truncated to MaxCommandOutputSize) - TODO: replace with stderr_id
 }
 
 // Command represents a distributed operation that should be applied consistently
@@ -845,13 +845,13 @@ func (s *SandboxFSM) processExecCommand(cmd Command) interface{} {
 
 	// Create execution record for history tracking
 	execRecord := ExecutionRecord{
-		Command:     execCmd.Command,
-		ExecutedAt:  time.Now(),
-		Status:      "pending",
-		ExitCode:    0,
-		Duration:    0,
-		Output:      truncateOutput(""), // TODO: Will be populated by runtime execution
-		ErrorOutput: truncateOutput(""), // TODO: Will be populated by runtime execution
+		Command:    execCmd.Command,
+		ExecutedAt: time.Now(),
+		Status:     "pending",
+		ExitCode:   0,
+		Duration:   0,
+		Stdout:     truncateOutput(""), // TODO: Will be populated by runtime execution
+		Stderr:     truncateOutput(""), // TODO: Will be populated by runtime execution
 	}
 
 	// Add to execution history
@@ -866,14 +866,14 @@ func (s *SandboxFSM) processExecCommand(cmd Command) interface{} {
 	// the command within the secure sandbox environment
 	//
 	// IMPORTANT: When updating ExecutionRecord with actual output, use:
-	//   record.Output = truncateOutput(actualOutput)
-	//   record.ErrorOutput = truncateOutput(actualErrorOutput)
+	//   record.Stdout = truncateOutput(actualStdout)
+	//   record.Stderr = truncateOutput(actualStderr)
 	// This ensures output never exceeds MaxCommandOutputSize limits.
 	//
 	// FUTURE: Replace direct output storage with distributed database approach:
 	//   1. Store full output in distributed database
-	//   2. Store only output_id and error_output_id in ExecutionRecord
-	//   3. Remove Output/ErrorOutput fields from Raft state entirely
+	//   2. Store only stdout_id and stderr_id in ExecutionRecord
+	//   3. Remove Stdout/Stderr fields from Raft state entirely
 	// This will dramatically reduce Raft log size and improve cluster performance.
 
 	return map[string]interface{}{

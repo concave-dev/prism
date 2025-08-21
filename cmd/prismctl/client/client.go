@@ -141,7 +141,8 @@ type SandboxExecResponse struct {
 	Command   string `json:"command"`
 	Status    string `json:"status"`
 	Message   string `json:"message"`
-	Output    string `json:"output,omitempty"`
+	Stdout    string `json:"stdout,omitempty"`
+	Stderr    string `json:"stderr,omitempty"`
 }
 
 // API type for raft peers response
