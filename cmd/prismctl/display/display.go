@@ -298,9 +298,11 @@ func DisplayNodeInfo(resource client.NodeResources, isLeader bool, health *clien
 		if isLeader {
 			name = name + "*"
 		}
-		fmt.Printf("Node: %s (%s)\n", name, resource.NodeID)
-		fmt.Printf("Leader: %t\n", isLeader)
-		fmt.Printf("Timestamp: %s\n", resource.Timestamp.Format(time.RFC3339))
+		fmt.Printf("Node Information:\n")
+		fmt.Printf("  ID:        %s\n", resource.NodeID)
+		fmt.Printf("  Name:      %s\n", name)
+		fmt.Printf("  Leader:    %t\n", isLeader)
+		fmt.Printf("  Timestamp: %s\n", resource.Timestamp.Format(time.RFC3339))
 		if health != nil {
 			// Count check statuses for detailed health reporting
 			healthyCount := 0
@@ -322,9 +324,9 @@ func DisplayNodeInfo(resource client.NodeResources, isLeader bool, health *clien
 			// Display status with check counts
 			status := strings.ToLower(health.Status)
 			if totalChecks > 0 {
-				fmt.Printf("Status: %s (%d/%d)\n", status, healthyCount, totalChecks)
+				fmt.Printf("  Status:    %s (%d/%d)\n", status, healthyCount, totalChecks)
 			} else {
-				fmt.Printf("Status: %s\n", status)
+				fmt.Printf("  Status:    %s\n", status)
 			}
 		}
 		// Network information (best-effort based on Serf tags)

@@ -145,16 +145,18 @@ func HandlePeerInfo(cmd *cobra.Command, args []string) error {
 		peerName = targetPeer.Name + "*"
 	}
 
-	fmt.Printf("Peer: %s (%s)\n", peerName, targetPeer.ID)
-	fmt.Printf("Address: %s\n", targetPeer.Address)
-	fmt.Printf("Reachable: %t\n", targetPeer.Reachable)
-	fmt.Printf("Leader: %t\n", isLeader)
+	fmt.Printf("Peer Information:\n")
+	fmt.Printf("  ID:        %s\n", targetPeer.ID)
+	fmt.Printf("  Name:      %s\n", peerName)
+	fmt.Printf("  Address:   %s\n", targetPeer.Address)
+	fmt.Printf("  Reachable: %t\n", targetPeer.Reachable)
+	fmt.Printf("  Leader:    %t\n", isLeader)
 	if isLeader {
-		fmt.Printf("Status: Current Raft leader\n")
+		fmt.Printf("  Status:    Current Raft leader\n")
 	} else if targetPeer.Reachable {
-		fmt.Printf("Status: Follower (reachable)\n")
+		fmt.Printf("  Status:    Follower (reachable)\n")
 	} else {
-		fmt.Printf("Status: Follower (unreachable)\n")
+		fmt.Printf("  Status:    Follower (unreachable)\n")
 	}
 
 	return nil
