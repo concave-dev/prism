@@ -158,7 +158,7 @@ func HandleSandboxExec(cmd *cobra.Command, args []string) error {
 	}
 
 	// Resolve sandbox identifier (could be ID or name)
-	resolvedSandboxID, sandboxName, err := resolveSandboxIdentifier(sandboxes, sandboxIdentifier)
+	resolvedSandboxID, sandboxName, err := resolveSandboxIdentifierExact(sandboxes, sandboxIdentifier)
 	if err != nil {
 		return err
 	}
@@ -315,7 +315,7 @@ func HandleSandboxDestroy(cmd *cobra.Command, args []string) error {
 	}
 
 	// Resolve sandbox identifier (could be ID or name)
-	resolvedSandboxID, sandboxName, err := resolveSandboxIdentifier(sandboxes, sandboxIdentifier)
+	resolvedSandboxID, sandboxName, err := resolveSandboxIdentifierExact(sandboxes, sandboxIdentifier)
 	if err != nil {
 		return err
 	}
@@ -406,14 +406,14 @@ func HandleSandboxInfo(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// resolveSandboxIdentifier resolves a sandbox identifier (ID or name) to the actual
+// resolveSandboxIdentifierExact resolves a sandbox identifier (ID or name) to the actual
 // sandbox ID using EXACT matching only. Returns the resolved ID, sandbox name, and
 // any error. Used for destructive operations where partial matching could lead
 // to unintended consequences.
 //
-// SECURITY: Only supports exact matches for safety - no partial ID matching
-// for destructive operations to prevent accidental sandbox destruction.
-func resolveSandboxIdentifier(sandboxes []client.Sandbox, identifier string) (string, string, error) {
+// SECURITY: Only supports exact ID or exact name matches for safety - no partial
+// ID matching for destructive operations to prevent accidental sandbox destruction.
+func resolveSandboxIdentifierExact(sandboxes []client.Sandbox, identifier string) (string, string, error) {
 	// First try exact ID match
 	for _, sandbox := range sandboxes {
 		if sandbox.ID == identifier {
