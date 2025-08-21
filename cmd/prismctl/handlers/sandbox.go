@@ -151,6 +151,7 @@ func HandleSandboxList(cmd *cobra.Command, args []string) error {
 func HandleSandboxExec(cmd *cobra.Command, args []string) error {
 	utils.SetupLogging()
 
+	// args[0] is safe - argument validation handled by Cobra command definition
 	sandboxIdentifier := args[0]
 	command := config.Sandbox.Command
 
@@ -225,6 +226,7 @@ func HandleSandboxExec(cmd *cobra.Command, args []string) error {
 func HandleSandboxLogs(cmd *cobra.Command, args []string) error {
 	utils.SetupLogging()
 
+	// args[0] is safe - argument validation handled by Cobra command definition
 	sandboxIdentifier := args[0]
 	logging.Info("Fetching logs for sandbox '%s' from API server: %s", sandboxIdentifier, config.Global.APIAddr)
 
@@ -321,6 +323,7 @@ func HandleSandboxLogs(cmd *cobra.Command, args []string) error {
 func HandleSandboxDestroy(cmd *cobra.Command, args []string) error {
 	utils.SetupLogging()
 
+	// args[0] is safe - argument validation handled by Cobra command definition
 	sandboxIdentifier := args[0]
 
 	// Create API client
@@ -361,6 +364,7 @@ func HandleSandboxDestroy(cmd *cobra.Command, args []string) error {
 func HandleSandboxInfo(cmd *cobra.Command, args []string) error {
 	utils.SetupLogging()
 
+	// args[0] is safe - argument validation handled by Cobra command definition
 	sandboxIdentifier := args[0]
 	logging.Info("Fetching information for sandbox '%s' from API server: %s", sandboxIdentifier, config.Global.APIAddr)
 

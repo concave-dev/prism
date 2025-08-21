@@ -83,6 +83,7 @@ func HandlePeerList(cmd *cobra.Command, args []string) error {
 func HandlePeerInfo(cmd *cobra.Command, args []string) error {
 	utils.SetupLogging()
 
+	// args[0] is safe - argument validation handled by Cobra command definition
 	peerIdentifier := args[0]
 	logging.Info("Fetching information for peer '%s' from API server: %s", peerIdentifier, config.Global.APIAddr)
 

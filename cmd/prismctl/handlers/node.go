@@ -138,6 +138,7 @@ func HandleNodeTop(cmd *cobra.Command, args []string) error {
 func HandleNodeInfo(cmd *cobra.Command, args []string) error {
 	utils.SetupLogging()
 
+	// args[0] is safe - argument validation handled by Cobra command definition
 	nodeIdentifier := args[0]
 	logging.Info("Fetching information for node '%s' from API server: %s", nodeIdentifier, config.Global.APIAddr)
 

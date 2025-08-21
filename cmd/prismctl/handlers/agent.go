@@ -143,6 +143,7 @@ func HandleAgentList(cmd *cobra.Command, args []string) error {
 func HandleAgentInfo(cmd *cobra.Command, args []string) error {
 	utils.SetupLogging()
 
+	// args[0] is safe - argument validation handled by Cobra command definition
 	agentIdentifier := args[0]
 	logging.Info("Fetching information for agent '%s' from API server: %s", agentIdentifier, config.Global.APIAddr)
 
@@ -221,6 +222,7 @@ func HandleAgentInfo(cmd *cobra.Command, args []string) error {
 func HandleAgentDelete(cmd *cobra.Command, args []string) error {
 	utils.SetupLogging()
 
+	// args[0] is safe - argument validation handled by Cobra command definition
 	agentIdentifier := args[0]
 
 	// Create API client
