@@ -349,7 +349,7 @@ func HandleSandboxInfo(cmd *cobra.Command, args []string) error {
 	// Create API client
 	apiClient := client.CreateAPIClient()
 
-	// Get all sandboxes first (we need this for ID resolution)
+	// Get all sandboxes first (we need this for both ID resolution and sandbox data)
 	sandboxes, err := apiClient.GetSandboxes()
 	if err != nil {
 		return err
@@ -376,7 +376,7 @@ func HandleSandboxInfo(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// If not found by ID, try to find by exact name (similar to other info patterns)
+	// If not found by ID, try to find by name (similar to peer info pattern)
 	if targetSandbox == nil {
 		for _, s := range sandboxes {
 			if s.Name == sandboxIdentifier {
@@ -392,14 +392,15 @@ func HandleSandboxInfo(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("sandbox not found")
 	}
 
-	// Display sandbox information
+	// Display sandbox info based on output format
 	if config.Global.Output == "json" {
+		// JSON output
 		encoder := json.NewEncoder(os.Stdout)
 		encoder.SetIndent("", "  ")
 		return encoder.Encode(targetSandbox)
 	}
 
-	// Use the existing DisplaySandboxInfo function for table output
+	// Table output
 	display.DisplaySandboxInfo(targetSandbox)
 	logging.Success("Successfully retrieved information for sandbox '%s'", targetSandbox.Name)
 	return nil

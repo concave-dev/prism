@@ -84,6 +84,9 @@ func HandlePeerInfo(cmd *cobra.Command, args []string) error {
 	utils.SetupLogging()
 
 	peerIdentifier := args[0]
+	logging.Info("Fetching information for peer '%s' from API server: %s", peerIdentifier, config.Global.APIAddr)
+
+	// Create API client
 	apiClient := client.CreateAPIClient()
 
 	// Get peers first (we need this for both ID resolution and peer data)
