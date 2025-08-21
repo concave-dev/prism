@@ -795,7 +795,7 @@ func (s *SandboxFSM) processExecCommand(cmd Command) interface{} {
 	// Update sandbox state with execution info
 	sandbox.LastCommand = execCmd.Command
 	sandbox.ExecCount++
-	sandbox.Status = "exec_pending"
+	sandbox.Status = "executing"
 	sandbox.Updated = time.Now()
 
 	// Create execution record for history tracking
@@ -822,7 +822,7 @@ func (s *SandboxFSM) processExecCommand(cmd Command) interface{} {
 	return map[string]interface{}{
 		"sandbox_id": execCmd.SandboxID,
 		"command":    execCmd.Command,
-		"status":     "exec_pending",
+		"status":     "executing",
 	}
 }
 
