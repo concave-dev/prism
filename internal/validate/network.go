@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"strings"
 
 	"github.com/go-playground/validator/v10"
 )
@@ -87,20 +88,22 @@ func ParseBindAddress(addr string) (*NetworkAddress, error) {
 	if err := validate.Struct(netAddr); err != nil {
 		// Convert validation errors to user-friendly messages
 		if validationErrors, ok := err.(validator.ValidationErrors); ok {
+			var errorMessages []string
 			for _, fieldErr := range validationErrors {
 				switch fieldErr.Tag() {
 				case "ip":
-					return nil, fmt.Errorf("invalid IP address '%s' - must be a valid IPv4 address (e.g., 192.168.1.1 or 127.0.0.1)", fieldErr.Value())
+					errorMessages = append(errorMessages, fmt.Sprintf("invalid IP address '%s' - must be a valid IPv4 address (e.g., 192.168.1.1 or 127.0.0.1)", fieldErr.Value()))
 				case "min":
-					return nil, fmt.Errorf("port %d is too low - must be between 0 and 65535", fieldErr.Value())
+					errorMessages = append(errorMessages, fmt.Sprintf("port %d is too low - must be between 0 and 65535", fieldErr.Value()))
 				case "max":
-					return nil, fmt.Errorf("port %d is too high - must be between 0 and 65535", fieldErr.Value())
+					errorMessages = append(errorMessages, fmt.Sprintf("port %d is too high - must be between 0 and 65535", fieldErr.Value()))
 				case "required":
-					return nil, fmt.Errorf("missing required field: %s", fieldErr.Field())
+					errorMessages = append(errorMessages, fmt.Sprintf("missing required field: %s", fieldErr.Field()))
 				default:
-					return nil, fmt.Errorf("invalid %s: %v", fieldErr.Field(), fieldErr.Value())
+					errorMessages = append(errorMessages, fmt.Sprintf("invalid %s: %v", fieldErr.Field(), fieldErr.Value()))
 				}
 			}
+			return nil, fmt.Errorf("%s", strings.Join(errorMessages, "; "))
 		}
 		return nil, fmt.Errorf("address validation failed: %w", err)
 	}
