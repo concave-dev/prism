@@ -833,6 +833,10 @@ func (s *SandboxFSM) processCreateCommand(cmd Command) interface{} {
 // Essential for code execution workflows as it maintains execution state and
 // coordinates with the runtime system for secure command execution. Updates
 // sandbox state and execution history for monitoring and debugging operations.
+//
+// NOTE: Sandbox lifecycle transitions are not yet centrally coupled or
+// validated. Status changes happen per-handler; a future update will
+// centralize allowed transitions and validation with the runtime.
 func (s *SandboxFSM) processExecCommand(cmd Command) interface{} {
 	var execCmd SandboxExecCommand
 	if err := json.Unmarshal(cmd.Data, &execCmd); err != nil {
