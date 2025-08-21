@@ -128,7 +128,7 @@ func (x *GetResourcesRequest) GetResourceTypes() []string {
 // GetResourcesResponse contains node resource information for workload placement decisions.
 type GetResourcesResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Unique identifier for this node (12-character hex string)
+	// Unique identifier for this node (hex string, truncated for display)
 	NodeId string `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
 	// Human-readable name for this node
 	NodeName string `protobuf:"bytes,2,opt,name=node_name,json=nodeName,proto3" json:"node_name,omitempty"`
@@ -439,7 +439,7 @@ func (x *GetHealthRequest) GetCheckTypes() []string {
 // GetHealthResponse contains node health information for failure detection and routing decisions.
 type GetHealthResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Unique identifier for this node (12-character hex string)
+	// Unique identifier for this node (hex string, truncated for display)
 	NodeId string `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
 	// Human-readable name for this node
 	NodeName string `protobuf:"bytes,2,opt,name=node_name,json=nodeName,proto3" json:"node_name,omitempty"`

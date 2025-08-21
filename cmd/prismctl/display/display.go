@@ -30,22 +30,9 @@ import (
 	"github.com/concave-dev/prism/cmd/prismctl/config"
 	"github.com/concave-dev/prism/cmd/prismctl/utils"
 	"github.com/concave-dev/prism/internal/logging"
+	internalutils "github.com/concave-dev/prism/internal/utils"
 	"github.com/dustin/go-humanize"
 )
-
-// TruncateID truncates a full 64-character ID to 12 characters for table display
-// while keeping full IDs in detailed info views. Follows Docker-style short ID
-// display patterns for improved readability in tabular output.
-//
-// Essential for maintaining clean table formatting while preserving full ID
-// information in detailed views where space is not constrained. The 12-character
-// prefix provides sufficient uniqueness for most operational scenarios.
-func TruncateID(id string) string {
-	if len(id) <= 12 {
-		return id
-	}
-	return id[:12]
-}
 
 // DisplayMembersFromAPI displays cluster nodes from API response, annotating the Raft leader
 func DisplayMembersFromAPI(members []client.ClusterMember) {
@@ -113,11 +100,11 @@ func DisplayMembersFromAPI(members []client.ClusterMember) {
 				}
 
 				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-					TruncateID(member.ID), name, member.Address, member.Status,
+					internalutils.TruncateIDSafe(member.ID), name, member.Address, member.Status,
 					serfDisplay, raftStatus, lastSeen, leader)
 			} else {
 				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-					TruncateID(member.ID), name, member.Address, member.Status, lastSeen)
+					internalutils.TruncateIDSafe(member.ID), name, member.Address, member.Status, lastSeen)
 			}
 		}
 	}
@@ -179,7 +166,7 @@ func DisplayClusterInfoFromAPI(info client.ClusterInfo) {
 				}
 
 				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-					TruncateID(member.ID), member.Name, member.Address, member.Status,
+					internalutils.TruncateIDSafe(member.ID), member.Name, member.Address, member.Status,
 					serfStatus, raftStatus, lastSeen)
 			}
 		}
@@ -244,7 +231,7 @@ func DisplayClusterResourcesFromAPI(resources []client.NodeResources) {
 			// Always show score column for consistent UX
 			if config.Global.Verbose {
 				fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%.1f\t%s\t%d\n",
-					resource.NodeID[:12],
+					internalutils.TruncateIDSafe(resource.NodeID),
 					resource.NodeName,
 					resource.CPUCores,
 					memoryDisplay,
@@ -255,7 +242,7 @@ func DisplayClusterResourcesFromAPI(resources []client.NodeResources) {
 					resource.GoRoutines)
 			} else {
 				fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%.1f\t%s\n",
-					resource.NodeID[:12],
+					internalutils.TruncateIDSafe(resource.NodeID),
 					resource.NodeName,
 					resource.CPUCores,
 					memoryDisplay,
@@ -477,7 +464,7 @@ func DisplayAgents(agents []client.Agent) {
 			created := utils.FormatDuration(time.Since(agent.Created))
 
 			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-				TruncateID(agent.ID), agent.Name, agent.Type, agent.Status, created)
+				internalutils.TruncateIDSafe(agent.ID), agent.Name, agent.Type, agent.Status, created)
 		}
 	}
 }
@@ -563,7 +550,7 @@ func DisplaySandboxes(sandboxes []client.Sandbox) {
 			}
 
 			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-				TruncateID(sandbox.ID), sandbox.Name, sandbox.Status, lastCommand, created)
+				internalutils.TruncateIDSafe(sandbox.ID), sandbox.Name, sandbox.Status, lastCommand, created)
 		}
 	}
 }
@@ -675,9 +662,9 @@ func DisplayRaftPeers(resp *client.RaftPeersResponse) {
 			}
 
 			if config.Global.Verbose {
-				fmt.Fprintf(w, "%s\t%s\t%s\t%t\t%s\n", TruncateID(p.ID), name, p.Address, p.Reachable, leader)
+				fmt.Fprintf(w, "%s\t%s\t%s\t%t\t%s\n", internalutils.TruncateIDSafe(p.ID), name, p.Address, p.Reachable, leader)
 			} else {
-				fmt.Fprintf(w, "%s\t%s\t%t\t%s\n", TruncateID(p.ID), p.Address, p.Reachable, leader)
+				fmt.Fprintf(w, "%s\t%s\t%t\t%s\n", internalutils.TruncateIDSafe(p.ID), p.Address, p.Reachable, leader)
 			}
 		}
 	}

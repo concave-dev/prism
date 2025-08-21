@@ -25,6 +25,30 @@ import (
 	"fmt"
 )
 
+// ShortIDLength defines the standard length for truncated IDs in table displays.
+// Follows Docker-style short ID pattern where 12 characters provide sufficient
+// uniqueness for most operational scenarios while maintaining clean table formatting.
+//
+// Used consistently across all CLI display functions to ensure uniform ID
+// presentation in tabular output, while detailed info commands show full 64-char IDs.
+const ShortIDLength = 12
+
+// TruncateIDSafe safely truncates an ID to ShortIDLength characters with bounds
+// checking to prevent panics. Returns the full ID if it's shorter than the
+// truncation length, ensuring consistent behavior across all ID formats.
+//
+// Essential for safe table display formatting where ID lengths may vary due to
+// different generation methods or legacy compatibility. Prevents runtime panics
+// while maintaining consistent short ID presentation in CLI output.
+//
+// Used by display functions to safely convert 64-char IDs to short display format.
+func TruncateIDSafe(id string) string {
+	if len(id) <= ShortIDLength {
+		return id
+	}
+	return id[:ShortIDLength]
+}
+
 // GenerateID creates a unique 64-character hex identifier for cluster resources.
 // Uses crypto/rand to ensure uniqueness across distributed systems and prevent
 // collisions, following Docker's ID generation approach.

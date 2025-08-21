@@ -40,7 +40,7 @@ message GetResourcesRequest {
 
 // GetResourcesResponse contains node resource information for workload placement decisions.
 message GetResourcesResponse {
-  // Unique identifier for this node (12-character hex string)
+  // Unique identifier for this node (hex string, truncated for display)
   string node_id = 1;
   
   // Human-readable name for this node
@@ -98,7 +98,7 @@ message GetHealthRequest {
 
 // GetHealthResponse contains node health information for failure detection and routing decisions.
 message GetHealthResponse {
-  // Unique identifier for this node (12-character hex string)
+  // Unique identifier for this node (hex string, truncated for display)
   string node_id = 1;
   
   // Human-readable name for this node

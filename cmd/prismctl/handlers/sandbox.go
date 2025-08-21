@@ -31,6 +31,7 @@ import (
 	"github.com/concave-dev/prism/cmd/prismctl/display"
 	"github.com/concave-dev/prism/cmd/prismctl/utils"
 	"github.com/concave-dev/prism/internal/logging"
+	internalutils "github.com/concave-dev/prism/internal/utils"
 	"github.com/spf13/cobra"
 )
 
@@ -192,7 +193,7 @@ func HandleSandboxExec(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to encode response")
 		}
 	} else {
-		fmt.Printf("Command executed in sandbox '%s' (%s):\n", sandboxName, display.TruncateID(resolvedSandboxID))
+		fmt.Printf("Command executed in sandbox '%s' (%s):\n", sandboxName, internalutils.TruncateIDSafe(resolvedSandboxID))
 
 		// Truncate long commands for readability
 		displayCommand := response.Command
@@ -211,7 +212,7 @@ func HandleSandboxExec(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	logging.Success("Successfully executed command in sandbox '%s' (%s)", sandboxName, display.TruncateID(resolvedSandboxID))
+	logging.Success("Successfully executed command in sandbox '%s' (%s)", sandboxName, internalutils.TruncateIDSafe(resolvedSandboxID))
 	return nil
 }
 

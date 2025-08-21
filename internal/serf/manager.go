@@ -39,7 +39,7 @@ import (
 // discovery, load balancing, and failure detection across the distributed system.
 // Contains both network addressing info and operational state for routing decisions.
 type PrismNode struct {
-	ID       string            `json:"id"`       // Unique hex identifier (12-char, e.g., "a1b2c3d4e5f6")
+	ID       string            `json:"id"`       // Unique hex identifier (64-char, truncated for display)
 	Name     string            `json:"name"`     // Human-readable node name
 	Addr     net.IP            `json:"addr"`     // IP address for communication
 	Port     uint16            `json:"port"`     // Network port for Serf traffic

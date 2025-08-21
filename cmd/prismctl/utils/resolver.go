@@ -15,7 +15,7 @@
 //
 // DOCKER-STYLE PARTIAL MATCHING:
 // For user convenience, resolvers support partial ID matching similar to Docker:
-//   - Accepts 1-12 character hexadecimal prefixes of resource IDs
+//   - Accepts 1-ShortIDLength character hexadecimal prefixes of resource IDs
 //   - Requires unique prefix match to avoid ambiguity (errors on multiple matches)
 //   - Only activates for hex-like strings to minimize false positives
 //   - Returns original identifier if no prefix match found (API handles as name/full ID)
