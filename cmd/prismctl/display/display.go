@@ -592,6 +592,14 @@ func DisplaySandboxInfo(sandbox *client.Sandbox) {
 			displayCommand = displayCommand[:77] + "..."
 		}
 		fmt.Printf("  Last Command: %s\n", displayCommand)
+
+		// Show last execution output if available
+		if sandbox.LastStdout != "" {
+			fmt.Printf("  Last Stdout:\n%s\n", sandbox.LastStdout)
+		}
+		if sandbox.LastStderr != "" {
+			fmt.Printf("  Last Stderr:\n%s\n", sandbox.LastStderr)
+		}
 	}
 
 	if len(sandbox.Metadata) > 0 {

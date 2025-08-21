@@ -220,6 +220,8 @@ type Sandbox struct {
 
 	// Execution state and history
 	LastCommand string `json:"last_command,omitempty"` // Most recent executed command
+	LastStdout  string `json:"last_stdout,omitempty"`  // Most recent command stdout (truncated)
+	LastStderr  string `json:"last_stderr,omitempty"`  // Most recent command stderr (truncated)
 	ExecCount   int    `json:"exec_count"`             // Total number of commands executed
 
 	// Operational metadata for monitoring and debugging
@@ -839,6 +841,8 @@ func (s *SandboxFSM) processExecCommand(cmd Command) interface{} {
 
 	// Update sandbox state with execution info
 	sandbox.LastCommand = execCmd.Command
+	sandbox.LastStdout = "" // TODO: Will be populated by runtime execution
+	sandbox.LastStderr = "" // TODO: Will be populated by runtime execution
 	sandbox.ExecCount++
 	sandbox.Status = "executing"
 	sandbox.Updated = time.Now()

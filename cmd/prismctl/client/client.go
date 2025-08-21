@@ -111,6 +111,8 @@ type Sandbox struct {
 	Created     time.Time         `json:"created"`
 	Updated     time.Time         `json:"updated"`
 	LastCommand string            `json:"last_command,omitempty"`
+	LastStdout  string            `json:"last_stdout,omitempty"`
+	LastStderr  string            `json:"last_stderr,omitempty"`
 	Metadata    map[string]string `json:"metadata,omitempty"`
 }
 
