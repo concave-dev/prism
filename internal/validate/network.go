@@ -71,7 +71,7 @@ func ParseBindAddress(addr string) (*NetworkAddress, error) {
 
 	host, portStr, err := net.SplitHostPort(addr)
 	if err != nil {
-		return nil, fmt.Errorf("invalid address format for '%s' - expected host:port", addr)
+		return nil, fmt.Errorf("expected format 'host:port', got '%s'", addr)
 	}
 
 	port, err := strconv.Atoi(portStr)
