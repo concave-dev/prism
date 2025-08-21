@@ -27,6 +27,7 @@ func init() {
 	if config.Features.EnableAgent {
 		commands.SetupAgentCommands()
 	}
+	commands.SetupSandboxCommands()
 
 	// Setup global flags
 	commands.SetupGlobalFlags(rootCmd, &config.Global.APIAddr, &config.Global.LogLevel,
@@ -47,6 +48,10 @@ func init() {
 	peerLsCmd, peerInfoCmd := commands.GetPeerCommands()
 	commands.SetupPeerFlags(peerLsCmd, peerInfoCmd,
 		&config.Peer.Watch, &config.Peer.StatusFilter, &config.Peer.RoleFilter)
+
+	// Setup sandbox command flags
+	sandboxCreateCmd, sandboxLsCmd, sandboxExecCmd, sandboxLogsCmd, sandboxDestroyCmd := commands.GetSandboxCommands()
+	setupSandboxFlags(sandboxCreateCmd, sandboxLsCmd, sandboxExecCmd, sandboxLogsCmd, sandboxDestroyCmd)
 
 	// Setup command handlers
 	setupCommandHandlers()
@@ -73,6 +78,14 @@ func setupCommandHandlers() {
 		agentInfoCmd.RunE = handlers.HandleAgentInfo
 		agentDeleteCmd.RunE = handlers.HandleAgentDelete
 	}
+
+	// Setup sandbox command handlers
+	sandboxCreateCmd, sandboxLsCmd, sandboxExecCmd, sandboxLogsCmd, sandboxDestroyCmd := commands.GetSandboxCommands()
+	sandboxCreateCmd.RunE = handlers.HandleSandboxCreate
+	sandboxLsCmd.RunE = handlers.HandleSandboxList
+	sandboxExecCmd.RunE = handlers.HandleSandboxExec
+	sandboxLogsCmd.RunE = handlers.HandleSandboxLogs
+	sandboxDestroyCmd.RunE = handlers.HandleSandboxDestroy
 }
 
 // setupAgentFlags configures flags for agent commands
@@ -90,6 +103,25 @@ func setupAgentFlags(createCmd, lsCmd, _ /* infoCmd */, _ /* deleteCmd */ *cobra
 
 	// Agent info and delete commands use global flags only for now
 	// infoCmd and deleteCmd parameters reserved for future flag additions
+}
+
+// setupSandboxFlags configures flags for sandbox commands
+func setupSandboxFlags(createCmd, lsCmd, execCmd, _ /* logsCmd */, _ /* destroyCmd */ *cobra.Command) {
+	// Sandbox create flags
+	createCmd.Flags().StringVar(&config.Sandbox.Name, "name", "", "Sandbox name (auto-generated if not provided)")
+	createCmd.Flags().StringSliceVar(&config.Sandbox.Metadata, "metadata", nil, "Sandbox metadata (key=value format)")
+
+	// Sandbox list flags
+	lsCmd.Flags().BoolVarP(&config.Sandbox.Watch, "watch", "w", false, "Watch for live updates")
+	lsCmd.Flags().StringVar(&config.Sandbox.StatusFilter, "status", "", "Filter by status")
+	lsCmd.Flags().StringVar(&config.Sandbox.Sort, "sort", "created", "Sort sandboxes by: created, name")
+
+	// Sandbox exec flags
+	execCmd.Flags().StringVar(&config.Sandbox.Command, "command", "", "Command to execute in sandbox")
+	execCmd.MarkFlagRequired("command")
+
+	// Logs and destroy commands use global flags only for now
+	// logsCmd and destroyCmd parameters reserved for future flag additions
 }
 
 // main is the main entry point
