@@ -896,32 +896,19 @@ func (f *PrismFSM) GetSandbox(sandboxID string) *Sandbox {
 	return nil
 }
 
-// LogCurrentState logs the current state of all FSMs for debugging and
-// development monitoring. Provides visibility into cluster state across
-// all nodes for troubleshooting and development purposes.
+// LogCurrentState logs FSM state information for debugging and development
+// monitoring. Provides visibility into sandbox state across cluster nodes
+// for troubleshooting and development purposes.
 //
-// Essential for development and troubleshooting as it provides detailed
-// state information that can be correlated across cluster nodes. Logs
-// comprehensive state including agent counts, placement distribution, and load.
+// Called periodically by the raft manager when DEBUG mode is enabled.
+// Focuses on sandbox state since agents are currently disabled in the system.
 func (f *PrismFSM) LogCurrentState(nodeID string) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 
-	agentCount := len(f.agentFSM.agents)
-	statusCounts := make(map[string]int)
-	typeCounts := make(map[string]int)
-	placementCounts := make(map[string]int)
-
-	// Analyze agent distribution
-	for _, agent := range f.agentFSM.agents {
-		statusCounts[agent.Status]++
-		typeCounts[agent.Type]++
-		if agent.Placement != nil {
-			placementCounts[agent.Placement.NodeID]++
-		}
-	}
-
-	// Analyze sandbox distribution
+	// Focus on sandbox state since agents are disabled
+	// TODO: Add agent state logging when agents are re-enabled
+	// TODO: Add other FSM states (MCP servers, memory, config, secrets) as they're implemented
 	sandboxCount := len(f.sandboxFSM.sandboxes)
 	sandboxStatusCounts := make(map[string]int)
 	sandboxExecCounts := make(map[string]int)
@@ -935,13 +922,8 @@ func (f *PrismFSM) LogCurrentState(nodeID string) {
 		}
 	}
 
-	logging.Debug("FSM State on %s: %d total agents, %d total sandboxes", nodeID, agentCount, sandboxCount)
-	logging.Debug("  Agent status distribution: %v", statusCounts)
-	logging.Debug("  Agent type distribution: %v", typeCounts)
-	logging.Debug("  Agent placement distribution: %v", placementCounts)
-	logging.Debug("  Agent node loads: %v", f.agentFSM.nodeLoads)
-	logging.Debug("  Sandbox status distribution: %v", sandboxStatusCounts)
-	logging.Debug("  Sandbox execution distribution: %v", sandboxExecCounts)
+	logging.Debug("FSM State on %s: %d sandboxes, status: %v, executions: %v",
+		nodeID, sandboxCount, sandboxStatusCounts, sandboxExecCounts)
 }
 
 // ============================================================================
