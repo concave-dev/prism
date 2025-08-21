@@ -62,7 +62,17 @@ func HandleSandboxCreate(cmd *cobra.Command, args []string) error {
 		if len(parts) != 2 {
 			return fmt.Errorf("invalid metadata format '%s', expected key=value", item)
 		}
-		metadata[parts[0]] = parts[1]
+
+		// Trim whitespace from key and value
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+
+		// Validate that both key and value are non-empty
+		if key == "" || value == "" {
+			return fmt.Errorf("invalid metadata '%s', key and value must be non-empty", item)
+		}
+
+		metadata[key] = value
 	}
 
 	// Create API client and create sandbox
