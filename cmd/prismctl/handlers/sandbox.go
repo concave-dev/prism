@@ -191,7 +191,7 @@ func HandleSandboxExec(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to encode response")
 		}
 	} else {
-		fmt.Printf("Command executed in sandbox '%s' (%s):\n", sandboxName, resolvedSandboxID)
+		fmt.Printf("Command executed in sandbox '%s' (%s):\n", sandboxName, display.TruncateID(resolvedSandboxID))
 
 		// Truncate long commands for readability
 		displayCommand := response.Command
@@ -210,7 +210,7 @@ func HandleSandboxExec(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	logging.Success("Successfully executed command in sandbox '%s' (%s)", sandboxName, resolvedSandboxID)
+	logging.Success("Successfully executed command in sandbox '%s' (%s)", sandboxName, display.TruncateID(resolvedSandboxID))
 	return nil
 }
 
