@@ -332,6 +332,79 @@ func HandleSandboxDestroy(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// HandleSandboxInfo handles the sandbox info subcommand for displaying detailed
+// information about a specific sandbox environment. Provides comprehensive
+// sandbox metadata, execution history, and operational status for debugging
+// and monitoring distributed code execution workflows.
+//
+// Essential for operational debugging and sandbox lifecycle management where
+// operators need detailed visibility into sandbox configuration, execution
+// state, and resource utilization patterns across the cluster infrastructure.
+func HandleSandboxInfo(cmd *cobra.Command, args []string) error {
+	utils.SetupLogging()
+
+	sandboxIdentifier := args[0]
+	logging.Info("Fetching information for sandbox '%s' from API server: %s", sandboxIdentifier, config.Global.APIAddr)
+
+	// Create API client
+	apiClient := client.CreateAPIClient()
+
+	// Get all sandboxes first (we need this for ID resolution)
+	sandboxes, err := apiClient.GetSandboxes()
+	if err != nil {
+		return err
+	}
+
+	// Convert sandboxes to SandboxLike for resolution
+	sandboxLikes := make([]utils.SandboxLike, len(sandboxes))
+	for i, sandbox := range sandboxes {
+		sandboxLikes[i] = sandbox
+	}
+
+	// Resolve partial ID using the sandboxes we already have
+	resolvedSandboxID, err := utils.ResolveSandboxIdentifierFromSandboxes(sandboxLikes, sandboxIdentifier)
+	if err != nil {
+		return err
+	}
+
+	// Find the resolved sandbox in the data we already have
+	var targetSandbox *client.Sandbox
+	for _, s := range sandboxes {
+		if s.ID == resolvedSandboxID {
+			targetSandbox = &s
+			break
+		}
+	}
+
+	// If not found by ID, try to find by exact name (similar to other info patterns)
+	if targetSandbox == nil {
+		for _, s := range sandboxes {
+			if s.Name == sandboxIdentifier {
+				targetSandbox = &s
+				logging.Info("Resolved sandbox name '%s' to ID '%s'", sandboxIdentifier, s.ID)
+				break
+			}
+		}
+	}
+
+	if targetSandbox == nil {
+		logging.Error("Sandbox '%s' not found in cluster", sandboxIdentifier)
+		return fmt.Errorf("sandbox not found")
+	}
+
+	// Display sandbox information
+	if config.Global.Output == "json" {
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(targetSandbox)
+	}
+
+	// Use the existing DisplaySandboxInfo function for table output
+	display.DisplaySandboxInfo(targetSandbox)
+	logging.Success("Successfully retrieved information for sandbox '%s'", targetSandbox.Name)
+	return nil
+}
+
 // resolveSandboxIdentifier resolves a sandbox identifier (ID or name) to the actual
 // sandbox ID using EXACT matching only. Returns the resolved ID, sandbox name, and
 // any error. Used for destructive operations where partial matching could lead

@@ -50,8 +50,8 @@ func init() {
 		&config.Peer.Watch, &config.Peer.StatusFilter, &config.Peer.RoleFilter)
 
 	// Setup sandbox command flags
-	sandboxCreateCmd, sandboxLsCmd, sandboxExecCmd, sandboxLogsCmd, sandboxDestroyCmd := commands.GetSandboxCommands()
-	setupSandboxFlags(sandboxCreateCmd, sandboxLsCmd, sandboxExecCmd, sandboxLogsCmd, sandboxDestroyCmd)
+	sandboxCreateCmd, sandboxLsCmd, sandboxExecCmd, sandboxLogsCmd, sandboxInfoCmd, sandboxDestroyCmd := commands.GetSandboxCommands()
+	setupSandboxFlags(sandboxCreateCmd, sandboxLsCmd, sandboxExecCmd, sandboxLogsCmd, sandboxInfoCmd, sandboxDestroyCmd)
 
 	// Setup command handlers
 	setupCommandHandlers()
@@ -80,11 +80,12 @@ func setupCommandHandlers() {
 	}
 
 	// Setup sandbox command handlers
-	sandboxCreateCmd, sandboxLsCmd, sandboxExecCmd, sandboxLogsCmd, sandboxDestroyCmd := commands.GetSandboxCommands()
+	sandboxCreateCmd, sandboxLsCmd, sandboxExecCmd, sandboxLogsCmd, sandboxInfoCmd, sandboxDestroyCmd := commands.GetSandboxCommands()
 	sandboxCreateCmd.RunE = handlers.HandleSandboxCreate
 	sandboxLsCmd.RunE = handlers.HandleSandboxList
 	sandboxExecCmd.RunE = handlers.HandleSandboxExec
 	sandboxLogsCmd.RunE = handlers.HandleSandboxLogs
+	sandboxInfoCmd.RunE = handlers.HandleSandboxInfo
 	sandboxDestroyCmd.RunE = handlers.HandleSandboxDestroy
 }
 
@@ -106,7 +107,7 @@ func setupAgentFlags(createCmd, lsCmd, _ /* infoCmd */, _ /* deleteCmd */ *cobra
 }
 
 // setupSandboxFlags configures flags for sandbox commands
-func setupSandboxFlags(createCmd, lsCmd, execCmd, _ /* logsCmd */, _ /* destroyCmd */ *cobra.Command) {
+func setupSandboxFlags(createCmd, lsCmd, execCmd, _ /* logsCmd */, _ /* infoCmd */, _ /* destroyCmd */ *cobra.Command) {
 	// Sandbox create flags
 	createCmd.Flags().StringVar(&config.Sandbox.Name, "name", "", "Sandbox name (auto-generated if not provided)")
 	createCmd.Flags().StringSliceVar(&config.Sandbox.Metadata, "metadata", nil, "Sandbox metadata (key=value format)")
@@ -120,8 +121,8 @@ func setupSandboxFlags(createCmd, lsCmd, execCmd, _ /* logsCmd */, _ /* destroyC
 	execCmd.Flags().StringVar(&config.Sandbox.Command, "command", "", "Command to execute in sandbox")
 	execCmd.MarkFlagRequired("command")
 
-	// Logs and destroy commands use global flags only for now
-	// logsCmd and destroyCmd parameters reserved for future flag additions
+	// Logs, info, and destroy commands use global flags only for now
+	// logsCmd, infoCmd, and destroyCmd parameters reserved for future flag additions
 }
 
 // main is the main entry point

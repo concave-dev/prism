@@ -25,6 +25,8 @@
 package commands
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 )
 
@@ -131,6 +133,39 @@ sandbox activity.`,
 	// RunE will be set by the main package that imports this
 }
 
+// Sandbox info command
+var sandboxInfoCmd = &cobra.Command{
+	Use:   "info SANDBOX_ID_OR_NAME",
+	Short: "Show detailed information for a specific sandbox",
+	Long: `Display detailed information for a specific sandbox environment.
+
+Shows comprehensive sandbox details including execution history, metadata,
+status transitions, and operational information needed for debugging and
+monitoring code execution environments across the cluster.`,
+	Example: `  # Show info for specific sandbox by name
+  prismctl sandbox info my-sandbox
+
+  # Show info for specific sandbox by ID
+  prismctl sandbox info abc123def456
+
+  # Show verbose output including additional details
+  prismctl --verbose sandbox info my-sandbox
+
+  # Show info from specific API server
+  prismctl --api=192.168.1.100:8008 sandbox info my-sandbox
+  
+  # Output in JSON format
+  prismctl --output=json sandbox info my-sandbox`,
+	Args: func(cmd *cobra.Command, args []string) error {
+		if len(args) != 1 {
+			cmd.Help()
+			return fmt.Errorf("requires exactly 1 argument (sandbox name or ID)")
+		}
+		return nil
+	},
+	// RunE will be set by the main package that imports this
+}
+
 // Sandbox destroy command
 var sandboxDestroyCmd = &cobra.Command{
 	Use:   "destroy SANDBOX_ID_OR_NAME",
@@ -157,10 +192,11 @@ func SetupSandboxCommands() {
 	sandboxCmd.AddCommand(sandboxLsCmd)
 	sandboxCmd.AddCommand(sandboxExecCmd)
 	sandboxCmd.AddCommand(sandboxLogsCmd)
+	sandboxCmd.AddCommand(sandboxInfoCmd)
 	sandboxCmd.AddCommand(sandboxDestroyCmd)
 }
 
 // GetSandboxCommands returns the sandbox command structures for handler assignment
-func GetSandboxCommands() (*cobra.Command, *cobra.Command, *cobra.Command, *cobra.Command, *cobra.Command) {
-	return sandboxCreateCmd, sandboxLsCmd, sandboxExecCmd, sandboxLogsCmd, sandboxDestroyCmd
+func GetSandboxCommands() (*cobra.Command, *cobra.Command, *cobra.Command, *cobra.Command, *cobra.Command, *cobra.Command) {
+	return sandboxCreateCmd, sandboxLsCmd, sandboxExecCmd, sandboxLogsCmd, sandboxInfoCmd, sandboxDestroyCmd
 }
