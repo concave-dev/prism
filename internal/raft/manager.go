@@ -730,6 +730,13 @@ func (m *RaftManager) SubmitCommand(data string) error {
 		return fmt.Errorf("failed to apply command: %w", err)
 	}
 
+	// Check if the FSM returned an error
+	if result := future.Response(); result != nil {
+		if err, ok := result.(error); ok {
+			return fmt.Errorf("command rejected: %w", err)
+		}
+	}
+
 	logging.Success("Command applied successfully to Raft cluster")
 	return nil
 }

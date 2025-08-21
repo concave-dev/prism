@@ -792,6 +792,15 @@ func (s *SandboxFSM) processCreateCommand(cmd Command) interface{} {
 		return fmt.Errorf("sandbox ID is required in create command")
 	}
 
+	// Check for duplicate sandbox names - names must be unique
+	for _, existingSandbox := range s.sandboxes {
+		if existingSandbox.Name == createCmd.Name {
+			logging.Error("SandboxFSM: Sandbox name '%s' already exists (ID: %s)",
+				createCmd.Name, existingSandbox.ID)
+			return fmt.Errorf("sandbox name '%s' already exists", createCmd.Name)
+		}
+	}
+
 	// Create new sandbox record
 	sandbox := &Sandbox{
 		ID:       sandboxID,
