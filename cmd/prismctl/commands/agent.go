@@ -18,6 +18,8 @@
 package commands
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 )
 
@@ -98,7 +100,13 @@ Provides comprehensive agent details for monitoring and troubleshooting.`,
 
   # Output as JSON
   prismctl agent info a1b2c3d4e5f6 --output=json`,
-	Args: cobra.ExactArgs(1),
+	Args: func(cmd *cobra.Command, args []string) error {
+		if len(args) != 1 {
+			cmd.Help()
+			return fmt.Errorf("requires exactly 1 argument (agent ID)")
+		}
+		return nil
+	},
 	// RunE will be set by the main package that imports this
 }
 
@@ -117,7 +125,13 @@ You can specify either the agent ID or agent name.`,
 
   # Delete by agent name
   prismctl agent delete my-agent-name`,
-	Args: cobra.ExactArgs(1),
+	Args: func(cmd *cobra.Command, args []string) error {
+		if len(args) != 1 {
+			cmd.Help()
+			return fmt.Errorf("requires exactly 1 argument (agent ID or name)")
+		}
+		return nil
+	},
 	// RunE will be set by the main package that imports this
 }
 

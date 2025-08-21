@@ -9,7 +9,7 @@ Distributed runtime platform for AI agents and workflows.
 </picture>
 
 > [!CAUTION]
-> This is early development software. Agent execution is not implemented yet. Test coverage: 7.8%.
+> This is early development software. Sandbox code execution is not implemented yet. Test coverage: 7.0%.
 
 ## Overview
 
@@ -32,32 +32,33 @@ This aligns with [Concave's mission](https://concave.dev/) to build unified infr
 - [x] **Network Resilience**: Graceful daemon lifecycle, automatic peer discovery, partition tolerance
 - [x] **Autopilot & Reconciliation**: Automatic dead peer removal and cluster health maintenance
 
-### Agent Execution
-- [x] **Agent Lifecycle Management**: Complete CRUD operations for agents via REST API and CLI
-- [x] **Agent State Management**: Distributed agent state tracking via Raft consensus (no actual execution)
-- [ ] **Agent Orchestration**: Firecracker microVM lifecycle for secure agent isolation  
-- [ ] **Serverless Scaling**: Dynamic scaling from 0 to 10k agent instances based on demand
-- [ ] **Agent Scheduling**: Intelligent placement and execution of AI agents across cluster
-- [ ] **Secure Sandboxing**: Isolated execution environments for safe agent code execution
-- [ ] **Crash-Proof Execution**: Fault-tolerant agent runtime with automatic recovery and retry
+### Code Execution
+- [x] **Sandbox Lifecycle Management**: Complete CRUD operations for sandboxes via REST API and CLI
+- [x] **Sandbox State Management**: Distributed sandbox state tracking via Raft consensus
+- [x] **Secure Sandboxing**: Isolated execution environments for safe code execution
+- [ ] **Firecracker Integration**: MicroVM lifecycle for secure sandbox isolation  
+- [ ] **Serverless Scaling**: Dynamic scaling from 0 to 10k sandbox instances based on demand
+- [ ] **Code Execution**: Command execution within isolated sandbox environments
+- [ ] **Crash-Proof Execution**: Fault-tolerant sandbox runtime with automatic recovery and retry
 
-### Agent Observability
+### Observability
 - [x] **Health Monitoring**: Node health checks with gRPC and HTTP API endpoints
 - [x] **Resource Metrics**: Real-time CPU, memory, disk, and load monitoring across cluster
 - [x] **Cluster Visibility**: Comprehensive cluster status, member information, and Raft state
 - [x] **API Endpoints**: RESTful APIs for health, resources, nodes, and cluster information
-- [ ] **Agent Lifecycle Tracking**: Monitor agent execution, state transitions, and resource usage
-- [ ] **Performance Analytics**: Real-time visibility into agent performance and microVM metrics
-- [ ] **Agent Debugging**: Analysis and troubleshooting tools for distributed agent workloads
+- [ ] **Sandbox Lifecycle Tracking**: Monitor sandbox execution, state transitions, and resource usage
+- [ ] **Performance Analytics**: Real-time visibility into sandbox performance and microVM metrics
+- [ ] **Code Execution Debugging**: Analysis and troubleshooting tools for distributed code execution
 
-### Future Agent Infrastructure
+### Future Infrastructure
 
+- **Agent Execution**: Full AI agent lifecycle management and orchestration
 - **Agent Memory & State**: Distributed memory and persistent state management for agents
 - **Agent Mesh**: Inter-agent communication and service discovery with first-class MCP support
-- **Multi-Runtime Support**: cloud-hypervisor, Docker containers for different agent types
+- **Multi-Runtime Support**: cloud-hypervisor, Docker containers for different execution types
 - **Agent Workflows**: Durable execution patterns with automatic retry and recovery
 - **LLM Gateway**: Built-in LLM routing, rate limiting, and cost optimization
-- **Secrets Vault**: Secure credential management for agent API access
+- **Secrets Vault**: Secure credential management for API access
 
 ## Quick Start
 
@@ -177,6 +178,12 @@ Use the CLI:
 # Get detailed node information
 ./bin/prismctl node info <node-name-or-id>
 
+# Manage code execution sandboxes
+./bin/prismctl sandbox ls
+./bin/prismctl sandbox create --name=my-sandbox
+./bin/prismctl sandbox info <sandbox-name-or-id>
+./bin/prismctl sandbox destroy <sandbox-name-or-id>
+
 # Connect to remote cluster
 ./bin/prismctl --api=127.0.0.1:8008 info
 
@@ -207,8 +214,8 @@ The HTTP API defaults to cluster-wide accessibility (inherits Serf bind address)
 ./bin/prismd  # API accessible cluster-wide for leader forwarding
 
 # Connect to any node - requests automatically routed to leader
-./bin/prismctl --api=192.168.1.100:8008 agent create
-./bin/prismctl --api=192.168.1.101:8008 agent create  # Same result
+./bin/prismctl --api=192.168.1.100:8008 sandbox create --name=test
+./bin/prismctl --api=192.168.1.101:8008 sandbox create --name=test2  # Same result
 ```
 
 **Localhost-Only (Explicit - More Secure)**:

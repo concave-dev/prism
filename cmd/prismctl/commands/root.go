@@ -2,6 +2,7 @@
 package commands
 
 import (
+	"github.com/concave-dev/prism/cmd/prismctl/config"
 	"github.com/spf13/cobra"
 )
 
@@ -50,7 +51,10 @@ func SetupCommands() {
 	RootCmd.AddCommand(infoCmd)
 	RootCmd.AddCommand(nodeCmd)
 	RootCmd.AddCommand(peerCmd)
-	RootCmd.AddCommand(agentCmd)
+	if config.Features.EnableAgent {
+		RootCmd.AddCommand(agentCmd)
+	}
+	RootCmd.AddCommand(sandboxCmd)
 }
 
 // SetupGlobalFlags configures all global persistent flags

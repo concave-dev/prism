@@ -103,6 +103,50 @@ type AgentListResponse struct {
 	Count  int     `json:"count"`
 }
 
+// Sandbox response types
+type Sandbox struct {
+	ID          string            `json:"id"`
+	Name        string            `json:"name"`
+	Status      string            `json:"status"`
+	Created     time.Time         `json:"created"`
+	Updated     time.Time         `json:"updated"`
+	LastCommand string            `json:"last_command,omitempty"`
+	LastStdout  string            `json:"last_stdout,omitempty"`
+	LastStderr  string            `json:"last_stderr,omitempty"`
+	Metadata    map[string]string `json:"metadata,omitempty"`
+}
+
+// GetID returns the ID for SandboxLike interface
+func (s Sandbox) GetID() string {
+	return s.ID
+}
+
+// GetName returns the Name for SandboxLike interface
+func (s Sandbox) GetName() string {
+	return s.Name
+}
+
+type SandboxCreateResponse struct {
+	SandboxID   string `json:"sandbox_id"`
+	SandboxName string `json:"sandbox_name"`
+	Status      string `json:"status"`
+	Message     string `json:"message"`
+}
+
+type SandboxListResponse struct {
+	Sandboxes []Sandbox `json:"sandboxes"`
+	Count     int       `json:"count"`
+}
+
+type SandboxExecResponse struct {
+	SandboxID string `json:"sandbox_id"`
+	Command   string `json:"command"`
+	Status    string `json:"status"`
+	Message   string `json:"message"`
+	Stdout    string `json:"stdout,omitempty"`
+	Stderr    string `json:"stderr,omitempty"`
+}
+
 // API type for raft peers response
 type RaftPeersResponse struct {
 	Leader string     `json:"leader"`
@@ -701,6 +745,197 @@ func (api *PrismAPIClient) DeleteAgent(agentID string) error {
 	if resp.StatusCode() == 404 {
 		logging.Error("Agent '%s' not found", agentID)
 		return fmt.Errorf("agent not found")
+	}
+
+	if resp.StatusCode() == 307 {
+		logging.Error("Not cluster leader, request redirected")
+		return fmt.Errorf("not cluster leader - retry request")
+	}
+
+	if resp.StatusCode() != 200 {
+		logging.Error("API request failed with status %d: %s", resp.StatusCode(), resp.String())
+		return fmt.Errorf("API request failed")
+	}
+
+	return nil
+}
+
+// GetSandboxes fetches all sandboxes from the API
+func (api *PrismAPIClient) GetSandboxes() ([]Sandbox, error) {
+	var response SandboxListResponse
+
+	resp, err := api.client.R().
+		SetResult(&response).
+		Get("/sandboxes")
+
+	if err != nil {
+		logging.Error("Failed to connect to API server: %v", err)
+		logging.Error("Make sure a Prism daemon with API server is running at %s", api.baseURL)
+		return nil, fmt.Errorf("connection failed")
+	}
+
+	if resp.StatusCode() != 200 {
+		logging.Error("API request failed with status %d: %s", resp.StatusCode(), resp.String())
+		return nil, fmt.Errorf("API request failed")
+	}
+
+	return response.Sandboxes, nil
+}
+
+// GetSandbox fetches a specific sandbox by ID from the API
+func (api *PrismAPIClient) GetSandbox(sandboxID string) (*Sandbox, error) {
+	var sandbox Sandbox
+
+	resp, err := api.client.R().
+		SetResult(&sandbox).
+		Get(fmt.Sprintf("/sandboxes/%s", sandboxID))
+
+	if err != nil {
+		logging.Error("Failed to connect to API server: %v", err)
+		logging.Error("Make sure a Prism daemon with API server is running at %s", api.baseURL)
+		return nil, fmt.Errorf("connection failed")
+	}
+
+	if resp.StatusCode() == 404 {
+		logging.Error("Sandbox '%s' not found in cluster", sandboxID)
+		return nil, fmt.Errorf("sandbox not found")
+	}
+
+	if resp.StatusCode() != 200 {
+		logging.Error("API request failed with status %d: %s", resp.StatusCode(), resp.String())
+		return nil, fmt.Errorf("API request failed")
+	}
+
+	return &sandbox, nil
+}
+
+// CreateSandbox creates a new sandbox via the API
+func (api *PrismAPIClient) CreateSandbox(name string, metadata map[string]string) (*SandboxCreateResponse, error) {
+	var response SandboxCreateResponse
+
+	// Prepare request payload
+	payload := map[string]interface{}{
+		"name": name,
+	}
+	if len(metadata) > 0 {
+		payload["metadata"] = metadata
+	}
+
+	resp, err := api.client.R().
+		SetBody(payload).
+		SetResult(&response).
+		Post("/sandboxes")
+
+	if err != nil {
+		logging.Error("Failed to connect to API server: %v", err)
+		logging.Error("Make sure a Prism daemon with API server is running at %s", api.baseURL)
+		return nil, fmt.Errorf("connection failed")
+	}
+
+	if resp.StatusCode() == 400 {
+		logging.Error("Invalid request: %s", resp.String())
+		return nil, fmt.Errorf("invalid request")
+	}
+
+	if resp.StatusCode() == 307 {
+		logging.Error("Not cluster leader, request redirected")
+		return nil, fmt.Errorf("not cluster leader - retry request")
+	}
+
+	if resp.StatusCode() != 202 {
+		logging.Error("API request failed with status %d: %s", resp.StatusCode(), resp.String())
+		return nil, fmt.Errorf("API request failed")
+	}
+
+	return &response, nil
+}
+
+// ExecInSandbox executes a command in a sandbox via the API
+func (api *PrismAPIClient) ExecInSandbox(sandboxID, command string) (*SandboxExecResponse, error) {
+	var response SandboxExecResponse
+
+	// Prepare request payload
+	payload := map[string]interface{}{
+		"command": command,
+	}
+
+	resp, err := api.client.R().
+		SetBody(payload).
+		SetResult(&response).
+		Post(fmt.Sprintf("/sandboxes/%s/exec", sandboxID))
+
+	if err != nil {
+		logging.Error("Failed to connect to API server: %v", err)
+		logging.Error("Make sure a Prism daemon with API server is running at %s", api.baseURL)
+		return nil, fmt.Errorf("connection failed")
+	}
+
+	if resp.StatusCode() == 404 {
+		logging.Error("Sandbox '%s' not found", sandboxID)
+		return nil, fmt.Errorf("sandbox not found")
+	}
+
+	if resp.StatusCode() == 400 {
+		logging.Error("Invalid request: %s", resp.String())
+		return nil, fmt.Errorf("invalid request")
+	}
+
+	if resp.StatusCode() == 307 {
+		logging.Error("Not cluster leader, request redirected")
+		return nil, fmt.Errorf("not cluster leader - retry request")
+	}
+
+	if resp.StatusCode() != 200 {
+		logging.Error("API request failed with status %d: %s", resp.StatusCode(), resp.String())
+		return nil, fmt.Errorf("API request failed")
+	}
+
+	return &response, nil
+}
+
+// GetSandboxLogs fetches logs from a sandbox via the API
+func (api *PrismAPIClient) GetSandboxLogs(sandboxID string) ([]string, error) {
+	var response struct {
+		Logs []string `json:"logs"`
+	}
+
+	resp, err := api.client.R().
+		SetResult(&response).
+		Get(fmt.Sprintf("/sandboxes/%s/logs", sandboxID))
+
+	if err != nil {
+		logging.Error("Failed to connect to API server: %v", err)
+		logging.Error("Make sure a Prism daemon with API server is running at %s", api.baseURL)
+		return nil, fmt.Errorf("connection failed")
+	}
+
+	if resp.StatusCode() == 404 {
+		logging.Error("Sandbox '%s' not found", sandboxID)
+		return nil, fmt.Errorf("sandbox not found")
+	}
+
+	if resp.StatusCode() != 200 {
+		logging.Error("API request failed with status %d: %s", resp.StatusCode(), resp.String())
+		return nil, fmt.Errorf("API request failed")
+	}
+
+	return response.Logs, nil
+}
+
+// DeleteSandbox deletes a sandbox via the API
+func (api *PrismAPIClient) DeleteSandbox(sandboxID string) error {
+	resp, err := api.client.R().
+		Delete(fmt.Sprintf("/sandboxes/%s", sandboxID))
+
+	if err != nil {
+		logging.Error("Failed to connect to API server: %v", err)
+		logging.Error("Make sure a Prism daemon with API server is running at %s", api.baseURL)
+		return fmt.Errorf("connection failed")
+	}
+
+	if resp.StatusCode() == 404 {
+		logging.Error("Sandbox '%s' not found", sandboxID)
+		return fmt.Errorf("sandbox not found")
 	}
 
 	if resp.StatusCode() == 307 {

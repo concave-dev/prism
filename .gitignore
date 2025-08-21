@@ -82,6 +82,3 @@ data/
 
 # Cursor editor artifacts
 .cursor/
-
-# AI-generated insights and analysis
-insights/

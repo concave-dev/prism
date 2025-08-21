@@ -229,19 +229,8 @@ func HandleNodeResources(clientPool *grpc.ClientPool, serfManager *serf.SerfMana
 			return
 		}
 
-		// Check if node exists first
+		// Check if node exists by exact ID only (name resolution handled by CLI)
 		_, exists := serfManager.GetMember(nodeID)
-		if !exists {
-			// Try to find by node name if exact ID doesn't work
-			for _, member := range serfManager.GetMembers() {
-				if member.Name == nodeID {
-					nodeID = member.ID // Replace name with actual ID for gRPC calls
-					exists = true
-					break
-				}
-			}
-		}
-
 		if !exists {
 			c.JSON(http.StatusNotFound, gin.H{
 				"status":  "error",

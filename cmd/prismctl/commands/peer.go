@@ -1,4 +1,24 @@
 // Package commands contains all CLI command definitions for prismctl.
+//
+// This file implements Raft peer management commands for the distributed
+// AI orchestration platform. Provides CLI interfaces for inspecting and
+// monitoring Raft consensus peers across the Prism cluster through REST
+// API calls to understand cluster health and consensus behavior.
+//
+// PEER COMMAND STRUCTURE:
+// The peer commands follow the resource-based hierarchy pattern:
+//   - peer ls: List all Raft peers with connectivity and leadership status
+//   - peer info: Get detailed information about specific peers
+//
+// CONSENSUS MONITORING:
+// These commands are essential for understanding Raft consensus health,
+// identifying unreachable peers, monitoring leadership changes, and
+// troubleshooting distributed consensus issues in production environments.
+//
+// All commands integrate with the cluster's REST API endpoints and provide
+// consistent output formatting, error handling, and configuration management
+// for seamless Raft peer administration and consensus monitoring operations.
+
 package commands
 
 import (

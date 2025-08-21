@@ -30,6 +30,7 @@ import (
 	"github.com/concave-dev/prism/cmd/prismctl/config"
 	"github.com/concave-dev/prism/cmd/prismctl/utils"
 	"github.com/concave-dev/prism/internal/logging"
+	internalutils "github.com/concave-dev/prism/internal/utils"
 	"github.com/dustin/go-humanize"
 )
 
@@ -99,11 +100,11 @@ func DisplayMembersFromAPI(members []client.ClusterMember) {
 				}
 
 				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-					member.ID, name, member.Address, member.Status,
+					internalutils.TruncateIDSafe(member.ID), name, member.Address, member.Status,
 					serfDisplay, raftStatus, lastSeen, leader)
 			} else {
 				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-					member.ID, name, member.Address, member.Status, lastSeen)
+					internalutils.TruncateIDSafe(member.ID), name, member.Address, member.Status, lastSeen)
 			}
 		}
 	}
@@ -165,7 +166,7 @@ func DisplayClusterInfoFromAPI(info client.ClusterInfo) {
 				}
 
 				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-					member.ID, member.Name, member.Address, member.Status,
+					internalutils.TruncateIDSafe(member.ID), member.Name, member.Address, member.Status,
 					serfStatus, raftStatus, lastSeen)
 			}
 		}
@@ -230,7 +231,7 @@ func DisplayClusterResourcesFromAPI(resources []client.NodeResources) {
 			// Always show score column for consistent UX
 			if config.Global.Verbose {
 				fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%.1f\t%s\t%d\n",
-					resource.NodeID[:12],
+					internalutils.TruncateIDSafe(resource.NodeID),
 					resource.NodeName,
 					resource.CPUCores,
 					memoryDisplay,
@@ -241,7 +242,7 @@ func DisplayClusterResourcesFromAPI(resources []client.NodeResources) {
 					resource.GoRoutines)
 			} else {
 				fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%.1f\t%s\n",
-					resource.NodeID[:12],
+					internalutils.TruncateIDSafe(resource.NodeID),
 					resource.NodeName,
 					resource.CPUCores,
 					memoryDisplay,
@@ -284,9 +285,11 @@ func DisplayNodeInfo(resource client.NodeResources, isLeader bool, health *clien
 		if isLeader {
 			name = name + "*"
 		}
-		fmt.Printf("Node: %s (%s)\n", name, resource.NodeID)
-		fmt.Printf("Leader: %t\n", isLeader)
-		fmt.Printf("Timestamp: %s\n", resource.Timestamp.Format(time.RFC3339))
+		fmt.Printf("Node Information:\n")
+		fmt.Printf("  ID:        %s\n", resource.NodeID)
+		fmt.Printf("  Name:      %s\n", name)
+		fmt.Printf("  Leader:    %t\n", isLeader)
+		fmt.Printf("  Timestamp: %s\n", resource.Timestamp.Format(time.RFC3339))
 		if health != nil {
 			// Count check statuses for detailed health reporting
 			healthyCount := 0
@@ -308,9 +311,9 @@ func DisplayNodeInfo(resource client.NodeResources, isLeader bool, health *clien
 			// Display status with check counts
 			status := strings.ToLower(health.Status)
 			if totalChecks > 0 {
-				fmt.Printf("Status: %s (%d/%d)\n", status, healthyCount, totalChecks)
+				fmt.Printf("  Status:    %s (%d/%d)\n", status, healthyCount, totalChecks)
 			} else {
-				fmt.Printf("Status: %s\n", status)
+				fmt.Printf("  Status:    %s\n", status)
 			}
 		}
 		// Network information (best-effort based on Serf tags)
@@ -461,7 +464,7 @@ func DisplayAgents(agents []client.Agent) {
 			created := utils.FormatDuration(time.Since(agent.Created))
 
 			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-				agent.ID, agent.Name, agent.Type, agent.Status, created)
+				internalutils.TruncateIDSafe(agent.ID), agent.Name, agent.Type, agent.Status, created)
 		}
 	}
 }
@@ -480,6 +483,141 @@ func DisplayAgentInfo(agent *client.Agent) {
 		for key, value := range agent.Metadata {
 			fmt.Printf("    %s: %s\n", key, value)
 		}
+	}
+}
+
+// DisplaySandboxes displays sandboxes in table or JSON format with comprehensive
+// execution environment information. Provides consistent formatting across CLI
+// commands for sandbox monitoring and management operations.
+//
+// Essential for operational visibility into sandbox lifecycle, execution status,
+// and resource utilization across the distributed cluster. Supports both tabular
+// display for human operators and JSON output for automation and monitoring tools.
+//
+// Sorting follows configurable patterns to enable different operational workflows:
+// creation time for recent activity monitoring, name for alphabetical organization.
+func DisplaySandboxes(sandboxes []client.Sandbox) {
+	if len(sandboxes) == 0 {
+		if config.Global.Output == "json" {
+			fmt.Println("[]")
+		} else {
+			fmt.Println("No sandboxes found")
+		}
+		return
+	}
+
+	// Sort sandboxes based on configured sort option
+	switch config.Sandbox.Sort {
+	case "created":
+		// Sort by creation time (newest first)
+		sort.Slice(sandboxes, func(i, j int) bool {
+			return sandboxes[i].Created.After(sandboxes[j].Created)
+		})
+	case "name":
+		fallthrough
+	default:
+		// Sort by name (default)
+		sort.Slice(sandboxes, func(i, j int) bool {
+			return sandboxes[i].Name < sandboxes[j].Name
+		})
+	}
+
+	if config.Global.Output == "json" {
+		// JSON output for automation and monitoring integration
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		if err := encoder.Encode(sandboxes); err != nil {
+			logging.Error("Failed to encode JSON: %v", err)
+			fmt.Println("Error encoding JSON output")
+		}
+	} else {
+		// Table output for human operators
+		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+		defer w.Flush()
+
+		// Header with execution-focused columns
+		fmt.Fprintln(w, "ID\tNAME\tSTATUS\tLAST COMMAND\tCREATED")
+
+		// Display each sandbox with execution context
+		for _, sandbox := range sandboxes {
+			created := utils.FormatDuration(time.Since(sandbox.Created))
+			lastCommand := sandbox.LastCommand
+			if lastCommand == "" {
+				lastCommand = "-"
+			} else if len(lastCommand) > 30 {
+				// Truncate long commands for table readability
+				lastCommand = lastCommand[:27] + "..."
+			}
+
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+				internalutils.TruncateIDSafe(sandbox.ID), sandbox.Name, sandbox.Status, lastCommand, created)
+		}
+	}
+}
+
+// DisplaySandboxInfo displays detailed sandbox information in structured format
+// for comprehensive execution environment monitoring and debugging operations.
+//
+// Provides complete sandbox lifecycle information including execution history,
+// status transitions, and operational metadata needed for troubleshooting and
+// performance analysis in distributed code execution environments.
+//
+// Essential for debugging sandbox execution issues and understanding sandbox
+// resource utilization patterns across the cluster infrastructure.
+func DisplaySandboxInfo(sandbox *client.Sandbox) {
+	fmt.Printf("Sandbox Information:\n")
+	fmt.Printf("  ID:      %s\n", sandbox.ID)
+	fmt.Printf("  Name:    %s\n", sandbox.Name)
+	fmt.Printf("  Status:  %s\n", sandbox.Status)
+	fmt.Printf("  Created: %s\n", sandbox.Created.Format("2006-01-02 15:04:05 MST"))
+	fmt.Printf("  Updated: %s\n", sandbox.Updated.Format("2006-01-02 15:04:05 MST"))
+
+	if sandbox.LastCommand != "" {
+		// Truncate long commands for readability
+		displayCommand := sandbox.LastCommand
+		if len(displayCommand) > 80 {
+			displayCommand = displayCommand[:77] + "..."
+		}
+		fmt.Printf("  Last Command: %s\n", displayCommand)
+
+		// Show last execution output if available
+		if sandbox.LastStdout != "" {
+			fmt.Printf("  Last Stdout:\n%s\n", sandbox.LastStdout)
+		}
+		if sandbox.LastStderr != "" {
+			fmt.Printf("  Last Stderr:\n%s\n", sandbox.LastStderr)
+		}
+	}
+
+	if len(sandbox.Metadata) > 0 {
+		fmt.Printf("  Metadata:\n")
+		for key, value := range sandbox.Metadata {
+			fmt.Printf("    %s: %s\n", key, value)
+		}
+	}
+}
+
+// DisplaySandboxLogs displays execution logs from sandbox environments with
+// proper formatting for debugging and monitoring operations. Handles both
+// single log entries and streaming log output for operational visibility.
+//
+// Critical for debugging code execution issues and monitoring sandbox activity
+// across the distributed cluster. Provides structured log output that maintains
+// readability while preserving execution context and timing information.
+//
+// TODO: Future enhancement for real-time log streaming with --follow support
+// for continuous monitoring of active sandbox execution environments.
+func DisplaySandboxLogs(sandboxName string, logs []string) {
+	if len(logs) == 0 {
+		fmt.Printf("No logs available for sandbox '%s'\n", sandboxName)
+		return
+	}
+
+	fmt.Printf("Logs for sandbox '%s':\n", sandboxName)
+	fmt.Println("=" + strings.Repeat("=", 50))
+
+	for _, logLine := range logs {
+		fmt.Println(logLine)
 	}
 }
 
@@ -524,9 +662,9 @@ func DisplayRaftPeers(resp *client.RaftPeersResponse) {
 			}
 
 			if config.Global.Verbose {
-				fmt.Fprintf(w, "%s\t%s\t%s\t%t\t%s\n", p.ID, name, p.Address, p.Reachable, leader)
+				fmt.Fprintf(w, "%s\t%s\t%s\t%t\t%s\n", internalutils.TruncateIDSafe(p.ID), name, p.Address, p.Reachable, leader)
 			} else {
-				fmt.Fprintf(w, "%s\t%s\t%t\t%s\n", p.ID, p.Address, p.Reachable, leader)
+				fmt.Fprintf(w, "%s\t%s\t%t\t%s\n", internalutils.TruncateIDSafe(p.ID), p.Address, p.Reachable, leader)
 			}
 		}
 	}

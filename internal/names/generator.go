@@ -225,7 +225,7 @@ func Generate() string {
 }
 
 // randomIndex generates a random index within the specified range using crypto/rand
-// for unpredictable selection. Provides the core randomization primitive for name
+// for high-quality randomization. Provides the core randomization primitive for name
 // generation with fallback mechanisms for reliable operation.
 func randomIndex(max int) int {
 	if max <= 0 {

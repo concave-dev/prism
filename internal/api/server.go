@@ -301,6 +301,18 @@ func (s *Server) GetAgentManager() AgentManager {
 	return NewServerAgentManager(s.raftManager)
 }
 
+// GetSandboxManager returns a SandboxManager implementation for sandbox lifecycle
+// operations. Creates a bridge between the HTTP API layer and the underlying
+// Raft consensus system for distributed sandbox management.
+//
+// Essential for sandbox handlers to access distributed state management
+// capabilities while maintaining clean separation of concerns between
+// HTTP handling and consensus operations. Follows the same architectural
+// pattern as AgentManager for consistency and extensibility.
+func (s *Server) GetSandboxManager() SandboxManager {
+	return NewServerSandboxManager(s.raftManager)
+}
+
 // GetNodeID returns the current node's unique identifier for command attribution
 // and distributed operation tracking. Extracts the node ID from the Serf manager
 // which maintains the cluster membership and node identity information.

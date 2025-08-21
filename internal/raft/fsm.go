@@ -32,10 +32,51 @@ import (
 	"io"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/concave-dev/prism/internal/logging"
 	"github.com/hashicorp/raft"
 )
+
+const (
+	// MaxCommandOutputSize defines the maximum size in bytes for command output
+	// stored in ExecutionRecord. Prevents excessive memory usage from large
+	// command outputs while preserving essential execution information.
+	//
+	// Output exceeding this limit is truncated with an indicator to signal
+	// that the full output was not stored. This helps maintain cluster
+	// performance and prevents memory exhaustion from verbose commands.
+	//
+	// NOTE: This is a temporary solution. Future versions will store only
+	// output IDs in Raft and move full output to a distributed database
+	// to eliminate Raft log bloat and improve cluster scalability.
+	MaxCommandOutputSize = 4096 // 4KB limit for command output storage
+)
+
+// truncateOutput safely truncates command output to MaxCommandOutputSize bytes
+// while preserving UTF-8 character boundaries. Appends truncation indicator
+// when content exceeds the maximum size limit.
+//
+// Ensures stored output never exceeds memory limits while maintaining UTF-8
+// validity. Critical for preventing memory exhaustion from verbose command
+// outputs in distributed execution environments.
+func truncateOutput(output string) string {
+	if len(output) <= MaxCommandOutputSize {
+		return output
+	}
+
+	// Reserve space for truncation indicator
+	truncationIndicator := "...(truncated)"
+	maxContentSize := MaxCommandOutputSize - len(truncationIndicator)
+
+	// Ensure we don't split UTF-8 characters by finding valid boundary
+	truncated := output[:maxContentSize]
+	for len(truncated) > 0 && !utf8.ValidString(truncated) {
+		truncated = truncated[:len(truncated)-1]
+	}
+
+	return truncated + truncationIndicator
+}
 
 // PrismFSM is the root finite state machine that coordinates all distributed
 // state management operations for the Prism orchestration platform. It delegates
@@ -47,8 +88,9 @@ import (
 // and future extensions for MCP servers, distributed memory, and configuration
 // management. Processes Raft commands and ensures state consistency across nodes.
 type PrismFSM struct {
-	mu       sync.RWMutex // Protects all FSM state from concurrent access
-	agentFSM *AgentFSM    // Manages AI agent lifecycle and placement operations
+	mu         sync.RWMutex // Protects all FSM state from concurrent access
+	agentFSM   *AgentFSM    // Manages AI agent lifecycle and placement operations
+	sandboxFSM *SandboxFSM  // Manages code execution sandbox environments
 
 	// Future FSM extensions for comprehensive orchestration:
 	// mcpFSM    *McpFSM    // MCP server lifecycle and mesh management
@@ -144,6 +186,69 @@ type ResourceRequirements struct {
 	GPUCount    int     `json:"gpu_count"`    // Required GPU count (future)
 }
 
+// SandboxFSM manages the complete lifecycle of code execution sandboxes in the
+// distributed cluster. Tracks sandbox creation, command execution, status updates,
+// and cleanup operations while coordinating with the runtime system for secure
+// code execution within Firecracker VM environments.
+//
+// Maintains authoritative state for all sandboxes across the cluster and processes
+// execution requests through secure isolation boundaries. Provides the foundation
+// for safe AI-generated code execution and user workflow orchestration within
+// the distributed AI orchestration platform.
+type SandboxFSM struct {
+	sandboxes map[string]*Sandbox // sandboxID -> Sandbox state for all sandboxes in cluster
+
+	// Execution tracking for monitoring and debugging
+	executionHistory map[string][]ExecutionRecord // sandboxID -> execution history
+}
+
+// Sandbox represents the complete state of a code execution sandbox in the
+// distributed cluster. Tracks lifecycle status, execution history, runtime
+// configuration, and operational metadata needed for secure code execution
+// and monitoring operations.
+//
+// Serves as the authoritative record for sandbox state that is replicated across
+// all cluster nodes through Raft consensus. Contains all information needed
+// for execution decisions, security enforcement, and lifecycle management.
+type Sandbox struct {
+	// Core identification and metadata
+	ID      string    `json:"id"`      // Unique sandbox identifier
+	Name    string    `json:"name"`    // Human-readable sandbox name
+	Status  string    `json:"status"`  // Current status: "created", "ready", "executing", "failed", "destroyed"
+	Created time.Time `json:"created"` // Sandbox creation timestamp
+	Updated time.Time `json:"updated"` // Last status update timestamp
+
+	// Execution state and history
+	LastCommand string `json:"last_command,omitempty"` // Most recent executed command
+	LastStdout  string `json:"last_stdout,omitempty"`  // Most recent command stdout (truncated)
+	LastStderr  string `json:"last_stderr,omitempty"`  // Most recent command stderr (truncated)
+	ExecCount   int    `json:"exec_count"`             // Total number of commands executed
+
+	// Operational metadata for monitoring and debugging
+	Metadata map[string]string `json:"metadata,omitempty"` // Additional key-value metadata
+}
+
+// ExecutionRecord tracks individual command executions within sandbox environments
+// for audit trails, debugging, and performance analysis. Contains execution context,
+// timing information, and results for comprehensive execution monitoring.
+//
+// Enables the orchestrator to maintain detailed execution history for debugging,
+// security auditing, and performance optimization of code execution workflows
+// across the distributed cluster infrastructure.
+//
+// TODO: Future optimization - store only execution metadata and output IDs in Raft,
+// move full command output to distributed database to reduce Raft log size and
+// improve cluster performance for large output scenarios.
+type ExecutionRecord struct {
+	Command    string    `json:"command"`     // Executed command
+	ExecutedAt time.Time `json:"executed_at"` // Execution timestamp
+	Status     string    `json:"status"`      // Execution status: "pending", "running", "completed", "failed"
+	ExitCode   int       `json:"exit_code"`   // Command exit code (if completed)
+	Duration   int64     `json:"duration_ms"` // Execution duration in milliseconds
+	Stdout     string    `json:"stdout"`      // Command stdout (truncated to MaxCommandOutputSize) - TODO: replace with stdout_id
+	Stderr     string    `json:"stderr"`      // Command stderr (truncated to MaxCommandOutputSize) - TODO: replace with stderr_id
+}
+
 // Command represents a distributed operation that should be applied consistently
 // across all cluster nodes through Raft consensus. Commands are JSON-encoded
 // and include the target FSM and operation details.
@@ -187,6 +292,29 @@ type AgentUpdateCommand struct {
 	Metadata  map[string]string `json:"metadata,omitempty"`  // Metadata updates
 }
 
+// SandboxCreateCommand represents a request to create a new sandbox in the cluster.
+// Contains all information needed for sandbox creation and initial provisioning
+// including execution environment configuration and operational metadata.
+//
+// Processed by the SandboxFSM to create new sandbox records and trigger runtime
+// provisioning based on current cluster resource availability and security policies.
+type SandboxCreateCommand struct {
+	ID       string            `json:"id"`                 // Pre-generated sandbox ID
+	Name     string            `json:"name"`               // Sandbox name
+	Metadata map[string]string `json:"metadata,omitempty"` // Additional metadata
+}
+
+// SandboxExecCommand represents a request to execute a command within an existing
+// sandbox environment. Contains the command to execute and execution context
+// for secure command execution within isolated sandbox boundaries.
+//
+// Processed by the SandboxFSM to record execution intent and coordinate with
+// the runtime system for actual command execution within Firecracker VM environments.
+type SandboxExecCommand struct {
+	SandboxID string `json:"sandbox_id"` // Target sandbox identifier
+	Command   string `json:"command"`    // Command to execute
+}
+
 // NewPrismFSM creates a new PrismFSM with initialized sub-FSMs for all
 // operational domains. Sets up the hierarchical FSM structure needed
 // for comprehensive distributed state management.
@@ -196,7 +324,8 @@ type AgentUpdateCommand struct {
 // Each sub-FSM maintains its own state while contributing to overall coordination.
 func NewPrismFSM() *PrismFSM {
 	return &PrismFSM{
-		agentFSM: NewAgentFSM(),
+		agentFSM:   NewAgentFSM(),
+		sandboxFSM: NewSandboxFSM(),
 	}
 }
 
@@ -212,6 +341,20 @@ func NewAgentFSM() *AgentFSM {
 		agents:           make(map[string]*Agent),
 		placementHistory: make(map[string][]PlacementRecord),
 		nodeLoads:        make(map[string]int),
+	}
+}
+
+// NewSandboxFSM creates a new SandboxFSM with initialized state tracking structures
+// for sandbox lifecycle management and execution monitoring. Sets up the data
+// structures needed for secure code execution orchestration and debugging.
+//
+// Initializes all tracking structures needed for sandbox lifecycle management
+// including execution history for debugging and monitoring code execution
+// patterns across the distributed cluster infrastructure.
+func NewSandboxFSM() *SandboxFSM {
+	return &SandboxFSM{
+		sandboxes:        make(map[string]*Sandbox),
+		executionHistory: make(map[string][]ExecutionRecord),
 	}
 }
 
@@ -242,6 +385,8 @@ func (f *PrismFSM) Apply(log *raft.Log) interface{} {
 		switch cmd.Type {
 		case "agent":
 			return f.agentFSM.processCommand(cmd)
+		case "sandbox":
+			return f.sandboxFSM.processCommand(cmd)
 		default:
 			err := fmt.Errorf("unknown command type: %s", cmd.Type)
 			logging.Error("FSM: %v", err)
@@ -267,11 +412,13 @@ func (f *PrismFSM) Snapshot() (raft.FSMSnapshot, error) {
 
 	// Create snapshot of all sub-FSM state
 	snapshot := &PrismFSMSnapshot{
-		AgentState: f.agentFSM.getState(),
-		Timestamp:  time.Now(),
+		AgentState:   f.agentFSM.getState(),
+		SandboxState: f.sandboxFSM.getState(),
+		Timestamp:    time.Now(),
 	}
 
-	logging.Info("FSM: Created snapshot with %d agents", len(snapshot.AgentState.Agents))
+	logging.Info("FSM: Created snapshot with %d agents and %d sandboxes",
+		len(snapshot.AgentState.Agents), len(snapshot.SandboxState.Sandboxes))
 	return snapshot, nil
 }
 
@@ -303,8 +450,12 @@ func (f *PrismFSM) Restore(snapshot io.ReadCloser) error {
 	f.agentFSM = NewAgentFSM()
 	f.agentFSM.restoreState(snapshotData.AgentState)
 
-	logging.Info("FSM: Restored state from snapshot with %d agents",
-		len(snapshotData.AgentState.Agents))
+	// Restore sandbox FSM state
+	f.sandboxFSM = NewSandboxFSM()
+	f.sandboxFSM.restoreState(snapshotData.SandboxState)
+
+	logging.Info("FSM: Restored state from snapshot with %d agents and %d sandboxes",
+		len(snapshotData.AgentState.Agents), len(snapshotData.SandboxState.Sandboxes))
 	return nil
 }
 
@@ -538,6 +689,32 @@ func (a *AgentFSM) restoreState(state *AgentFSMState) {
 	a.nodeLoads = copyIntMap(state.NodeLoads)
 }
 
+// getState returns the complete state of the SandboxFSM for snapshot operations.
+// Provides a serializable representation of all sandbox state and execution
+// history for persistence and recovery operations.
+//
+// Essential for maintaining state consistency across cluster restarts and
+// enabling fast recovery without full log replay. Captures all sandbox
+// lifecycle and execution tracking information.
+func (s *SandboxFSM) getState() *SandboxFSMState {
+	return &SandboxFSMState{
+		Sandboxes:        copySandboxMap(s.sandboxes),
+		ExecutionHistory: copyExecutionHistory(s.executionHistory),
+	}
+}
+
+// restoreState rebuilds the SandboxFSM from snapshot data during recovery
+// operations. Restores all sandbox state and execution history from
+// persistent storage for complete state recovery.
+//
+// Critical for cluster recovery operations as it enables fast state
+// restoration without requiring full log replay. Maintains all sandbox
+// lifecycle and execution tracking information across restarts.
+func (s *SandboxFSM) restoreState(state *SandboxFSMState) {
+	s.sandboxes = copySandboxMap(state.Sandboxes)
+	s.executionHistory = copyExecutionHistory(state.ExecutionHistory)
+}
+
 // GetAgents returns a copy of all agents in the cluster for monitoring
 // and query operations. Provides read-only access to agent state without
 // affecting FSM consistency or requiring distributed operations.
@@ -568,36 +745,259 @@ func (f *PrismFSM) GetAgent(agentID string) *Agent {
 	return nil
 }
 
-// LogCurrentState logs the current state of all FSMs for debugging and
-// development monitoring. Provides visibility into cluster state across
-// all nodes for troubleshooting and development purposes.
+// ============================================================================
+// SANDBOX FSM COMMAND PROCESSING - Handle sandbox lifecycle operations
+// ============================================================================
+
+// processCommand handles sandbox-specific commands including creation, execution,
+// and deletion operations. Maintains sandbox state consistency and coordinates
+// with the runtime system for secure code execution within isolated environments.
 //
-// Essential for development and troubleshooting as it provides detailed
-// state information that can be correlated across cluster nodes. Logs
-// comprehensive state including agent counts, placement distribution, and load.
+// Core of the sandbox lifecycle management system that processes all distributed
+// sandbox operations. Integrates with execution runtime for secure code execution
+// and maintains comprehensive state tracking for monitoring and debugging.
+func (s *SandboxFSM) processCommand(cmd Command) interface{} {
+	switch cmd.Operation {
+	case "create":
+		return s.processCreateCommand(cmd)
+	case "exec":
+		return s.processExecCommand(cmd)
+	case "delete":
+		return s.processDeleteCommand(cmd)
+	default:
+		err := fmt.Errorf("unknown sandbox operation: %s", cmd.Operation)
+		logging.Error("SandboxFSM: %v", err)
+		return err
+	}
+}
+
+// processCreateCommand handles sandbox creation requests by creating new sandbox
+// records with initial status. The sandbox will be provisioned by the runtime
+// system based on current cluster resource availability and security policies.
+//
+// Establishes the initial sandbox record in the distributed state and prepares
+// for runtime provisioning. Creates sandboxes in "created" status to allow for
+// asynchronous provisioning and initialization of secure execution environments.
+func (s *SandboxFSM) processCreateCommand(cmd Command) interface{} {
+	var createCmd SandboxCreateCommand
+	if err := json.Unmarshal(cmd.Data, &createCmd); err != nil {
+		logging.Error("SandboxFSM: Failed to unmarshal create command: %v", err)
+		return fmt.Errorf("failed to unmarshal create command: %w", err)
+	}
+
+	// Use pre-generated sandbox ID from the command
+	sandboxID := createCmd.ID
+	if sandboxID == "" {
+		logging.Error("SandboxFSM: Sandbox ID is required in create command")
+		return fmt.Errorf("sandbox ID is required in create command")
+	}
+
+	// Check for duplicate sandbox names - names must be unique
+	for _, existingSandbox := range s.sandboxes {
+		if existingSandbox.Name == createCmd.Name {
+			logging.Error("SandboxFSM: Sandbox name '%s' already exists (ID: %s)",
+				createCmd.Name, existingSandbox.ID)
+			return fmt.Errorf("sandbox name '%s' already exists", createCmd.Name)
+		}
+	}
+
+	// Create new sandbox record
+	sandbox := &Sandbox{
+		ID:       sandboxID,
+		Name:     createCmd.Name,
+		Status:   "created",
+		Created:  time.Now(),
+		Updated:  time.Now(),
+		Metadata: createCmd.Metadata,
+	}
+
+	// Store sandbox in FSM state
+	s.sandboxes[sandboxID] = sandbox
+
+	// Initialize execution history
+	s.executionHistory[sandboxID] = make([]ExecutionRecord, 0)
+
+	logging.Info("SandboxFSM: Created sandbox %s (%s)",
+		sandboxID, createCmd.Name)
+
+	return map[string]interface{}{
+		"sandbox_id": sandboxID,
+		"status":     "created",
+	}
+}
+
+// processExecCommand handles command execution requests within sandbox environments.
+// Records execution intent and coordinates with the runtime system for actual
+// command execution within secure Firecracker VM boundaries.
+//
+// Essential for code execution workflows as it maintains execution state and
+// coordinates with the runtime system for secure command execution. Updates
+// sandbox state and execution history for monitoring and debugging operations.
+//
+// NOTE: Sandbox lifecycle transitions are not yet centrally coupled or
+// validated. Status changes happen per-handler; a future update will
+// centralize allowed transitions and validation with the runtime.
+func (s *SandboxFSM) processExecCommand(cmd Command) interface{} {
+	var execCmd SandboxExecCommand
+	if err := json.Unmarshal(cmd.Data, &execCmd); err != nil {
+		logging.Error("SandboxFSM: Failed to unmarshal exec command: %v", err)
+		return fmt.Errorf("failed to unmarshal exec command: %w", err)
+	}
+
+	// Find target sandbox
+	sandbox, exists := s.sandboxes[execCmd.SandboxID]
+	if !exists {
+		err := fmt.Errorf("sandbox not found: %s", execCmd.SandboxID)
+		logging.Error("SandboxFSM: %v", err)
+		return err
+	}
+
+	// Update sandbox state with execution info
+	sandbox.LastCommand = execCmd.Command
+	sandbox.LastStdout = "" // TODO: Will be populated by runtime execution
+	sandbox.LastStderr = "" // TODO: Will be populated by runtime execution
+	sandbox.ExecCount++
+	sandbox.Status = "executing"
+	sandbox.Updated = time.Now()
+
+	// Create execution record for history tracking
+	execRecord := ExecutionRecord{
+		Command:    execCmd.Command,
+		ExecutedAt: time.Now(),
+		Status:     "pending",
+		ExitCode:   0,
+		Duration:   0,
+		Stdout:     truncateOutput(""), // TODO: Will be populated by runtime execution
+		Stderr:     truncateOutput(""), // TODO: Will be populated by runtime execution
+	}
+
+	// Add to execution history
+	s.executionHistory[execCmd.SandboxID] = append(
+		s.executionHistory[execCmd.SandboxID], execRecord)
+
+	logging.Info("SandboxFSM: Recorded exec command for sandbox %s: %s",
+		execCmd.SandboxID, execCmd.Command)
+
+	// TODO: Integrate with runtime system for actual command execution
+	// This will coordinate with the Firecracker VM runtime to execute
+	// the command within the secure sandbox environment
+	//
+	// IMPORTANT: When updating ExecutionRecord with actual output, use:
+	//   record.Stdout = truncateOutput(actualStdout)
+	//   record.Stderr = truncateOutput(actualStderr)
+	// This ensures output never exceeds MaxCommandOutputSize limits.
+	//
+	// FUTURE: Replace direct output storage with distributed database approach:
+	//   1. Store full output in distributed database
+	//   2. Store only stdout_id and stderr_id in ExecutionRecord
+	//   3. Remove Stdout/Stderr fields from Raft state entirely
+	// This will dramatically reduce Raft log size and improve cluster performance.
+
+	return map[string]interface{}{
+		"sandbox_id": execCmd.SandboxID,
+		"command":    execCmd.Command,
+		"status":     "executing",
+	}
+}
+
+// processDeleteCommand handles sandbox deletion requests by removing sandbox
+// records from the distributed state and cleaning up associated execution
+// history and runtime resources.
+//
+// Provides clean sandbox removal with proper state cleanup across the cluster.
+// Removes execution history and coordinates with runtime system for VM cleanup
+// to maintain accurate cluster resource accounting and operational state.
+func (s *SandboxFSM) processDeleteCommand(cmd Command) interface{} {
+	var deleteCmd struct {
+		SandboxID string `json:"sandbox_id"`
+	}
+	if err := json.Unmarshal(cmd.Data, &deleteCmd); err != nil {
+		logging.Error("SandboxFSM: Failed to unmarshal delete command: %v", err)
+		return fmt.Errorf("failed to unmarshal delete command: %w", err)
+	}
+
+	// Find target sandbox
+	_, exists := s.sandboxes[deleteCmd.SandboxID]
+	if !exists {
+		err := fmt.Errorf("sandbox not found: %s", deleteCmd.SandboxID)
+		logging.Error("SandboxFSM: %v", err)
+		return err
+	}
+
+	// Remove sandbox from state
+	delete(s.sandboxes, deleteCmd.SandboxID)
+
+	// Clean up execution history
+	delete(s.executionHistory, deleteCmd.SandboxID)
+
+	logging.Info("SandboxFSM: Deleted sandbox %s", deleteCmd.SandboxID)
+
+	// TODO: Coordinate with runtime system for VM cleanup and resource deallocation
+
+	return map[string]interface{}{
+		"sandbox_id": deleteCmd.SandboxID,
+		"status":     "deleted",
+	}
+}
+
+// GetSandboxes returns a copy of all sandboxes in the cluster for monitoring
+// and query operations. Provides read-only access to sandbox state without
+// affecting FSM consistency or requiring distributed operations.
+//
+// Enables monitoring systems and administrative tools to query current
+// sandbox state across the cluster. Returns consistent point-in-time
+// snapshots of sandbox information for operational visibility.
+func (f *PrismFSM) GetSandboxes() map[string]*Sandbox {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	return copySandboxMap(f.sandboxFSM.sandboxes)
+}
+
+// GetSandbox returns information for a specific sandbox by ID. Provides
+// read-only access to individual sandbox state for monitoring and
+// administrative operations.
+//
+// Enables targeted sandbox queries for detailed status information
+// and operational monitoring. Returns nil if sandbox is not found.
+func (f *PrismFSM) GetSandbox(sandboxID string) *Sandbox {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	if sandbox, exists := f.sandboxFSM.sandboxes[sandboxID]; exists {
+		return copySandbox(sandbox)
+	}
+	return nil
+}
+
+// LogCurrentState logs FSM state information for debugging and development
+// monitoring. Provides visibility into sandbox state across cluster nodes
+// for troubleshooting and development purposes.
+//
+// Called periodically by the raft manager when DEBUG mode is enabled.
+// Focuses on sandbox state since agents are currently disabled in the system.
 func (f *PrismFSM) LogCurrentState(nodeID string) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 
-	agentCount := len(f.agentFSM.agents)
-	statusCounts := make(map[string]int)
-	typeCounts := make(map[string]int)
-	placementCounts := make(map[string]int)
+	// Focus on sandbox state since agents are disabled
+	// TODO: Add agent state logging when agents are re-enabled
+	// TODO: Add other FSM states (MCP servers, memory, config, secrets) as they're implemented
+	sandboxCount := len(f.sandboxFSM.sandboxes)
+	sandboxStatusCounts := make(map[string]int)
+	sandboxExecCounts := make(map[string]int)
 
-	// Analyze agent distribution
-	for _, agent := range f.agentFSM.agents {
-		statusCounts[agent.Status]++
-		typeCounts[agent.Type]++
-		if agent.Placement != nil {
-			placementCounts[agent.Placement.NodeID]++
+	for _, sandbox := range f.sandboxFSM.sandboxes {
+		sandboxStatusCounts[sandbox.Status]++
+		if sandbox.ExecCount > 0 {
+			sandboxExecCounts["with_executions"]++
+		} else {
+			sandboxExecCounts["no_executions"]++
 		}
 	}
 
-	logging.Debug("FSM State on %s: %d total agents", nodeID, agentCount)
-	logging.Debug("  Status distribution: %v", statusCounts)
-	logging.Debug("  Type distribution: %v", typeCounts)
-	logging.Debug("  Placement distribution: %v", placementCounts)
-	logging.Debug("  Node loads: %v", f.agentFSM.nodeLoads)
+	logging.Debug("FSM State on %s: %d sandboxes, status: %v, executions: %v",
+		nodeID, sandboxCount, sandboxStatusCounts, sandboxExecCounts)
 }
 
 // ============================================================================
@@ -608,8 +1008,9 @@ func (f *PrismFSM) LogCurrentState(nodeID string) {
 // persistence and recovery operations. Contains serializable state from
 // all sub-FSMs in a format suitable for storage and restoration.
 type PrismFSMSnapshot struct {
-	AgentState *AgentFSMState `json:"agent_state"` // Complete agent FSM state
-	Timestamp  time.Time      `json:"timestamp"`   // Snapshot creation time
+	AgentState   *AgentFSMState   `json:"agent_state"`   // Complete agent FSM state
+	SandboxState *SandboxFSMState `json:"sandbox_state"` // Complete sandbox FSM state
+	Timestamp    time.Time        `json:"timestamp"`     // Snapshot creation time
 }
 
 // AgentFSMState represents the complete state of the AgentFSM for snapshot
@@ -619,6 +1020,14 @@ type AgentFSMState struct {
 	Agents           map[string]*Agent            `json:"agents"`            // All agent records
 	PlacementHistory map[string][]PlacementRecord `json:"placement_history"` // Placement history
 	NodeLoads        map[string]int               `json:"node_loads"`        // Node load tracking
+}
+
+// SandboxFSMState represents the complete state of the SandboxFSM for snapshot
+// operations. Contains all sandbox records and execution history in a
+// serializable format for persistence and recovery operations.
+type SandboxFSMState struct {
+	Sandboxes        map[string]*Sandbox          `json:"sandboxes"`         // All sandbox records
+	ExecutionHistory map[string][]ExecutionRecord `json:"execution_history"` // Execution history tracking
 }
 
 // Persist saves the snapshot data to the provided sink for durable storage.
@@ -726,6 +1135,52 @@ func copyIntMap(m map[string]int) map[string]int {
 	copy := make(map[string]int)
 	for k, v := range m {
 		copy[k] = v
+	}
+	return copy
+}
+
+// copySandbox creates a deep copy of a sandbox for safe read access without
+// affecting FSM state consistency. Prevents external modifications from
+// corrupting the authoritative FSM state.
+func copySandbox(sandbox *Sandbox) *Sandbox {
+	if sandbox == nil {
+		return nil
+	}
+
+	copy := *sandbox
+
+	// Deep copy metadata map
+	if sandbox.Metadata != nil {
+		copy.Metadata = make(map[string]string)
+		for k, v := range sandbox.Metadata {
+			copy.Metadata[k] = v
+		}
+	}
+
+	return &copy
+}
+
+// copySandboxMap creates a deep copy of the sandboxes map for safe read access
+// without affecting FSM state consistency. Essential for snapshot operations
+// and external queries that should not modify authoritative state.
+func copySandboxMap(sandboxes map[string]*Sandbox) map[string]*Sandbox {
+	copy := make(map[string]*Sandbox)
+	for k, v := range sandboxes {
+		copy[k] = copySandbox(v)
+	}
+	return copy
+}
+
+// copyExecutionHistory creates a deep copy of execution history for snapshot
+// operations. Ensures execution tracking data is preserved across cluster
+// restarts and scaling events without state corruption.
+func copyExecutionHistory(history map[string][]ExecutionRecord) map[string][]ExecutionRecord {
+	copy := make(map[string][]ExecutionRecord)
+	for sandboxID, records := range history {
+		copy[sandboxID] = make([]ExecutionRecord, len(records))
+		for i, record := range records {
+			copy[sandboxID][i] = record
+		}
 	}
 	return copy
 }

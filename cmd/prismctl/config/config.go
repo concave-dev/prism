@@ -19,6 +19,16 @@ var Global struct {
 	Output   string // Output format: table, json
 }
 
+// Features holds CLI feature flags that gate availability of commands.
+//
+// These flags let us keep command scaffolding in place while gradually
+// enabling functionality. Defaults are safe for general usage and can
+// be toggled in code as features become ready. Keeping the flag here
+// avoids scattering build tags or ad-hoc checks across the CLI code.
+var Features struct {
+	EnableAgent bool // Enable agent-related commands in prismctl
+}
+
 // Node holds the node command configuration
 var Node struct {
 	Watch        bool   // Enable watch mode for live updates
@@ -44,4 +54,21 @@ var Peer struct {
 	Watch        bool   // Enable watch mode for live updates
 	StatusFilter string // Filter peers by reachability (reachable, unreachable)
 	RoleFilter   string // Filter peers by role (leader, follower)
+}
+
+// Sandbox holds the sandbox command configuration
+var Sandbox struct {
+	Name         string   // Sandbox name for creation
+	Command      string   // Command to execute in sandbox
+	Metadata     []string // Sandbox metadata as key=value pairs
+	Watch        bool     // Enable watch mode for live updates
+	StatusFilter string   // Filter sandboxes by status
+	Sort         string   // Sort sandboxes by: created, name (default: created)
+	Force        bool     // Force operations without confirmation
+	Output       string   // Output format: table, json
+}
+
+func init() {
+	// Explicitly disable agent commands until they're ready for production
+	Features.EnableAgent = false
 }
