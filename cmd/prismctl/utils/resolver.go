@@ -269,12 +269,12 @@ func IsHexString(s string) bool {
 //
 // Critical for maintaining Docker-style user experience while preventing
 // performance degradation from single-character prefixes that could match
-// hundreds of resources. The 1-12 character range provides sufficient
-// uniqueness for most clusters while staying within Prism's 12-character ID format.
+// hundreds of resources. The 1-64 character range provides sufficient
+// uniqueness for most clusters while staying within Prism's 64-character ID format.
 func IsValidPartialIDLength(s string) bool {
-	// Node IDs are 12 hex characters (6 bytes)
-	// Allow partial matching for inputs between 1-12 characters
+	// Resource IDs are 64 hex characters (32 bytes, Docker-style)
+	// Allow partial matching for inputs between 1-64 characters
 	// - Minimum 1 char (as requested)
-	// - Maximum 12 chars (full node ID length)
-	return len(s) >= 1 && len(s) <= 12
+	// - Maximum 64 chars (full resource ID length)
+	return len(s) >= 1 && len(s) <= 64
 }

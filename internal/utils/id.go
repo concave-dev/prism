@@ -7,7 +7,7 @@
 // ID GENERATION STRATEGY:
 // Uses crypto/rand for high-quality random data generation to ensure uniqueness
 // across distributed systems and prevent collisions. All IDs follow the same
-// 12-character hexadecimal format for consistency and readability.
+// 64-character hexadecimal format (Docker-style) for consistency and compatibility.
 //
 // USAGE PATTERNS:
 // - Node IDs: Unique cluster node identification for membership and routing
@@ -25,18 +25,18 @@ import (
 	"fmt"
 )
 
-// GenerateID creates a unique 12-character hex identifier for cluster resources.
+// GenerateID creates a unique 64-character hex identifier for cluster resources.
 // Uses crypto/rand to ensure uniqueness across distributed systems and prevent
-// collisions.
+// collisions, following Docker's ID generation approach.
 //
 // Essential for resource identification, logging correlation, and API operations
-// where resources need to be uniquely referenced. The 12-character format
-// balances uniqueness with human readability in logs and interfaces.
+// where resources need to be uniquely referenced. The 64-character format
+// provides maximum uniqueness guarantees for distributed systems.
 //
-// Returns format: "a1b2c3d4e5f6" (12 hex characters, similar to Docker short IDs)
+// Returns format: "a1b2c3d4e5f6..." (64 hex characters, Docker-style long IDs)
 func GenerateID() (string, error) {
-	// Generate 6 bytes of random data (12 hex characters)
-	bytes := make([]byte, 6)
+	// Generate 32 bytes of random data (64 hex characters, Docker-style)
+	bytes := make([]byte, 32)
 	_, err := rand.Read(bytes)
 	if err != nil {
 		return "", fmt.Errorf("failed to generate random bytes: %w", err)

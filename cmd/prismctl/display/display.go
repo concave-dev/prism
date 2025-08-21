@@ -33,6 +33,20 @@ import (
 	"github.com/dustin/go-humanize"
 )
 
+// TruncateID truncates a full 64-character ID to 12 characters for table display
+// while keeping full IDs in detailed info views. Follows Docker-style short ID
+// display patterns for improved readability in tabular output.
+//
+// Essential for maintaining clean table formatting while preserving full ID
+// information in detailed views where space is not constrained. The 12-character
+// prefix provides sufficient uniqueness for most operational scenarios.
+func TruncateID(id string) string {
+	if len(id) <= 12 {
+		return id
+	}
+	return id[:12]
+}
+
 // DisplayMembersFromAPI displays cluster nodes from API response, annotating the Raft leader
 func DisplayMembersFromAPI(members []client.ClusterMember) {
 	if len(members) == 0 {
@@ -99,11 +113,11 @@ func DisplayMembersFromAPI(members []client.ClusterMember) {
 				}
 
 				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-					member.ID, name, member.Address, member.Status,
+					TruncateID(member.ID), name, member.Address, member.Status,
 					serfDisplay, raftStatus, lastSeen, leader)
 			} else {
 				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-					member.ID, name, member.Address, member.Status, lastSeen)
+					TruncateID(member.ID), name, member.Address, member.Status, lastSeen)
 			}
 		}
 	}
@@ -165,7 +179,7 @@ func DisplayClusterInfoFromAPI(info client.ClusterInfo) {
 				}
 
 				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-					member.ID, member.Name, member.Address, member.Status,
+					TruncateID(member.ID), member.Name, member.Address, member.Status,
 					serfStatus, raftStatus, lastSeen)
 			}
 		}
@@ -461,7 +475,7 @@ func DisplayAgents(agents []client.Agent) {
 			created := utils.FormatDuration(time.Since(agent.Created))
 
 			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-				agent.ID, agent.Name, agent.Type, agent.Status, created)
+				TruncateID(agent.ID), agent.Name, agent.Type, agent.Status, created)
 		}
 	}
 }
@@ -547,7 +561,7 @@ func DisplaySandboxes(sandboxes []client.Sandbox) {
 			}
 
 			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-				sandbox.ID, sandbox.Name, sandbox.Status, lastCommand, created)
+				TruncateID(sandbox.ID), sandbox.Name, sandbox.Status, lastCommand, created)
 		}
 	}
 }
@@ -651,9 +665,9 @@ func DisplayRaftPeers(resp *client.RaftPeersResponse) {
 			}
 
 			if config.Global.Verbose {
-				fmt.Fprintf(w, "%s\t%s\t%s\t%t\t%s\n", p.ID, name, p.Address, p.Reachable, leader)
+				fmt.Fprintf(w, "%s\t%s\t%s\t%t\t%s\n", TruncateID(p.ID), name, p.Address, p.Reachable, leader)
 			} else {
-				fmt.Fprintf(w, "%s\t%s\t%t\t%s\n", p.ID, p.Address, p.Reachable, leader)
+				fmt.Fprintf(w, "%s\t%s\t%t\t%s\n", TruncateID(p.ID), p.Address, p.Reachable, leader)
 			}
 		}
 	}
