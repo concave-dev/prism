@@ -26,6 +26,12 @@ type AgentLike interface {
 	GetName() string
 }
 
+// SandboxLike represents anything with ID and Name for sandbox resolution
+type SandboxLike interface {
+	GetID() string
+	GetName() string
+}
+
 // ResolveNodeIdentifierFromMembers resolves a node identifier from existing members list
 // This avoids duplicate API calls when members are already available
 func ResolveNodeIdentifierFromMembers(members []MemberLike, identifier string) (string, error) {
@@ -131,6 +137,42 @@ func ResolveAgentIdentifierFromAgents(agents []AgentLike, identifier string) (st
 
 	// No partial match found, return original identifier
 	// (will be handled by the API as either full ID or agent name)
+	return identifier, nil
+}
+
+// ResolveSandboxIdentifierFromSandboxes resolves a sandbox identifier from existing sandboxes list
+// This avoids duplicate API calls when sandboxes are already available
+func ResolveSandboxIdentifierFromSandboxes(sandboxes []SandboxLike, identifier string) (string, error) {
+	// Check for partial ID matches (only for identifiers that look like hex and have valid length)
+	if IsHexString(identifier) && IsValidPartialIDLength(identifier) {
+		var matches []SandboxLike
+		for _, sandbox := range sandboxes {
+			if strings.HasPrefix(sandbox.GetID(), identifier) {
+				matches = append(matches, sandbox)
+			}
+		}
+
+		if len(matches) == 1 {
+			// Unique partial match found
+			logging.Info("Resolved partial ID '%s' to full ID '%s' (sandbox: %s)",
+				identifier, matches[0].GetID(), matches[0].GetName())
+			return matches[0].GetID(), nil
+		} else if len(matches) > 1 {
+			// Multiple matches - not unique
+			var matchIDs []string
+			for _, match := range matches {
+				matchIDs = append(matchIDs, fmt.Sprintf("%s (%s)", match.GetID(), match.GetName()))
+			}
+			logging.Error("Partial ID '%s' is not unique, matches multiple sandboxes:", identifier)
+			for _, matchID := range matchIDs {
+				logging.Error("  %s", matchID)
+			}
+			return "", fmt.Errorf("partial ID not unique")
+		}
+	}
+
+	// No partial match found, return original identifier
+	// (will be handled by the API as either full ID or sandbox name)
 	return identifier, nil
 }
 
