@@ -56,6 +56,18 @@ var Peer struct {
 	RoleFilter   string // Filter peers by role (leader, follower)
 }
 
+// Sandbox holds the sandbox command configuration
+var Sandbox struct {
+	Name         string   // Sandbox name for creation
+	Command      string   // Command to execute in sandbox
+	Metadata     []string // Sandbox metadata as key=value pairs
+	Watch        bool     // Enable watch mode for live updates
+	StatusFilter string   // Filter sandboxes by status
+	Sort         string   // Sort sandboxes by: created, name (default: created)
+	Force        bool     // Force operations without confirmation
+	Output       string   // Output format: table, json
+}
+
 func init() {
 	// Explicitly disable agent commands until they're ready for production
 	Features.EnableAgent = false

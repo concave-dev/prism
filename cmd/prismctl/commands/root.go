@@ -54,6 +54,7 @@ func SetupCommands() {
 	if config.Features.EnableAgent {
 		RootCmd.AddCommand(agentCmd)
 	}
+	RootCmd.AddCommand(sandboxCmd)
 }
 
 // SetupGlobalFlags configures all global persistent flags
