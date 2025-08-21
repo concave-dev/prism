@@ -240,6 +240,11 @@ func HandleSandboxLogs(cmd *cobra.Command, args []string) error {
 		sandboxLikes[i] = sandbox
 	}
 
+	// TODO: Refactor to use single resolver that returns both ID and sandbox object
+	// Currently this does redundant resolution: resolve partial ID, then loop for ID match,
+	// then loop again for name match. Could be unified into ResolveSandboxFromSandboxes()
+	// that returns (string, *client.Sandbox, error) in one call.
+
 	// Resolve partial ID using the sandboxes we already have
 	resolvedSandboxID, err := utils.ResolveSandboxIdentifierFromSandboxes(sandboxLikes, sandboxIdentifier)
 	if err != nil {
