@@ -233,7 +233,7 @@ func HandleAgentDelete(cmd *cobra.Command, args []string) error {
 	}
 
 	// Resolve agent identifier (could be ID or name)
-	resolvedAgentID, agentName, err := resolveAgentIdentifier(agents, agentIdentifier)
+	resolvedAgentID, agentName, err := resolveAgentIdentifierExact(agents, agentIdentifier)
 	if err != nil {
 		return err
 	}
@@ -250,14 +250,14 @@ func HandleAgentDelete(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// resolveAgentIdentifier resolves an agent identifier (ID or name) to the actual
+// resolveAgentIdentifierExact resolves an agent identifier (ID or name) to the actual
 // agent ID using EXACT matching only. Returns the resolved ID, agent name, and
 // any error. Used for destructive operations where partial matching could lead
 // to unintended consequences.
 //
-// SECURITY: Only supports exact matches for safety - no partial ID matching
-// for destructive operations to prevent accidental agent deletion.
-func resolveAgentIdentifier(agents []client.Agent, identifier string) (string, string, error) {
+// SECURITY: Only supports exact ID or exact name matches for safety - no partial
+// ID matching for destructive operations to prevent accidental agent deletion.
+func resolveAgentIdentifierExact(agents []client.Agent, identifier string) (string, string, error) {
 	// First try exact ID match
 	for _, agent := range agents {
 		if agent.ID == identifier {
