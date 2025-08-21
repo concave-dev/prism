@@ -42,12 +42,23 @@ import (
 )
 
 // SandboxManager provides the interface for sandbox lifecycle operations and
-// Raft consensus integration. Enables sandbox handlers to submit commands
-// to the distributed state machine and query current sandbox state.
+// Raft consensus integration. Enables sandbox handlers to submit commands to
+// the distributed state machine and query current sandbox state.
 //
-// This interface is defined here to avoid circular dependencies between
-// the handlers package and the parent api package while providing clean
-// separation of concerns between HTTP handling and sandbox management.
+// Note on duplicate interfaces:
+// This package defines its own SandboxManager interface even though the api
+// package also defines an interface with the same shape. This is intentional
+// to avoid a circular dependency: the api package imports handlers to wire
+// routes, so handlers cannot import api without creating a cycle.
+//
+// Compatibility guarantee:
+// The concrete manager returned by api.Server.GetSandboxManager implements
+// both interfaces. That allows values to flow from routes into these handlers
+// without adapters or type assertions while keeping packages decoupled.
+//
+// TODO(prism): Consider extracting manager interfaces into a small leaf
+// package (e.g., internal/manager) so api and handlers can share a single
+// definition without introducing an import cycle.
 type SandboxManager interface {
 	SubmitCommand(data string) error // Submit command to Raft for consensus
 	IsLeader() bool                  // Check if this node is the Raft leader
