@@ -74,4 +74,17 @@ func (s *Server) setupRoutes(router *gin.Engine) {
 		agents.DELETE("/:id", handlers.DeleteAgent(agentMgr, nodeID))
 		// TODO: Add update endpoint when placement logic is implemented
 	}
+
+	// Sandbox lifecycle management endpoints
+	sandboxes := v1.Group("/sandboxes")
+	{
+		sandboxMgr := s.GetSandboxManager()
+		nodeID := s.GetNodeID()
+		sandboxes.POST("", handlers.CreateSandbox(sandboxMgr, nodeID))
+		sandboxes.GET("", handlers.ListSandboxes(sandboxMgr))
+		sandboxes.GET("/:id", handlers.GetSandbox(sandboxMgr))
+		sandboxes.DELETE("/:id", handlers.DeleteSandbox(sandboxMgr, nodeID))
+		sandboxes.POST("/:id/exec", handlers.ExecSandbox(sandboxMgr, nodeID))
+		sandboxes.GET("/:id/logs", handlers.GetSandboxLogs(sandboxMgr))
+	}
 }
