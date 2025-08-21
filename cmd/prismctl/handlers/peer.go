@@ -109,19 +109,19 @@ func HandlePeerInfo(cmd *cobra.Command, args []string) error {
 
 	// Find the resolved peer in the data we already have
 	var targetPeer *client.RaftPeer
-	for _, p := range resp.Peers {
-		if p.ID == resolvedPeerID {
-			targetPeer = &p
+	for i := range resp.Peers {
+		if resp.Peers[i].ID == resolvedPeerID {
+			targetPeer = &resp.Peers[i]
 			break
 		}
 	}
 
 	// If not found by ID, try to find by name (similar to node info pattern)
 	if targetPeer == nil {
-		for _, p := range resp.Peers {
-			if p.Name == peerIdentifier {
-				targetPeer = &p
-				logging.Info("Resolved peer name '%s' to ID '%s'", peerIdentifier, p.ID)
+		for i := range resp.Peers {
+			if resp.Peers[i].Name == peerIdentifier {
+				targetPeer = &resp.Peers[i]
+				logging.Info("Resolved peer name '%s' to ID '%s'", peerIdentifier, resp.Peers[i].ID)
 				break
 			}
 		}
