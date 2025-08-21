@@ -121,23 +121,21 @@ For production use, **explicitly assign all ports and data directory** for predi
   --join=10.0.1.100:4200,10.0.1.101:4200,10.0.1.102:4200 \
   --name=prod-node-1
 
-# Node 2 - API on localhost only (more secure, requires SSH tunnel for remote access)
+# Node 2 - API inherits Serf address (enables leader forwarding)
 ./bin/prismd \
   --serf=0.0.0.0:4200 \
   --raft=0.0.0.0:4201 \
   --grpc=0.0.0.0:4202 \
-  --api=127.0.0.1:8008 \
   --data-dir=/var/lib/prism \
   --bootstrap-expect=3 \
   --join=10.0.1.100:4200,10.0.1.101:4200,10.0.1.102:4200 \
   --name=prod-node-2
 
-# Node 3 - API on localhost only (more secure, requires SSH tunnel for remote access)
+# Node 3 - API inherits Serf address (enables leader forwarding)  
 ./bin/prismd \
   --serf=0.0.0.0:4200 \
   --raft=0.0.0.0:4201 \
   --grpc=0.0.0.0:4202 \
-  --api=127.0.0.1:8008 \
   --data-dir=/var/lib/prism \
   --bootstrap-expect=3 \
   --join=10.0.1.100:4200,10.0.1.101:4200,10.0.1.102:4200 \
@@ -151,7 +149,6 @@ For production use, **explicitly assign all ports and data directory** for predi
   --serf=0.0.0.0:4200 \
   --raft=0.0.0.0:4201 \
   --grpc=0.0.0.0:4202 \
-  --api=127.0.0.1:8008 \
   --data-dir=/var/lib/prism \
   --bootstrap \
   --name=dev-node-1
@@ -202,28 +199,37 @@ DEBUG=true ./bin/prismctl info
 
 ### API Security
 
-The HTTP API defaults to `127.0.0.1:8008` (localhost only) as a security-first approach to prevent accidental exposure to external networks. This is intentional since the API currently has no authentication or authorization mechanisms (authentication will be implemented soon).
+The HTTP API defaults to cluster-wide accessibility (inherits Serf bind address) to enable transparent leader forwarding across nodes. The system includes automatic request routing where write operations sent to any node are transparently forwarded to the current Raft leader.
 
-**Local Management (Default - Secure)**:
+**Cluster-Wide Access (Default)**:
 ```bash
-# API only accessible from localhost
-./bin/prismd  # API binds to 127.0.0.1:8008
+# API binds to same address as Serf (typically 0.0.0.0:8008)
+./bin/prismd  # API accessible cluster-wide for leader forwarding
+
+# Connect to any node - requests automatically routed to leader
+./bin/prismctl --api=192.168.1.100:8008 agent create
+./bin/prismctl --api=192.168.1.101:8008 agent create  # Same result
+```
+
+**Localhost-Only (Explicit - More Secure)**:
+```bash
+# Restrict API to localhost only (disables leader forwarding from other nodes)
+./bin/prismd --api=127.0.0.1:8008
+
+# Only local access possible
 ./bin/prismctl info  # Connects to 127.0.0.1:8008
 ```
 
-**Remote Management (Explicit - Use with Caution)**:
-```bash
-# Explicitly expose API to all interfaces (production requires firewall/VPN)
-./bin/prismd --api=0.0.0.0:8008
+**Important**: Binding API to `127.0.0.1` breaks leader forwarding in multi-node clusters. Write requests to non-leader nodes will fail because the leader's API is not reachable from other cluster nodes. Workarounds:
+- Use cluster-wide API binding (default behavior) for transparent operation
+- Connect directly to the leader node's API when using localhost-only binding
+- Future versions will use gRPC for internal request routing to resolve this limitation
 
-# Connect from remote machine
-./bin/prismctl --api=192.168.1.100:8008 info
-```
-
-**Production Deployment**: When exposing the API externally (`--api=0.0.0.0:8008`), ensure proper network security:
+**Production Deployment**: Since the API defaults to cluster-wide access for operational convenience, ensure proper network security:
 - Use firewall rules to restrict API access to trusted networks
 - Deploy behind VPN or use SSH tunneling for remote access  
 - Consider using reverse proxy with authentication (nginx, traefik)
+- Use `--api=127.0.0.1:8008` on non-management nodes for additional security
 
 ### Planned Security Improvements
 
