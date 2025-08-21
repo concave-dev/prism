@@ -20,6 +20,8 @@
 package handlers
 
 import (
+	"fmt"
+
 	"github.com/concave-dev/prism/cmd/prismctl/client"
 	"github.com/concave-dev/prism/cmd/prismctl/config"
 	"github.com/concave-dev/prism/cmd/prismctl/display"
@@ -161,6 +163,32 @@ func HandleNodeInfo(cmd *cobra.Command, args []string) error {
 	resolvedNodeID, err := utils.ResolveNodeIdentifierFromMembers(memberLikes, nodeIdentifier)
 	if err != nil {
 		return err
+	}
+
+	// Find the resolved node in the data we already have
+	var targetMember *client.ClusterMember
+	for _, member := range members {
+		if member.ID == resolvedNodeID {
+			targetMember = &member
+			break
+		}
+	}
+
+	// If not found by ID, try to find by name (similar to peer/agent/sandbox info pattern)
+	if targetMember == nil {
+		for _, member := range members {
+			if member.Name == nodeIdentifier {
+				targetMember = &member
+				resolvedNodeID = member.ID
+				logging.Info("Resolved node name '%s' to ID '%s'", nodeIdentifier, member.ID)
+				break
+			}
+		}
+	}
+
+	if targetMember == nil {
+		logging.Error("Node '%s' not found in cluster", nodeIdentifier)
+		return fmt.Errorf("node not found")
 	}
 
 	// Get node resources using resolved ID

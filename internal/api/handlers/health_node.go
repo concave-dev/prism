@@ -45,24 +45,13 @@ func HandleNodeHealth(clientPool *grpc.ClientPool, serfManager *serf.SerfManager
 			return
 		}
 
-		// Resolve nodeID: try direct lookup first, then name fallback
+		// Check if node exists by exact ID only (name resolution handled by CLI)
 		if _, exists := serfManager.GetMember(nodeID); !exists {
-			// Try to find by name and get the actual ID
-			found := false
-			for _, member := range serfManager.GetMembers() {
-				if member.Name == nodeID {
-					nodeID = member.ID
-					found = true
-					break
-				}
-			}
-			if !found {
-				c.JSON(http.StatusNotFound, gin.H{
-					"status":  "error",
-					"message": "Node not found",
-				})
-				return
-			}
+			c.JSON(http.StatusNotFound, gin.H{
+				"status":  "error",
+				"message": "Node not found",
+			})
+			return
 		}
 
 		// Query via gRPC
