@@ -108,7 +108,13 @@ with controlled resource access and network isolation.`,
 
   # Execute a multi-line script
   prismctl sandbox exec data-proc --command="echo 'Starting...' && python analyze.py"`,
-	Args: cobra.ExactArgs(1),
+	Args: func(cmd *cobra.Command, args []string) error {
+		if len(args) != 1 {
+			cmd.Help()
+			return fmt.Errorf("requires exactly 1 argument (sandbox name or ID)")
+		}
+		return nil
+	},
 	// RunE will be set by the main package that imports this
 }
 
@@ -129,7 +135,13 @@ sandbox activity.`,
 
   # Follow logs in real-time (TODO: future feature)
   # prismctl sandbox logs my-sandbox --follow`,
-	Args: cobra.ExactArgs(1),
+	Args: func(cmd *cobra.Command, args []string) error {
+		if len(args) != 1 {
+			cmd.Help()
+			return fmt.Errorf("requires exactly 1 argument (sandbox name or ID)")
+		}
+		return nil
+	},
 	// RunE will be set by the main package that imports this
 }
 
@@ -182,7 +194,13 @@ Partial ID matching is disabled for destructive operations.`,
 
   # Destroy by exact sandbox name
   prismctl sandbox destroy my-sandbox-name`,
-	Args: cobra.ExactArgs(1),
+	Args: func(cmd *cobra.Command, args []string) error {
+		if len(args) != 1 {
+			cmd.Help()
+			return fmt.Errorf("requires exactly 1 argument (sandbox name or ID)")
+		}
+		return nil
+	},
 	// RunE will be set by the main package that imports this
 }
 
