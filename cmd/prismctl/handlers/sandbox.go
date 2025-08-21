@@ -151,14 +151,14 @@ func HandleSandboxExec(cmd *cobra.Command, args []string) error {
 	// Create API client
 	apiClient := client.CreateAPIClient()
 
-	// Get all sandboxes to resolve name to ID with EXACT matching only
+	// Get all sandboxes to resolve name to ID if needed
 	sandboxes, err := apiClient.GetSandboxes()
 	if err != nil {
 		return err
 	}
 
-	// Resolve sandbox identifier with EXACT matching for security
-	resolvedSandboxID, sandboxName, err := resolveSandboxIdentifierExact(sandboxes, sandboxIdentifier)
+	// Resolve sandbox identifier (could be ID or name)
+	resolvedSandboxID, sandboxName, err := resolveSandboxIdentifier(sandboxes, sandboxIdentifier)
 	if err != nil {
 		return err
 	}
@@ -301,14 +301,14 @@ func HandleSandboxDestroy(cmd *cobra.Command, args []string) error {
 	// Create API client
 	apiClient := client.CreateAPIClient()
 
-	// Get all sandboxes to resolve name to ID with EXACT matching only
+	// Get all sandboxes to resolve name to ID if needed
 	sandboxes, err := apiClient.GetSandboxes()
 	if err != nil {
 		return err
 	}
 
-	// Resolve sandbox identifier with EXACT matching for safety
-	resolvedSandboxID, sandboxName, err := resolveSandboxIdentifierExact(sandboxes, sandboxIdentifier)
+	// Resolve sandbox identifier (could be ID or name)
+	resolvedSandboxID, sandboxName, err := resolveSandboxIdentifier(sandboxes, sandboxIdentifier)
 	if err != nil {
 		return err
 	}
@@ -325,14 +325,14 @@ func HandleSandboxDestroy(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// resolveSandboxIdentifierExact resolves a sandbox identifier to the actual
-// sandbox ID using EXACT matching only. Returns the resolved ID, sandbox name,
-// and any error. Used for destructive and mutation operations where partial
-// matching could lead to unintended consequences.
+// resolveSandboxIdentifier resolves a sandbox identifier (ID or name) to the actual
+// sandbox ID using EXACT matching only. Returns the resolved ID, sandbox name, and
+// any error. Used for destructive operations where partial matching could lead
+// to unintended consequences.
 //
 // SECURITY: Only supports exact matches for safety - no partial ID matching
-// for operations that could cause data loss or unintended execution.
-func resolveSandboxIdentifierExact(sandboxes []client.Sandbox, identifier string) (string, string, error) {
+// for destructive operations to prevent accidental sandbox destruction.
+func resolveSandboxIdentifier(sandboxes []client.Sandbox, identifier string) (string, string, error) {
 	// First try exact ID match
 	for _, sandbox := range sandboxes {
 		if sandbox.ID == identifier {
@@ -347,7 +347,7 @@ func resolveSandboxIdentifierExact(sandboxes []client.Sandbox, identifier string
 		}
 	}
 
-	return "", "", fmt.Errorf("sandbox '%s' not found (use exact ID or name for this operation)", identifier)
+	return "", "", fmt.Errorf("sandbox '%s' not found (use exact ID or name for destruction)", identifier)
 }
 
 // filterSandboxes applies status filters to sandbox lists for operational
