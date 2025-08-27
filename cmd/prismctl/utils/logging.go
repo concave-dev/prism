@@ -13,17 +13,17 @@ import (
 type RestryLogger struct{}
 
 // Errorf routes error messages through structured logging.
-func (s RestryLogger) Errorf(format string, v ...interface{}) {
+func (s RestryLogger) Errorf(format string, v ...any) {
 	logging.Error(format, v...)
 }
 
 // Warnf routes warning messages through structured logging.
-func (s RestryLogger) Warnf(format string, v ...interface{}) {
+func (s RestryLogger) Warnf(format string, v ...any) {
 	logging.Warn(format, v...)
 }
 
 // Debugf routes debug messages through structured logging.
-func (s RestryLogger) Debugf(format string, v ...interface{}) {
+func (s RestryLogger) Debugf(format string, v ...any) {
 	logging.Debug(format, v...)
 }
 

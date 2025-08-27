@@ -120,7 +120,7 @@ func ParseBindAddress(addr string) (*NetworkAddress, error) {
 // configuration parameters and user inputs throughout the cluster system.
 //
 // Example: ValidateField("192.168.1.1", "required,ip")
-func ValidateField(value interface{}, tag string) error {
+func ValidateField(value any, tag string) error {
 	return validate.Var(value, tag)
 }
 

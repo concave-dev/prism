@@ -90,23 +90,23 @@ func init() {
 }
 
 // Info logs informational messages for cluster operations and status updates.
-func Info(format string, v ...interface{}) {
+func Info(format string, v ...any) {
 	logger.Info(fmt.Sprintf(format, v...))
 }
 
 // Warn logs warning messages for non-critical issues requiring attention.
-func Warn(format string, v ...interface{}) {
+func Warn(format string, v ...any) {
 	logger.Warn(fmt.Sprintf(format, v...))
 }
 
 // Error logs error messages for failures and critical issues in cluster operations.
-func Error(format string, v ...interface{}) {
+func Error(format string, v ...any) {
 	logger.Error(fmt.Sprintf(format, v...))
 }
 
 // Success logs successful operations in green using INFO level with custom styling.
 // Implements a custom SUCCESS level that respects INFO level filtering.
-func Success(format string, v ...interface{}) {
+func Success(format string, v ...any) {
 	// Check if INFO level logs are enabled (Success uses INFO level internally)
 	if logger.GetLevel() > log.InfoLevel {
 		return // Skip if INFO level is suppressed
@@ -131,7 +131,7 @@ func Success(format string, v ...interface{}) {
 
 // Debug logs detailed debugging information for development and troubleshooting.
 // Debug logs detailed diagnostic information for development and troubleshooting.
-func Debug(format string, v ...interface{}) {
+func Debug(format string, v ...any) {
 	logger.Debug(fmt.Sprintf(format, v...))
 }
 

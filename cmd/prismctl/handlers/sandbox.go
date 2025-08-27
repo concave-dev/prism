@@ -296,7 +296,7 @@ func HandleSandboxLogs(cmd *cobra.Command, args []string) error {
 	if config.Global.Output == "json" {
 		encoder := json.NewEncoder(os.Stdout)
 		encoder.SetIndent("", "  ")
-		logResponse := map[string]interface{}{
+		logResponse := map[string]any{
 			"sandbox_id":   resolvedSandboxID,
 			"sandbox_name": sandboxName,
 			"logs":         logs,

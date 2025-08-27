@@ -230,7 +230,7 @@ func NewSandboxFSM() *SandboxFSM {
 // Critical for distributed state consistency as it ensures all nodes apply
 // the same state changes in the same sequence. Routes commands to specialized
 // FSMs while maintaining overall coordination and state integrity.
-func (f *PrismFSM) Apply(log *raft.Log) interface{} {
+func (f *PrismFSM) Apply(log *raft.Log) any {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
@@ -354,7 +354,7 @@ func (s *SandboxFSM) restoreState(state *SandboxFSMState) {
 // Core of the sandbox lifecycle management system that processes all distributed
 // sandbox operations. Integrates with execution runtime for secure code execution
 // and maintains comprehensive state tracking for monitoring and debugging.
-func (s *SandboxFSM) processCommand(cmd Command) interface{} {
+func (s *SandboxFSM) processCommand(cmd Command) any {
 	switch cmd.Operation {
 	case "create":
 		return s.processCreateCommand(cmd)
@@ -376,7 +376,7 @@ func (s *SandboxFSM) processCommand(cmd Command) interface{} {
 // Establishes the initial sandbox record in the distributed state and prepares
 // for runtime provisioning. Creates sandboxes in "created" status to allow for
 // asynchronous provisioning and initialization of secure execution environments.
-func (s *SandboxFSM) processCreateCommand(cmd Command) interface{} {
+func (s *SandboxFSM) processCreateCommand(cmd Command) any {
 	var createCmd SandboxCreateCommand
 	if err := json.Unmarshal(cmd.Data, &createCmd); err != nil {
 		logging.Error("SandboxFSM: Failed to unmarshal create command: %v", err)
@@ -418,7 +418,7 @@ func (s *SandboxFSM) processCreateCommand(cmd Command) interface{} {
 	logging.Info("SandboxFSM: Created sandbox %s (%s)",
 		sandboxID, createCmd.Name)
 
-	return map[string]interface{}{
+	return map[string]any{
 		"sandbox_id": sandboxID,
 		"status":     "created",
 	}
@@ -435,7 +435,7 @@ func (s *SandboxFSM) processCreateCommand(cmd Command) interface{} {
 // NOTE: Sandbox lifecycle transitions are not yet centrally coupled or
 // validated. Status changes happen per-handler; a future update will
 // centralize allowed transitions and validation with the runtime.
-func (s *SandboxFSM) processExecCommand(cmd Command) interface{} {
+func (s *SandboxFSM) processExecCommand(cmd Command) any {
 	var execCmd SandboxExecCommand
 	if err := json.Unmarshal(cmd.Data, &execCmd); err != nil {
 		logging.Error("SandboxFSM: Failed to unmarshal exec command: %v", err)
@@ -491,7 +491,7 @@ func (s *SandboxFSM) processExecCommand(cmd Command) interface{} {
 	//   3. Remove Stdout/Stderr fields from Raft state entirely
 	// This will dramatically reduce Raft log size and improve cluster performance.
 
-	return map[string]interface{}{
+	return map[string]any{
 		"sandbox_id": execCmd.SandboxID,
 		"command":    execCmd.Command,
 		"status":     "executing",
@@ -505,7 +505,7 @@ func (s *SandboxFSM) processExecCommand(cmd Command) interface{} {
 // Provides clean sandbox removal with proper state cleanup across the cluster.
 // Removes execution history and coordinates with runtime system for VM cleanup
 // to maintain accurate cluster resource accounting and operational state.
-func (s *SandboxFSM) processDeleteCommand(cmd Command) interface{} {
+func (s *SandboxFSM) processDeleteCommand(cmd Command) any {
 	var deleteCmd struct {
 		SandboxID string `json:"sandbox_id"`
 	}
@@ -532,7 +532,7 @@ func (s *SandboxFSM) processDeleteCommand(cmd Command) interface{} {
 
 	// TODO: Coordinate with runtime system for VM cleanup and resource deallocation
 
-	return map[string]interface{}{
+	return map[string]any{
 		"sandbox_id": deleteCmd.SandboxID,
 		"status":     "deleted",
 	}

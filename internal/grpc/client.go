@@ -86,7 +86,7 @@ func (cp *ClientPool) GetClient(nodeID string) (proto.NodeServiceClient, error) 
 	// Singleflight ensures only one dial per nodeID happens concurrently.
 	// All goroutines requesting the same nodeID will wait for the single
 	// dial operation to complete and receive the same result.
-	result, err, _ := cp.dialGroup.Do(nodeID, func() (interface{}, error) {
+	result, err, _ := cp.dialGroup.Do(nodeID, func() (any, error) {
 		// Double-check inside singleflight - another goroutine might have
 		// completed the connection while we were waiting
 		cp.mu.RLock()

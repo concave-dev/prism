@@ -287,7 +287,7 @@ func DisplayClusterResourcesFromAPI(resources []client.NodeResources) {
 func DisplayNodeInfo(resource client.NodeResources, isLeader bool, health *client.NodeHealth, address string, tags map[string]string) {
 	if config.Global.Output == "json" {
 		// JSON output
-		obj := map[string]interface{}{
+		obj := map[string]any{
 			"resource": resource,
 			"leader":   isLeader,
 		}

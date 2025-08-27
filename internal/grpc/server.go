@@ -178,10 +178,10 @@ func (s *Server) Start() error {
 // all tracked connections can be gracefully cancelled.
 func (s *Server) connectionTrackingInterceptor(
 	ctx context.Context,
-	req interface{},
+	req any,
 	info *grpcstd.UnaryServerInfo,
 	handler grpcstd.UnaryHandler,
-) (interface{}, error) {
+) (any, error) {
 	// Create cancellable context for this request
 	reqCtx, cancel := context.WithCancel(ctx)
 	defer cancel()

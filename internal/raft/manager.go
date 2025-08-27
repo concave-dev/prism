@@ -999,7 +999,7 @@ func (m *RaftManager) buildRaftConfig(logWriter io.Writer) *raft.Config {
 // tracking that will evolve into comprehensive sandbox state management.
 type simpleFSM struct {
 	mu    sync.RWMutex
-	state map[string]interface{}
+	state map[string]any
 }
 
 // Apply processes committed Raft log entries and applies them to the finite
@@ -1009,12 +1009,12 @@ type simpleFSM struct {
 // Essential for distributed state consistency as it ensures all nodes apply
 // the same state changes in the same sequence. Forms the foundation for
 // future AI sandbox state management and orchestration operations.
-func (f *simpleFSM) Apply(log *raft.Log) interface{} {
+func (f *simpleFSM) Apply(log *raft.Log) any {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
 	if f.state == nil {
-		f.state = make(map[string]interface{})
+		f.state = make(map[string]any)
 	}
 
 	// Simple hello world operation
@@ -1058,7 +1058,7 @@ func (f *simpleFSM) Restore(snapshot io.ReadCloser) error {
 	defer f.mu.Unlock()
 
 	// TODO: Implement proper state deserialization
-	f.state = make(map[string]interface{})
+	f.state = make(map[string]any)
 	logging.Info("Raft FSM: State restored from snapshot")
 
 	return snapshot.Close()
@@ -1072,7 +1072,7 @@ func (f *simpleFSM) Restore(snapshot io.ReadCloser) error {
 // without requiring full log storage and provides fast recovery mechanisms
 // for cluster scaling and failure recovery scenarios.
 type simpleFSMSnapshot struct {
-	state map[string]interface{}
+	state map[string]any
 }
 
 // Persist saves the snapshot data to the provided sink for durable storage.

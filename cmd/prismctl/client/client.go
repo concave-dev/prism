@@ -46,9 +46,9 @@ import (
 // Used as the base response type for JSON unmarshaling from daemon API calls,
 // enabling uniform error handling and data extraction across all client operations.
 type APIResponse struct {
-	Status string      `json:"status"`
-	Data   interface{} `json:"data"`
-	Count  int         `json:"count,omitempty"`
+	Status string `json:"status"`
+	Data   any    `json:"data"`
+	Count  int    `json:"count,omitempty"`
 }
 
 // ClusterMember represents a node in the Prism cluster with comprehensive status
@@ -440,9 +440,9 @@ func (api *PrismAPIClient) GetMembers() ([]ClusterMember, error) {
 
 	// Parse members from the response data
 	var members []ClusterMember
-	if membersData, ok := response.Data.([]interface{}); ok {
+	if membersData, ok := response.Data.([]any); ok {
 		for _, memberData := range membersData {
-			if memberMap, ok := memberData.(map[string]interface{}); ok {
+			if memberMap, ok := memberData.(map[string]any); ok {
 				member := ClusterMember{
 					ID:         utils.GetString(memberMap, "id"),
 					Name:       utils.GetString(memberMap, "name"),
@@ -489,9 +489,9 @@ func (api *PrismAPIClient) GetClusterInfo() (*ClusterInfo, error) {
 	}
 
 	// Parse cluster info from the response data
-	if infoData, ok := response.Data.(map[string]interface{}); ok {
+	if infoData, ok := response.Data.(map[string]any); ok {
 		// Parse status
-		statusData := infoData["status"].(map[string]interface{})
+		statusData := infoData["status"].(map[string]any)
 		status := ClusterStatus{
 			TotalNodes:    utils.GetInt(statusData, "totalNodes"),
 			NodesByStatus: utils.GetIntMap(statusData, "nodesByStatus"),
@@ -499,9 +499,9 @@ func (api *PrismAPIClient) GetClusterInfo() (*ClusterInfo, error) {
 
 		// Parse members
 		var members []ClusterMember
-		if membersData, ok := infoData["members"].([]interface{}); ok {
+		if membersData, ok := infoData["members"].([]any); ok {
 			for _, memberData := range membersData {
-				if memberMap, ok := memberData.(map[string]interface{}); ok {
+				if memberMap, ok := memberData.(map[string]any); ok {
 					member := ClusterMember{
 						ID:         utils.GetString(memberMap, "id"),
 						Name:       utils.GetString(memberMap, "name"),
@@ -565,13 +565,13 @@ func (api *PrismAPIClient) GetRaftPeers() (*RaftPeersResponse, error) {
 		return nil, fmt.Errorf("API request failed")
 	}
 
-	if data, ok := response.Data.(map[string]interface{}); ok {
+	if data, ok := response.Data.(map[string]any); ok {
 		res := &RaftPeersResponse{
 			Leader: utils.GetString(data, "leader"),
 		}
-		if peers, ok := data["peers"].([]interface{}); ok {
+		if peers, ok := data["peers"].([]any); ok {
 			for _, p := range peers {
-				if pm, ok := p.(map[string]interface{}); ok {
+				if pm, ok := p.(map[string]any); ok {
 					res.Peers = append(res.Peers, RaftPeer{
 						ID:        utils.GetString(pm, "id"),
 						Name:      utils.GetString(pm, "name"),
@@ -622,9 +622,9 @@ func (api *PrismAPIClient) GetClusterResources(sortBy string) ([]NodeResources, 
 
 	// Parse resources from the response data
 	var resources []NodeResources
-	if resourcesData, ok := response.Data.([]interface{}); ok {
+	if resourcesData, ok := response.Data.([]any); ok {
 		for _, resourceData := range resourcesData {
-			if resourceMap, ok := resourceData.(map[string]interface{}); ok {
+			if resourceMap, ok := resourceData.(map[string]any); ok {
 				resource := NodeResources{
 					NodeID:            utils.GetString(resourceMap, "nodeId"),
 					NodeName:          utils.GetString(resourceMap, "nodeName"),
@@ -702,7 +702,7 @@ func (api *PrismAPIClient) GetNodeResources(nodeID string) (*NodeResources, erro
 	}
 
 	// Parse resource from the response data
-	if resourceMap, ok := response.Data.(map[string]interface{}); ok {
+	if resourceMap, ok := response.Data.(map[string]any); ok {
 		resource := &NodeResources{
 			NodeID:            utils.GetString(resourceMap, "nodeId"),
 			NodeName:          utils.GetString(resourceMap, "nodeName"),
@@ -774,16 +774,16 @@ func (api *PrismAPIClient) GetNodeHealth(nodeID string) (*NodeHealth, error) {
 		return nil, fmt.Errorf("API request failed")
 	}
 
-	if m, ok := response.Data.(map[string]interface{}); ok {
+	if m, ok := response.Data.(map[string]any); ok {
 		nh := &NodeHealth{
 			NodeID:    utils.GetString(m, "nodeId"),
 			NodeName:  utils.GetString(m, "nodeName"),
 			Timestamp: utils.GetTime(m, "timestamp"),
 			Status:    utils.GetString(m, "status"),
 		}
-		if arr, ok := m["checks"].([]interface{}); ok {
+		if arr, ok := m["checks"].([]any); ok {
 			for _, it := range arr {
-				if cm, ok := it.(map[string]interface{}); ok {
+				if cm, ok := it.(map[string]any); ok {
 					nh.Checks = append(nh.Checks, HealthCheck{
 						Name:      utils.GetString(cm, "name"),
 						Status:    utils.GetString(cm, "status"),
@@ -874,7 +874,7 @@ func (api *PrismAPIClient) CreateSandbox(name string, metadata map[string]string
 	var response SandboxCreateResponse
 
 	// Prepare request payload
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"name": name,
 	}
 	if len(metadata) > 0 {
@@ -922,7 +922,7 @@ func (api *PrismAPIClient) ExecInSandbox(sandboxID, command string) (*SandboxExe
 	var response SandboxExecResponse
 
 	// Prepare request payload
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"command": command,
 	}
 
