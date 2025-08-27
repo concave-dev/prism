@@ -75,6 +75,8 @@ func DefaultConfig() *Config {
 	return &Config{
 		// Default to loopback for safer local development. Daemon can override.
 		// TODO(api): Consider env/config to expose externally when needed.
+		// NOTE: Daemon will reset this to Serf address for cluster accessibility
+		// (only when API address is not explicitly set via --api flag)
 		BindAddr:       "127.0.0.1",
 		BindPort:       DefaultAPIPort,
 		SerfManager:    nil, // Must be set by caller
