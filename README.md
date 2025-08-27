@@ -1,6 +1,6 @@
 # Prism
 
-Distributed runtime platform for AI agents and workflows.
+Open-Source distributed sandbox environment for running AI generated code.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://github.com/user-attachments/assets/3ee44401-f613-431d-811b-510b0f3c5b14">
@@ -9,56 +9,37 @@ Distributed runtime platform for AI agents and workflows.
 </picture>
 
 > [!CAUTION]
-> This is early development software. Sandbox code execution is not implemented yet. Test coverage: 7.0%.
+> This is early development software. Sandbox code execution is not implemented yet. Test coverage: 7.1%.
 
-## Overview
+## Overview  
 
-Distributed orchestration platform for AI agents with adaptive scaling, fault-tolerant execution, and multi-runtime support.
+Prism is a high-performance distributed sandbox platform designed specifically for AI-generated code execution. Built on battle-tested [Firecracker](https://firecracker-microvm.github.io/) microVMs, it provides strong isolation without the overhead of traditional containers.
 
-Designed specifically for AI workloads, Prism addresses unique operational requirements including non-deterministic behavior, dynamic resource scaling, and long-running probabilistic workflows. The platform supports multiple execution runtimes: Firecracker microVMs for secure isolation, cloud-hypervisor for performance optimization, and Docker containers for development workflows.
+- **Security-First Architecture**: True isolation via dedicated kernels with minimal attack surface.
+- **Horizontal Scalability**: Distributed system that scales across multiple nodes.
+- **Persistent Storage**: Durable volumes ensure sandboxes can be reused across executions.
+- **High Performance**: Firecracker's lightweight virtualization starts sandboxes in few hundred milliseconds.
+- **Docker Compatibility**: Supports any Docker image via OCI compliance.
+- **Multi-Runtime Flexibility**: Firecracker for production isolation, Docker for development.
 
-The AI ecosystem is fragmented with slow deployment cycles. Current infrastructure wasn't designed for autonomous agents that need rapid iteration, inter-agent communication, and built-in observability. Prism aims to compress the time from idea to deployed agent from weeks to minutes.
+You can learn more about Concave [here](https://concave.dev/).
 
-This aligns with [Concave's mission](https://concave.dev/) to build unified infrastructure for the emerging _"Internet of Agents"_. See also: [Adapt Fast In The AI Era](https://matmul.net/$/adapt-fast.html) and [writing code was never the bottleneck](https://ordep.dev/posts/writing-code-was-never-the-bottleneck).
+## Implementation Status
 
-## Features & Implementation Status
+### What's Done
+- [x] **Multi-node cluster** - Nodes can join, discover each other, and handle failures
+- [x] **Leader election** - Automatic leader selection and failover
+- [x] **Resource monitoring** - Real-time CPU, memory, disk tracking across nodes
+- [x] **CLI management** - Complete cluster control via `prismctl` commands
+- [x] **REST API** - HTTP endpoints for all cluster operations
+- [x] **Sandbox state tracking** - Create, list, delete, exec sandboxes (commands recorded but not executed)
 
-### Distributed Control Plane
-- [x] **Cluster Management**: Serf gossip protocol for membership, failure detection, auto-discovery
-- [x] **Consensus Layer**: Raft for leader election, log replication, strong consistency guarantees  
-- [x] **Inter-Node Communication**: gRPC NodeService with HTTP REST API fallback
-- [x] **Resource Discovery**: Real-time system monitoring (CPU, memory, disk, load) across cluster nodes
-- [x] **CLI Tooling**: Complete cluster management via `prismctl` with JSON/table output
-- [x] **Network Resilience**: Graceful daemon lifecycle, automatic peer discovery, partition tolerance
-- [x] **Autopilot & Reconciliation**: Automatic dead peer removal and cluster health maintenance
-
-### Code Execution
-- [x] **Sandbox Lifecycle Management**: Complete CRUD operations for sandboxes via REST API and CLI
-- [x] **Sandbox State Management**: Distributed sandbox state tracking via Raft consensus
-- [x] **Secure Sandboxing**: Isolated execution environments for safe code execution
-- [ ] **Firecracker Integration**: MicroVM lifecycle for secure sandbox isolation  
-- [ ] **Serverless Scaling**: Dynamic scaling from 0 to 10k sandbox instances based on demand
-- [ ] **Code Execution**: Command execution within isolated sandbox environments
-- [ ] **Crash-Proof Execution**: Fault-tolerant sandbox runtime with automatic recovery and retry
-
-### Observability
-- [x] **Health Monitoring**: Node health checks with gRPC and HTTP API endpoints
-- [x] **Resource Metrics**: Real-time CPU, memory, disk, and load monitoring across cluster
-- [x] **Cluster Visibility**: Comprehensive cluster status, member information, and Raft state
-- [x] **API Endpoints**: RESTful APIs for health, resources, nodes, and cluster information
-- [ ] **Sandbox Lifecycle Tracking**: Monitor sandbox execution, state transitions, and resource usage
-- [ ] **Performance Analytics**: Real-time visibility into sandbox performance and microVM metrics
-- [ ] **Code Execution Debugging**: Analysis and troubleshooting tools for distributed code execution
-
-### Future Infrastructure
-
-- **Agent Execution**: Full AI agent lifecycle management and orchestration
-- **Agent Memory & State**: Distributed memory and persistent state management for agents
-- **Agent Mesh**: Inter-agent communication and service discovery with first-class MCP support
-- **Multi-Runtime Support**: cloud-hypervisor, Docker containers for different execution types
-- **Agent Workflows**: Durable execution patterns with automatic retry and recovery
-- **LLM Gateway**: Built-in LLM routing, rate limiting, and cost optimization
-- **Secrets Vault**: Secure credential management for API access
+### What's Next
+- [ ] **Runtime integration** - Connect to Firecracker/Docker for actual execution
+- [ ] **Code execution** - Actually run commands inside sandbox environments
+- [ ] **File operations** - Copy files in/out, stream logs, shell access
+- [ ] **Network isolation** - Per-sandbox networking and security policies
+- [ ] **Image management** - Pull container images and create snapshots
 
 ## Quick Start
 
@@ -75,17 +56,6 @@ make run
 ./bin/prismctl info
 ```
 
-## Build
-
-```bash
-# Using Make
-make build
-
-# Or using Go directly
-go build -o bin/prismd ./cmd/prismd
-go build -o bin/prismctl ./cmd/prismctl
-```
-
 ## Usage
 
 ### Development and Testing
@@ -96,16 +66,18 @@ For development and testing, you can omit port configuration. The system auto-di
 # Bootstrap the first node - auto-configures all ports and data directory
 ./bin/prismd --bootstrap
 
-# Enable debug mode for development (verbose logging and detailed HTTP output)
+# (optional) Enable debug mode for development (verbose logging and detailed HTTP output)
 DEBUG=true ./bin/prismd --bootstrap
 
-# Join other nodes - only need to specify serf address to join
-./bin/prismd --join=192.168.1.100:4200
+# Join other nodes - only need to specify cluster address to join
+./bin/prismd --join=192.168.1.100:4200 # bootstrap node address
 ```
+
+**Auto-Configuration**: When ports are not explicitly specified, the system automatically configures available ports and uses timestamped directories like `./data/20240115-143022` for storage. All services (Raft, gRPC, API) auto-discover each other through Serf gossip.
 
 ### Production Deployment
 
-For production use, **explicitly assign all ports and data directory** for predictable service endpoints. Use `--bootstrap-expect` for safe cluster formation. **Use odd-numbered clusters (3, 5, 7) for proper quorum and fault tolerance.**
+For production use, Use `--bootstrap-expect` for safe cluster formation. **Use odd-numbered clusters (3, 5, 7) for proper quorum and fault tolerance.**
 
 ```bash
 # Production-safe 3-node cluster formation
@@ -114,10 +86,6 @@ For production use, **explicitly assign all ports and data directory** for predi
 # Node 1 - API exposed for management (ensure firewall protection)
 ./bin/prismd \
   --serf=0.0.0.0:4200 \
-  --raft=0.0.0.0:4201 \
-  --grpc=0.0.0.0:4202 \
-  --api=0.0.0.0:8008 \
-  --data-dir=/var/lib/prism \
   --bootstrap-expect=3 \
   --join=10.0.1.100:4200,10.0.1.101:4200,10.0.1.102:4200 \
   --name=prod-node-1
@@ -125,9 +93,6 @@ For production use, **explicitly assign all ports and data directory** for predi
 # Node 2 - API inherits Serf address (enables leader forwarding)
 ./bin/prismd \
   --serf=0.0.0.0:4200 \
-  --raft=0.0.0.0:4201 \
-  --grpc=0.0.0.0:4202 \
-  --data-dir=/var/lib/prism \
   --bootstrap-expect=3 \
   --join=10.0.1.100:4200,10.0.1.101:4200,10.0.1.102:4200 \
   --name=prod-node-2
@@ -135,34 +100,10 @@ For production use, **explicitly assign all ports and data directory** for predi
 # Node 3 - API inherits Serf address (enables leader forwarding)  
 ./bin/prismd \
   --serf=0.0.0.0:4200 \
-  --raft=0.0.0.0:4201 \
-  --grpc=0.0.0.0:4202 \
-  --data-dir=/var/lib/prism \
   --bootstrap-expect=3 \
   --join=10.0.1.100:4200,10.0.1.101:4200,10.0.1.102:4200 \
   --name=prod-node-3
 ```
-
-**Legacy Single-Node Bootstrap** (development only):
-```bash
-# Single node with immediate bootstrap (split-brain risk in production)
-./bin/prismd \
-  --serf=0.0.0.0:4200 \
-  --raft=0.0.0.0:4201 \
-  --grpc=0.0.0.0:4202 \
-  --data-dir=/var/lib/prism \
-  --bootstrap \
-  --name=dev-node-1
-```
-
-**Bootstrap-Expect Behavior**: 
-- All nodes wait until exactly N peers are discovered via Serf gossip
-- Only one node (deterministically selected by smallest node ID) coordinates cluster formation  
-- Prevents split-brain scenarios during concurrent startup
-- Includes stability window to handle network churn during bootstrap
-- Use `--bootstrap-expect=1` for single-node development clusters
-
-**Auto-Configuration**: When ports are not explicitly specified, the system automatically configures available ports and uses timestamped directories like `./data/20240115-143022` for storage. All services (Raft, gRPC, API) auto-discover each other through Serf gossip.
 
 Use the CLI:
 ```bash
@@ -171,9 +112,6 @@ Use the CLI:
 
 # List all nodes with status
 ./bin/prismctl node ls
-
-# Show resource usage across cluster  
-./bin/prismctl node top
 
 # Get detailed node information
 ./bin/prismctl node info <node-name-or-id>
@@ -185,7 +123,7 @@ Use the CLI:
 ./bin/prismctl sandbox destroy <sandbox-name-or-id>
 
 # Connect to remote cluster
-./bin/prismctl --api=127.0.0.1:8008 info
+./bin/prismctl --api=192.168.46.110:8008 info
 
 # Enable debug output for CLI operations
 DEBUG=true ./bin/prismctl info
@@ -200,8 +138,6 @@ DEBUG=true ./bin/prismctl info
 - **No Serf Keyring**: Cluster gossip protocol is unencrypted (no keyring configured)
 - **No Raft Transport Encryption**: Consensus protocol communication is unencrypted
 
-**Current Risk**: All network traffic (API requests, inter-node communication, cluster gossip) can be intercepted and read by network attackers.
-
 **Mitigation**: Deploy only on trusted networks (private VLANs, VPNs) until TLS support is implemented.
 
 ### API Security
@@ -210,41 +146,25 @@ The HTTP API defaults to cluster-wide accessibility (inherits Serf bind address)
 
 **Cluster-Wide Access (Default)**:
 ```bash
-# API binds to same address as Serf (typically 0.0.0.0:8008)
-./bin/prismd  # API accessible cluster-wide for leader forwarding
-
-# Connect to any node - requests automatically routed to leader
+# Connect to any node - requests automatically routed to leader node
 ./bin/prismctl --api=192.168.1.100:8008 sandbox create --name=test
 ./bin/prismctl --api=192.168.1.101:8008 sandbox create --name=test2  # Same result
 ```
 
 **Localhost-Only (Explicit - More Secure)**:
 ```bash
-# Restrict API to localhost only (disables leader forwarding from other nodes)
+# Restrict API to localhost only (naturally disables leader forwarding from other nodes)
 ./bin/prismd --api=127.0.0.1:8008
 
 # Only local access possible
-./bin/prismctl info  # Connects to 127.0.0.1:8008
+./bin/prismctl --api=127.0.0.1:8008 info
 ```
-
-**Important**: Binding API to `127.0.0.1` breaks leader forwarding in multi-node clusters. Write requests to non-leader nodes will fail because the leader's API is not reachable from other cluster nodes. Workarounds:
-- Use cluster-wide API binding (default behavior) for transparent operation
-- Connect directly to the leader node's API when using localhost-only binding
-- Future versions will use gRPC for internal request routing to resolve this limitation
 
 **Production Deployment**: Since the API defaults to cluster-wide access for operational convenience, ensure proper network security:
 - Use firewall rules to restrict API access to trusted networks
 - Deploy behind VPN or use SSH tunneling for remote access  
 - Consider using reverse proxy with authentication (nginx, traefik)
 - Use `--api=127.0.0.1:8008` on non-management nodes for additional security
-
-### Planned Security Improvements
-
-- **TLS/HTTPS**: Encrypted HTTP API with certificate management
-- **gRPC TLS**: Encrypted inter-node communication with mutual TLS
-- **Serf Keyring**: Encrypted cluster gossip with pre-shared keys
-- **Authentication**: API authentication and authorization mechanisms
-- **Raft Transport Security**: Encrypted consensus protocol communication
 
 ## Known Issues
 
