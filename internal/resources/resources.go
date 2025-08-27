@@ -2,7 +2,7 @@
 // structures for Prism cluster nodes in distributed orchestration environments.
 //
 // This package implements the core resource tracking layer that enables intelligent
-// workload placement, capacity planning, and cluster health monitoring across the
+// sandbox placement, capacity planning, and cluster health monitoring across the
 // distributed system. It provides both real-time resource gathering and serialization
 // capabilities for network transmission between cluster nodes.
 //
@@ -11,7 +11,7 @@
 //
 //   - System Resources: Physical CPU cores, memory usage, and load averages
 //   - Go Runtime Metrics: Goroutine counts, garbage collection stats, and memory allocation
-//   - Capacity Management: Job slots, current workload, and availability tracking
+//   - Capacity Management: Job slots, current sandbox count, and availability tracking
 //   - Node Identity: Unique identification and uptime for cluster coordination
 //
 // DATA COLLECTION STRATEGY:
@@ -44,7 +44,7 @@ import (
 // metrics, Go runtime statistics, and operational capacity information.
 //
 // This structure serves as the fundamental data unit for distributed resource
-// management, enabling intelligent workload placement, health monitoring, and
+// management, enabling intelligent sandbox placement, health monitoring, and
 // cluster capacity assessment across the Prism orchestration platform.
 // All fields are JSON-serializable for efficient network transmission.
 type NodeResources struct {
@@ -66,7 +66,7 @@ type NodeResources struct {
 	// Disk Information (in bytes) - system disk usage for workload storage planning
 	DiskTotal     uint64  `json:"diskTotal"`     // Total disk space available to the system
 	DiskUsed      uint64  `json:"diskUsed"`      // Currently used disk space
-	DiskAvailable uint64  `json:"diskAvailable"` // Available disk space for new workloads
+	DiskAvailable uint64  `json:"diskAvailable"` // Available disk space for new sandboxes
 	DiskUsage     float64 `json:"diskUsage"`     // Disk usage percentage (0-100)
 
 	// Go Runtime Information
@@ -88,7 +88,7 @@ type NodeResources struct {
 	AvailableSlots int `json:"availableSlots"` // Available job slots
 
 	// Resource Score (for intelligent scheduling and ranking)
-	Score float64 `json:"score"` // Composite resource score for workload placement decisions
+	Score float64 `json:"score"` // Composite resource score for sandbox placement decisions
 }
 
 // GatherSystemResources collects comprehensive resource information for a cluster node
@@ -185,7 +185,7 @@ func GatherSystemResources(nodeID, nodeName string, startTime time.Time) *NodeRe
 		MemoryAvailable: virtualMem.Available,
 		MemoryUsage:     virtualMem.UsedPercent,
 
-		// Disk Information (root filesystem for workload storage)
+		// Disk Information (root filesystem for sandbox storage)
 		DiskTotal:     diskUsage.Total,
 		DiskUsed:      diskUsage.Used,
 		DiskAvailable: diskUsage.Free,
@@ -247,20 +247,20 @@ func NodeResourcesFromJSON(data []byte) (*NodeResources, error) {
 	return &resources, nil
 }
 
-// CalculateNodeScore computes a composite resource score for intelligent workload
+// CalculateNodeScore computes a composite resource score for intelligent sandbox
 // placement and node ranking decisions. Higher scores indicate nodes with more
-// available resources and better capacity for handling additional workloads.
+// available resources and better capacity for handling additional sandboxes.
 //
 // SCORING ALGORITHM:
 // The score combines multiple resource dimensions with weighted importance:
 //   - Available CPU (30%): Higher available CPU percentage increases score
-//   - Available Memory (40%): Available memory has highest weight for AI workloads
+//   - Available Memory (40%): Available memory has highest weight for code execution
 //   - Available Disk (20%): Sufficient storage for artifacts and temporary files
 //   - Load Average (10%): Lower system load indicates better responsiveness
 //
 // Score ranges from 0.0 (fully utilized/unavailable) to 100.0 (maximum capacity).
 // This enables intelligent scheduling by prioritizing nodes with optimal resource
-// availability for AI workloads and distributed orchestration tasks.
+// availability for code execution sandboxes and distributed orchestration tasks.
 //
 // Note: If the system load average exceeds the number of CPU cores, the load availability
 // score becomes negative and is capped at 0 to handle overloaded systems. This ensures
@@ -271,11 +271,11 @@ func CalculateNodeScore(resources *NodeResources) float64 {
 	}
 
 	// CPU Score: Based on available CPU percentage (0-100)
-	// Weight: 30% - CPU availability is important for compute-intensive AI workloads
+	// Weight: 30% - CPU availability is important for compute-intensive code execution
 	cpuScore := resources.CPUAvailable * 0.30
 
 	// Memory Score: Based on available memory percentage (0-100)
-	// Weight: 40% - Memory is critical for AI models and sandbox runtime environments
+	// Weight: 40% - Memory is critical for sandbox runtime environments and code execution
 	var memoryScore float64
 	if resources.MemoryTotal > 0 {
 		memoryAvailablePercent := (float64(resources.MemoryAvailable) /

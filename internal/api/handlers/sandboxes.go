@@ -1,7 +1,7 @@
 // Package handlers provides HTTP request handlers for the Prism API server.
 //
 // This file implements sandbox lifecycle management endpoints for the distributed
-// AI orchestration platform. Handles sandbox creation, execution operations, log
+// sandbox orchestration platform. Handles sandbox creation, execution operations, log
 // retrieval, and lifecycle operations through RESTful HTTP APIs that integrate
 // with the Raft consensus system for distributed coordination.
 //

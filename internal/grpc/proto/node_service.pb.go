@@ -25,14 +25,14 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// HealthStatus represents the overall health state of a node for workload placement decisions.
+// HealthStatus represents the overall health state of a node for sandbox placement decisions.
 type HealthStatus int32
 
 const (
 	HealthStatus_UNKNOWN   HealthStatus = 0 // Unknown health state or health checks failed
-	HealthStatus_HEALTHY   HealthStatus = 1 // Fully operational and ready for new workloads
+	HealthStatus_HEALTHY   HealthStatus = 1 // Fully operational and ready for new sandboxes
 	HealthStatus_DEGRADED  HealthStatus = 2 // Operational with minor issues, monitor closely
-	HealthStatus_UNHEALTHY HealthStatus = 3 // Serious issues, should not receive new workloads
+	HealthStatus_UNHEALTHY HealthStatus = 3 // Serious issues, should not receive new sandboxes
 )
 
 // Enum value maps for HealthStatus.
@@ -125,7 +125,7 @@ func (x *GetResourcesRequest) GetResourceTypes() []string {
 	return nil
 }
 
-// GetResourcesResponse contains node resource information for workload placement decisions.
+// GetResourcesResponse contains node resource information for sandbox placement decisions.
 type GetResourcesResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Unique identifier for this node (hex string, truncated for display)
@@ -143,10 +143,10 @@ type GetResourcesResponse struct {
 	MemoryUsed      uint64  `protobuf:"varint,8,opt,name=memory_used,json=memoryUsed,proto3" json:"memory_used,omitempty"`                // Currently used memory
 	MemoryAvailable uint64  `protobuf:"varint,9,opt,name=memory_available,json=memoryAvailable,proto3" json:"memory_available,omitempty"` // Available memory for new allocations
 	MemoryUsage     float64 `protobuf:"fixed64,10,opt,name=memory_usage,json=memoryUsage,proto3" json:"memory_usage,omitempty"`           // Memory utilization percentage (0.0-100.0)
-	// Disk Information (bytes) - root filesystem for workload storage
+	// Disk Information (bytes) - root filesystem for sandbox storage
 	DiskTotal     uint64  `protobuf:"varint,11,opt,name=disk_total,json=diskTotal,proto3" json:"disk_total,omitempty"`             // Total disk space available
 	DiskUsed      uint64  `protobuf:"varint,12,opt,name=disk_used,json=diskUsed,proto3" json:"disk_used,omitempty"`                // Currently used disk space
-	DiskAvailable uint64  `protobuf:"varint,13,opt,name=disk_available,json=diskAvailable,proto3" json:"disk_available,omitempty"` // Available disk space for new workloads
+	DiskAvailable uint64  `protobuf:"varint,13,opt,name=disk_available,json=diskAvailable,proto3" json:"disk_available,omitempty"` // Available disk space for new sandboxes
 	DiskUsage     float64 `protobuf:"fixed64,14,opt,name=disk_usage,json=diskUsage,proto3" json:"disk_usage,omitempty"`            // Disk utilization percentage (0.0-100.0)
 	// Go Runtime Information
 	GoRoutines int32   `protobuf:"varint,15,opt,name=go_routines,json=goRoutines,proto3" json:"go_routines,omitempty"`   // Active goroutines in prismd process
@@ -164,7 +164,7 @@ type GetResourcesResponse struct {
 	CurrentJobs    int32 `protobuf:"varint,25,opt,name=current_jobs,json=currentJobs,proto3" json:"current_jobs,omitempty"`          // Currently running AI jobs
 	AvailableSlots int32 `protobuf:"varint,26,opt,name=available_slots,json=availableSlots,proto3" json:"available_slots,omitempty"` // Available job slots (max_jobs - current_jobs)
 	// Resource Score for Intelligent Scheduling
-	Score         float64 `protobuf:"fixed64,27,opt,name=score,proto3" json:"score,omitempty"` // Composite resource score for workload placement (0.0-100.0)
+	Score         float64 `protobuf:"fixed64,27,opt,name=score,proto3" json:"score,omitempty"` // Composite resource score for sandbox placement (0.0-100.0)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }

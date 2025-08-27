@@ -1,7 +1,7 @@
 // Package commands contains all CLI command definitions for prismctl.
 //
 // This file implements sandbox lifecycle management commands for the distributed
-// AI orchestration platform. Provides CLI interfaces for creating, executing,
+// sandbox orchestration platform. Provides CLI interfaces for creating, executing,
 // monitoring, and destroying code sandboxes across the Prism cluster through
 // REST API calls.
 //

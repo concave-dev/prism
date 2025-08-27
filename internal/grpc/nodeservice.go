@@ -660,7 +660,7 @@ func (n *NodeServiceImpl) checkGRPCServiceHealth(ctx context.Context, now time.T
 // ============================================================================
 
 // checkCPUResourceHealth monitors CPU usage levels and system load to detect
-// resource pressure that could impact workload performance. Uses configurable
+// resource pressure that could impact sandbox performance. Uses configurable
 // thresholds to classify CPU health status for intelligent scheduling decisions.
 //
 // Health thresholds:
@@ -733,13 +733,13 @@ func (n *NodeServiceImpl) checkCPUResourceHealth(ctx context.Context, now time.T
 }
 
 // checkMemoryResourceHealth monitors memory usage to detect potential out-of-memory
-// conditions that could impact workload stability. Uses progressive thresholds to
+// conditions that could impact sandbox stability. Uses progressive thresholds to
 // provide early warning of memory pressure before critical failures occur.
 //
 // Health thresholds:
 // - HEALTHY: Memory usage < 80%
 // - DEGRADED: Memory usage 80-95% (monitor closely, may impact performance)
-// - UNHEALTHY: Memory usage > 95% (high risk of OOM, avoid new workloads)
+// - UNHEALTHY: Memory usage > 95% (high risk of OOM, avoid new sandboxes)
 func (n *NodeServiceImpl) checkMemoryResourceHealth(ctx context.Context, now time.Time) *proto.HealthCheck {
 	// Check context before starting
 	if ctx.Err() != nil {
@@ -795,13 +795,13 @@ func (n *NodeServiceImpl) checkMemoryResourceHealth(ctx context.Context, now tim
 }
 
 // checkDiskResourceHealth monitors disk space usage to prevent storage exhaustion
-// that could cause workload failures or system instability. Focuses on root filesystem
-// where workloads and system files are typically stored.
+// that could cause sandbox failures or system instability. Focuses on root filesystem
+// where sandboxes and system files are typically stored.
 //
 // Health thresholds:
 // - HEALTHY: Disk usage < 85%
 // - DEGRADED: Disk usage 85-95% (monitor closely, may need cleanup)
-// - UNHEALTHY: Disk usage > 95% (high risk of disk full, avoid new workloads)
+// - UNHEALTHY: Disk usage > 95% (high risk of disk full, avoid new sandboxes)
 func (n *NodeServiceImpl) checkDiskResourceHealth(ctx context.Context, now time.Time) *proto.HealthCheck {
 	// Check context before starting
 	if ctx.Err() != nil {

@@ -4,7 +4,7 @@
 // environment management, including creation, listing, execution, monitoring, and
 // destruction of sandbox environments across the distributed cluster. These handlers
 // enable secure AI-generated code execution with proper isolation, resource management,
-// and operational visibility essential for AI workload orchestration.
+// and operational visibility essential for sandbox orchestration.
 //
 // The sandbox handlers manage:
 // - Sandbox creation with metadata and resource allocation

@@ -1,7 +1,7 @@
 // Package commands contains all CLI command definitions for prismctl.
 //
 // This file implements Raft peer management commands for the distributed
-// AI orchestration platform. Provides CLI interfaces for inspecting and
+// sandbox orchestration platform. Provides CLI interfaces for inspecting and
 // monitoring Raft consensus peers across the Prism cluster through REST
 // API calls to understand cluster health and consensus behavior.
 //
