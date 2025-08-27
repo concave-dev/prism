@@ -120,8 +120,8 @@ func (s *Server) Start() error {
 
 	// Add leader forwarding middleware for write operations
 	// Uses AgentManager interface (not direct RaftManager) to maintain clean layering:
-	// API Layer → AgentManager → RaftManager. This enables future extensibility
-	// where different resource managers can follow the same pattern.
+	// API Layer → Manager Interface → RaftManager. This provides leadership detection
+	// for forwarding ALL write operations (agents, sandboxes, future resources).
 	leaderForwarder := NewLeaderForwarder(s.GetAgentManager(), s.serfManager, s.GetNodeID())
 	router.Use(leaderForwarder.ForwardWriteRequests())
 
