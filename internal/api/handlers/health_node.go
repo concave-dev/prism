@@ -1,6 +1,18 @@
-// Package handlers provides HTTP request handlers for node health queries
-// and other cluster-related operations. This file exposes the node health
-// endpoint which proxies to the gRPC NodeService.GetHealth RPC.
+// Package handlers provides HTTP request handlers for the Prism API.
+//
+// This file exposes the node health endpoint which proxies to the gRPC
+// NodeService.GetHealth RPC for real-time health reporting. It verifies
+// node identity via Serf membership, performs the gRPC query, and returns
+// normalized health structures for consistent API consumption.
+//
+// ENDPOINTS:
+//   - GET /nodes/:id/health: Returns overall node health and component checks
+//
+// DESIGN:
+// The handler separates ID validation, gRPC retrieval, and response mapping
+// into clear steps, returning stable JSON structures used by the CLI and
+// external tools for operational visibility.
+
 package handlers
 
 import (

@@ -1,3 +1,35 @@
+// Package grpc provides gRPC server implementation for high-performance inter-node communication.
+//
+// This package implements the complete gRPC server lifecycle management including atomic
+// port binding, connection tracking, graceful shutdown, and health monitoring for the
+// Prism distributed cluster. The server enables fast, direct communication between nodes
+// for resource queries, health checks, and real-time cluster coordination operations.
+//
+// SERVER ARCHITECTURE:
+// The gRPC server implements sophisticated lifecycle management with production-ready features:
+//   - Atomic Port Binding: Pre-bound listener support to eliminate race conditions
+//   - Connection Tracking: Active connection monitoring for graceful draining
+//   - Health Monitoring: Local health checks without circular gRPC dependencies
+//   - Graceful Shutdown: Two-phase shutdown with timeout fallback protection
+//
+// INTER-NODE COMMUNICATION:
+// The server provides high-performance alternatives to Serf's gossip protocol for
+// time-sensitive operations:
+//   - Resource Queries: Fast CPU, memory, and capacity information retrieval
+//   - Health Checks: Real-time node health assessment and service availability
+//   - Cluster Coordination: Direct communication for scheduling and placement decisions
+//
+// PRODUCTION FEATURES:
+//   - Connection Draining: Graceful request completion during shutdown
+//   - Self-Health Monitoring: Local connectivity verification without gRPC dependencies
+//   - Timeout Management: Configurable timeouts with race condition prevention
+//   - Concurrent Safety: Thread-safe operations with proper mutex protection
+//
+// DEPLOYMENT INTEGRATION:
+// The server supports both traditional self-binding and modern pre-bound listener
+// approaches, enabling reliable port management in containerized and orchestrated
+// environments where port conflicts must be prevented during concurrent startup.
+
 package grpc
 
 import (

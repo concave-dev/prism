@@ -1,3 +1,12 @@
+// Package handlers provides HTTP request handlers for the Prism API.
+//
+// This file implements the API server health endpoint for process-level status.
+// It returns basic service health, version, and uptime information used by
+// load balancers, orchestrators, and monitoring systems for readiness checks.
+//
+// ENDPOINTS:
+//   - GET /health: Returns API server status, version, and uptime
+
 package handlers
 
 import (

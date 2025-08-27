@@ -1,3 +1,13 @@
+// Package handlers provides HTTP request handlers for the Prism API.
+//
+// This file implements node-focused endpoints that map directly to cluster
+// membership. The handlers reuse the members logic to provide node listings
+// and node-by-ID lookup with enriched Raft/Serf connectivity information.
+//
+// ENDPOINTS:
+//   - GET /nodes: Alias for cluster members listing
+//   - GET /nodes/:id: Returns specific node details
+
 package handlers
 
 import (
