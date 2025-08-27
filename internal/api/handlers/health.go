@@ -6,7 +6,6 @@
 //
 // ENDPOINTS:
 //   - GET /health: Returns API server status, version, and uptime
-
 package handlers
 
 import (

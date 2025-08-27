@@ -26,7 +26,6 @@
 // Current implementation focuses on functionality with placeholder TLS configuration
 // for future secure communication. Production deployments should implement proper
 // authentication, authorization, and encrypted transport for inter-node communication.
-
 package grpc
 
 import (

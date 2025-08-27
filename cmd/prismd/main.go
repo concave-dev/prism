@@ -22,7 +22,6 @@
 //
 // The main function provides clean error handling and proper exit codes for
 // integration with process managers, orchestrators, and monitoring systems.
-
 package main
 
 import (

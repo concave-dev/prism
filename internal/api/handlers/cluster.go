@@ -15,7 +15,6 @@
 // structures used by both CLI and external tools. All endpoints follow consistent
 // response formats (status, data, count) and error handling patterns for a stable
 // operator experience.
-
 package handlers
 
 import (

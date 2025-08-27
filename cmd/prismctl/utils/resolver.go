@@ -31,7 +31,6 @@
 //   - Standard Resolvers: Support full resolution hierarchy including partial matching
 //   - Strict Resolvers: Exact matching only for safety-critical operations
 //   - Resource-Specific: Specialized resolvers for nodes, peers, and sandboxes
-
 package utils
 
 import (

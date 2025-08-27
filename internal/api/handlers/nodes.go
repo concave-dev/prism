@@ -7,7 +7,6 @@
 // ENDPOINTS:
 //   - GET /nodes: Alias for cluster members listing
 //   - GET /nodes/:id: Returns specific node details
-
 package handlers
 
 import (

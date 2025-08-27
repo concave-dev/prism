@@ -3,7 +3,6 @@
 // as separate projects within the monorepo, allowing them to evolve independently
 // while maintaining consistency within each project's components.
 // All versions follow semantic versioning (semver) conventions.
-
 package version
 
 // PrismdVersion holds the current prismd daemon version.

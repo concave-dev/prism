@@ -19,7 +19,6 @@
 // The validation leverages the internal validate package for network address validation
 // while providing CLI-specific validation logic for output formats and user experience
 // considerations like preventing unroutable addresses in client configurations.
-
 package config
 
 import (

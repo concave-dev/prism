@@ -11,7 +11,6 @@
 //
 // All commands follow consistent patterns with standardized flag handling, error
 // messages, and output formatting for reliable cluster management operations.
-
 package commands
 
 import (

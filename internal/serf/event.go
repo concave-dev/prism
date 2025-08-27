@@ -30,7 +30,6 @@
 // external consumer failures without affecting core cluster membership functionality.
 // Events that cannot be processed are logged and safely discarded to maintain
 // cluster stability.
-
 package serf
 
 import (

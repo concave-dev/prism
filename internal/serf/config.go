@@ -11,7 +11,6 @@
 // parameters (buffer sizes, timeouts), and node-specific metadata (tags, names).
 // All configurations are validated to ensure proper cluster operation and prevent
 // common misconfigurations that could affect distributed system reliability.
-
 package serf
 
 import (

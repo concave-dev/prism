@@ -20,7 +20,6 @@
 // Functions are designed for extracting values from map[string]interface{} data
 // structures returned by JSON unmarshaling, providing a consistent interface
 // for CLI data processing while maintaining type safety throughout the codebase.
-
 package utils
 
 import (

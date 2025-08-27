@@ -1,7 +1,6 @@
 // Package config provides common default configuration values shared across
 // Prism components (Serf, Raft, HTTP API). This centralizes configuration
 // management and ensures consistency across the distributed runtime platform.
-
 package config
 
 const (

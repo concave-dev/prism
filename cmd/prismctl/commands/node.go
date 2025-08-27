@@ -11,7 +11,6 @@
 //
 // All node commands support watch mode for real-time monitoring and flexible
 // output formats for both human operators and automation tools.
-
 package commands
 
 import (

@@ -12,7 +12,6 @@
 // The handler separates ID validation, gRPC retrieval, and response mapping
 // into clear steps, returning stable JSON structures used by the CLI and
 // external tools for operational visibility.
-
 package handlers
 
 import (

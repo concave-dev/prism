@@ -20,7 +20,6 @@
 //
 // Used throughout the cluster for daemon operations, CLI commands, and all
 // internal components to maintain consistent logging across the distributed system.
-
 package logging
 
 import (

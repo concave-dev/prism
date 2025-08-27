@@ -12,7 +12,6 @@
 // DESIGN:
 // Prefer gRPC for fast node-to-node queries with automatic Serf fallback when
 // remote calls fail, ensuring resilient resource collection across the cluster.
-
 package handlers
 
 import (

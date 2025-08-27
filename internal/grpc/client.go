@@ -19,7 +19,6 @@
 //   - Connection health monitoring and automatic reconnection
 //   - Circuit breaker patterns for resilience against failing nodes
 //   - Load balancing and failover for high availability scenarios
-
 package grpc
 
 import (

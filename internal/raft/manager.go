@@ -36,7 +36,6 @@
 // Designed for extensibility with planned features including custom FSM
 // implementations, TLS encryption, metrics collection, and advanced snapshot
 // management for large-scale deployments.
-
 package raft
 
 import (

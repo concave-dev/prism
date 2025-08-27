@@ -12,7 +12,6 @@
 // normalized forms ready for service initialization. This prevents common
 // misconfigurations that could lead to cluster split-brain, network binding
 // failures, or service discovery issues in production deployments.
-
 package config
 
 import (

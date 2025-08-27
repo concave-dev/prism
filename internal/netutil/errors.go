@@ -13,7 +13,6 @@
 //
 // These utilities are essential for reliable network error handling in distributed
 // systems where network conditions and port availability need precise classification.
-
 package netutil
 
 import (

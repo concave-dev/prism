@@ -15,7 +15,6 @@
 // All configuration is managed through global variables that are populated by
 // command-line flags and used throughout the CLI for consistent behavior and
 // user experience across all prismctl operations.
-
 package config
 
 import "github.com/concave-dev/prism/internal/version"

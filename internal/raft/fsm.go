@@ -22,7 +22,6 @@
 // All FSM state is automatically persisted through Raft's log replication and
 // snapshot mechanisms. State is replicated to all nodes and survives node
 // restarts, providing durability for critical orchestration state.
-
 package raft
 
 import (

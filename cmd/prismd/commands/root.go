@@ -19,7 +19,6 @@
 //
 // TODO: Future expansion will include subcommands for cluster management,
 // sandbox operations, and maintenance tasks as the daemon functionality grows.
-
 package commands
 
 import (

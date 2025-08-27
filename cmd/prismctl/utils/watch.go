@@ -22,7 +22,6 @@
 // TODO: Future enhancements could include configurable refresh intervals,
 // highlight changes between updates, and selective field watching for focused
 // monitoring of specific cluster metrics or agent mesh connectivity status.
-
 package utils
 
 import (

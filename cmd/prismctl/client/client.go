@@ -27,7 +27,6 @@
 // All API methods provide detailed error messages, connection diagnostics, and
 // proper HTTP status code handling to ensure reliable cluster communication and
 // clear troubleshooting information for operators managing distributed systems.
-
 package client
 
 import (

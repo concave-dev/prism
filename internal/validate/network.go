@@ -13,7 +13,6 @@
 //
 // Used for validating bind addresses, peer addresses, and API endpoints throughout
 // cluster formation, node discovery, and inter-node communication.
-
 package validate
 
 import (

@@ -28,7 +28,6 @@
 // Designed for extensibility with planned features including dynamic cluster
 // reconfiguration, snapshotting for log compaction, and integration with Serf
 // for automatic cluster membership discovery and node joining.
-
 package raft
 
 import (

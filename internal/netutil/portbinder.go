@@ -14,7 +14,6 @@
 //
 // This approach is essential for reliable distributed system startup where multiple
 // services need guaranteed port access without coordination overhead or timing races.
-
 package netutil
 
 import (

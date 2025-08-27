@@ -9,7 +9,6 @@
 //
 // The info command provides operators with a unified view of cluster state for
 // monitoring, troubleshooting, and health assessment during cluster operations.
-
 package commands
 
 import (

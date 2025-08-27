@@ -27,7 +27,6 @@
 //
 // The CLI follows kubectl-style patterns for intuitive cluster management with
 // consistent interfaces, comprehensive help text, and production-ready reliability.
-
 package main
 
 import (

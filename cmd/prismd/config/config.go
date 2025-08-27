@@ -38,7 +38,6 @@
 // Configuration supports both legacy bootstrap mode and modern BootstrapExpect
 // cluster formation with join address lists for fault-tolerant cluster startup
 // and automatic peer discovery in distributed environments.
-
 package config
 
 import (

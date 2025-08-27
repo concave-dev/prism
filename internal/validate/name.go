@@ -12,7 +12,6 @@
 //
 // Used throughout CLI tools, APIs, configuration processing, and cluster operations
 // to ensure consistent input validation across all system entry points.
-
 package validate
 
 import (
