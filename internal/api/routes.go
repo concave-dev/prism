@@ -51,7 +51,7 @@ func (s *Server) setupRoutes(router *gin.Engine) {
 		cluster.GET("/members", s.handleMembers)
 		cluster.GET("/info", s.handleClusterInfo)
 		cluster.GET("/resources", s.handleClusterResources)
-		cluster.GET("/raft/peers", s.handleRaftPeers)
+		cluster.GET("/peers", s.handleRaftPeers)
 	}
 
 	// Node-specific endpoints (for future use)
