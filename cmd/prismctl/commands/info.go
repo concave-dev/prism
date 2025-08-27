@@ -1,4 +1,14 @@
-// Package commands contains all CLI command definitions for prismctl.
+// Package commands provides cluster information command definitions for prismctl.
+//
+// This file implements the cluster-wide information command that displays comprehensive
+// cluster status including member details, uptime metrics, version information, and
+// overall health indicators for operational visibility.
+//
+// INFO COMMAND:
+//   - info: Shows complete cluster overview with member composition and health status
+//
+// The info command provides operators with a unified view of cluster state for
+// monitoring, troubleshooting, and health assessment during cluster operations.
 package commands
 
 import (

@@ -15,7 +15,6 @@
 // are properly wired and that network settings are valid for production deployment.
 // The modular design supports future extensions for TLS, authentication, rate
 // limiting, and other production-ready API server features.
-
 package api
 
 import (

@@ -1,4 +1,20 @@
-// Package handlers provides HTTP request handlers for the Prism API
+// Package handlers provides HTTP request handlers for the Prism API.
+//
+// This package implements REST handlers for cluster-related endpoints, exposing
+// distributed system information via a consistent HTTP interface. Handlers
+// provide member discovery, cluster status, peer connectivity, and detailed
+// cluster information for operational visibility and tooling integration.
+//
+// ENDPOINT GROUPS:
+//   - Cluster Members: Returns current Serf members with Raft/Serf status mapping
+//   - Cluster Info: Consolidated version, uptime, leader, and member statistics
+//   - Raft Peers: Consensus peer configuration with basic reachability checks
+//
+// DESIGN PRINCIPLES:
+// Handlers separate data gathering from presentation, returning normalized API
+// structures used by both CLI and external tools. All endpoints follow consistent
+// response formats (status, data, count) and error handling patterns for a stable
+// operator experience.
 package handlers
 
 import (

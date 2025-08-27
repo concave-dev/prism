@@ -1,6 +1,32 @@
-// Package main implements the Prism CLI tool (prismctl).
-// This tool provides commands for managing AI code execution sandboxes
-// in Prism clusters, similar to kubectl for Kubernetes.
+// Package main provides the entry point for the Prism CLI tool (prismctl).
+//
+// This package implements the main executable for the distributed cluster management
+// CLI that enables operators to interact with Prism AI orchestration clusters.
+// The CLI provides comprehensive commands for monitoring cluster health, managing
+// code execution sandboxes, and performing operational tasks across distributed nodes.
+//
+// CLI ARCHITECTURE:
+// The main package orchestrates the complete CLI system including:
+//   - Command Structure: Hierarchical resource-based commands (node, peer, sandbox)
+//   - Handler Integration: Command execution with API client communication
+//   - Flag Management: Global and command-specific configuration options
+//   - Configuration Binding: CLI state management and validation pipeline
+//
+// COMMAND CATEGORIES:
+//   - Node Commands: Cluster member discovery, resource monitoring, and health checks
+//   - Peer Commands: Raft consensus monitoring and connectivity diagnostics
+//   - Sandbox Commands: Code execution environment lifecycle management
+//   - Info Commands: Comprehensive cluster status and operational visibility
+//
+// INITIALIZATION FLOW:
+// 1. Command structure setup with hierarchical organization
+// 2. Flag configuration for global and command-specific options
+// 3. Handler assignment linking commands to API operations
+// 4. Configuration validation and CLI state management
+// 5. Command execution with proper error handling and exit codes
+//
+// The CLI follows kubectl-style patterns for intuitive cluster management with
+// consistent interfaces, comprehensive help text, and production-ready reliability.
 package main
 
 import (

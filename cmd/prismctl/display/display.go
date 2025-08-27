@@ -33,7 +33,14 @@ import (
 	"github.com/dustin/go-humanize"
 )
 
-// DisplayMembersFromAPI displays cluster nodes from API response, annotating the Raft leader
+// DisplayMembersFromAPI displays cluster node membership information in tabular or JSON format
+// with proper leader annotation and status formatting. Handles empty result sets gracefully
+// and provides both compact and verbose display modes for operational visibility.
+//
+// Provides complete cluster topology visibility with member status, network information,
+// and leadership indicators. Enables operators to quickly assess cluster health, identify
+// failed nodes, and understand distributed system state for troubleshooting and capacity
+// planning decisions in the AI orchestration environment.
 func DisplayMembersFromAPI(members []client.ClusterMember) {
 	if len(members) == 0 {
 		if config.Global.Output == "json" {
@@ -109,7 +116,14 @@ func DisplayMembersFromAPI(members []client.ClusterMember) {
 	}
 }
 
-// DisplayClusterInfoFromAPI displays comprehensive cluster information from API response
+// DisplayClusterInfoFromAPI displays comprehensive cluster-wide status and health information
+// including version details, uptime metrics, leadership status, and member statistics.
+// Provides both summary and detailed views based on verbosity settings for operational oversight.
+//
+// Consolidates distributed system metrics into a unified dashboard view, enabling
+// administrators to monitor cluster stability, track resource utilization trends,
+// and identify potential issues before they impact workload execution or system
+// availability in the AI orchestration environment.
 func DisplayClusterInfoFromAPI(info client.ClusterInfo) {
 	if config.Global.Output == "json" {
 		// JSON output
@@ -172,7 +186,14 @@ func DisplayClusterInfoFromAPI(info client.ClusterInfo) {
 	}
 }
 
-// DisplayClusterResourcesFromAPI displays cluster node information from API response
+// DisplayClusterResourcesFromAPI displays detailed resource utilization and capacity information
+// across all cluster nodes with intelligent sorting and scoring for workload placement decisions.
+// Formats CPU, memory, disk, and job metrics with human-readable units and percentage displays.
+//
+// Essential for resource management and workload scheduling as it provides real-time visibility
+// into cluster capacity, node performance scores, and resource availability. Enables operators
+// to make informed decisions about workload placement, identify resource bottlenecks, and
+// plan capacity expansion for optimal AI agent and workflow execution performance.
 func DisplayClusterResourcesFromAPI(resources []client.NodeResources) {
 	if len(resources) == 0 {
 		if config.Global.Output == "json" {
@@ -254,8 +275,15 @@ func DisplayClusterResourcesFromAPI(resources []client.NodeResources) {
 	}
 }
 
-// DisplayNodeInfo displays detailed information for a single node
-// isLeader indicates whether this node is the current Raft leader
+// DisplayNodeInfo displays comprehensive detailed information for a single cluster node
+// including resource utilization, health status, leadership role, and metadata tags.
+// Combines multiple data sources into a unified view with both JSON and tabular output
+// formats for deep node inspection and troubleshooting operations.
+//
+// Aggregates distributed system data from multiple sources (resources, health, raft, serf)
+// into a coherent display for node-level diagnostics. Enables administrators to perform
+// detailed node analysis, capacity planning, and fault diagnosis for individual cluster
+// members in the AI orchestration environment.
 func DisplayNodeInfo(resource client.NodeResources, isLeader bool, health *client.NodeHealth, address string, tags map[string]string) {
 	if config.Global.Output == "json" {
 		// JSON output
@@ -550,7 +578,15 @@ func DisplaySandboxLogs(sandboxName string, logs []string) {
 	}
 }
 
-// DisplayRaftPeers displays Raft peers in table or JSON format with enhanced formatting
+// DisplayRaftPeers displays distributed consensus peer information with leadership status
+// and connectivity details for cluster consensus monitoring. Formats peer data in both
+// tabular and JSON output modes with proper leader annotation and status indicators
+// for operational visibility into the distributed consensus layer.
+//
+// Reveals the Raft peer topology, leadership state, and member connectivity that
+// underpins distributed decision-making. Supports administrators in diagnosing consensus
+// issues, verifying leader election, and ensuring proper cluster quorum for reliable
+// AI workload orchestration and distributed system stability.
 func DisplayRaftPeers(resp *client.RaftPeersResponse) {
 	if len(resp.Peers) == 0 {
 		if config.Global.Output == "json" {

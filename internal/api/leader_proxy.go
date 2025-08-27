@@ -17,7 +17,6 @@
 //
 // This approach provides seamless user experience where clients can connect to any
 // healthy node in the cluster without needing to track leadership changes.
-
 package api
 
 import (

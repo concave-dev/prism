@@ -12,22 +12,24 @@ import (
 // RestryLogger implements resty.Logger interface and routes logs through structured logging
 type RestryLogger struct{}
 
-// Errorf routes error messages through structured logging
+// Errorf routes error messages through structured logging.
 func (s RestryLogger) Errorf(format string, v ...interface{}) {
 	logging.Error(format, v...)
 }
 
-// Warnf routes warning messages through structured logging
+// Warnf routes warning messages through structured logging.
 func (s RestryLogger) Warnf(format string, v ...interface{}) {
 	logging.Warn(format, v...)
 }
 
-// Debugf routes debug messages through structured logging
+// Debugf routes debug messages through structured logging.
 func (s RestryLogger) Debugf(format string, v ...interface{}) {
 	logging.Debug(format, v...)
 }
 
-// SetupLogging configures logging based on DEBUG environment variable and global config
+// SetupLogging configures CLI logging behavior based on environment and config.
+// Enables debug output when DEBUG=true, otherwise suppresses verbose logs.
+// Essential for maintaining clean CLI output while allowing detailed debugging.
 func SetupLogging() {
 	// Check for DEBUG environment variable for debug logging
 	if os.Getenv("DEBUG") == "true" {

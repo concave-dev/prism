@@ -21,7 +21,6 @@
 // This follows the same clean layering pattern used throughout Prism where
 // domain-specific managers provide focused interfaces for their resource types
 // while delegating to the core RaftManager for distributed operations.
-
 package api
 
 import (

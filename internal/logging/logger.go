@@ -20,7 +20,6 @@
 //
 // Used throughout the cluster for daemon operations, CLI commands, and all
 // internal components to maintain consistent logging across the distributed system.
-
 package logging
 
 import (
@@ -52,6 +51,12 @@ var (
 
 // setupCustomStyles configures custom color schemes for log levels to improve
 // visual distinction during cluster monitoring and debugging.
+// setupCustomStyles creates custom color styling for log levels with professional appearance.
+// Configures distinct colors for each log level to improve visual parsing of log output
+// during development and operational monitoring of distributed cluster operations.
+//
+// Provides carefully chosen colors that work well in both light and dark terminals
+// while maintaining readability and professional appearance for production logging.
 func setupCustomStyles() *log.Styles {
 	styles := log.DefaultStyles()
 
@@ -100,8 +105,7 @@ func Error(format string, v ...interface{}) {
 }
 
 // Success logs successful operations in green using INFO level with custom styling.
-// Implements a custom SUCCESS level that respects INFO level filtering by creating
-// a temporary logger with green styling while maintaining proper log level hierarchy.
+// Implements a custom SUCCESS level that respects INFO level filtering.
 func Success(format string, v ...interface{}) {
 	// Check if INFO level logs are enabled (Success uses INFO level internally)
 	if logger.GetLevel() > log.InfoLevel {
@@ -126,11 +130,18 @@ func Success(format string, v ...interface{}) {
 }
 
 // Debug logs detailed debugging information for development and troubleshooting.
+// Debug logs detailed diagnostic information for development and troubleshooting.
 func Debug(format string, v ...interface{}) {
 	logger.Debug(fmt.Sprintf(format, v...))
 }
 
-// SetLevel configures the minimum logging level for filtering log output.
+// SetLevel configures the minimum logging level for filtering log output across all
+// cluster services and components. Accepts standard level strings (DEBUG, INFO, WARN, ERROR)
+// and applies filtering to reduce noise during production operations or increase verbosity.
+//
+// Enables operational control over log volume and detail level, allowing operators
+// to adjust logging granularity based on operational needs from minimal error-only
+// logging in production to verbose debug logging during troubleshooting sessions.
 func SetLevel(level string) {
 	switch level {
 	case "DEBUG":
@@ -146,10 +157,13 @@ func SetLevel(level string) {
 	}
 }
 
-// SetOutput configures where logs are written, accepting nil to suppress output.
-// When nil is passed, sets logging level high to effectively disable output.
+// SetOutput configures log output destination for operational log management.
+// Accepts file handles for log redirection or nil to suppress output entirely
+// by setting log level high enough to disable all output effectively.
 //
-// Used by CLI tools to redirect logs to files or discard them completely.
+// Enables flexible log management for different operational scenarios including
+// file-based logging for production deployments, output suppression for CLI tools,
+// and development logging to stderr for interactive debugging sessions.
 func SetOutput(w *os.File) {
 	if w == nil {
 		// Suppress output by setting level to a high value
@@ -459,10 +473,8 @@ func (crw *ColorfulRaftWriter) createDeduplicationKey(level, message string) str
 }
 
 // processLogs parses Raft log lines and routes them through the colorful logging system.
-// Runs in a background goroutine to continuously process logs from the Raft library.
-// Handles multiple Raft log formats and extracts levels to re-emit through our colored logger.
-//
-// Essential for maintaining consistent log formatting across all cluster components.
+// Runs in a background goroutine to process logs from the Raft library with deduplication
+// and consistent formatting. Handles log level extraction and message cleanup for readability.
 func (crw *ColorfulRaftWriter) processLogs() {
 	scanner := bufio.NewScanner(crw.reader)
 

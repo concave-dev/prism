@@ -18,7 +18,6 @@
 // All commands integrate with the cluster's REST API endpoints and provide
 // consistent output formatting, error handling, and configuration management
 // for seamless Raft peer administration and consensus monitoring operations.
-
 package commands
 
 import (

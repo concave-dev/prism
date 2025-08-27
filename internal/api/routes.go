@@ -17,7 +17,6 @@
 // Route handlers are implemented as Server methods, allowing access to cluster
 // state, configuration, and distributed system components needed for proper
 // API responses and cluster coordination.
-
 package api
 
 import (

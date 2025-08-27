@@ -4,7 +4,6 @@
 // The custom stream layer enables Raft to use pre-bound TCP listeners, eliminating
 // port binding race conditions during cluster startup while maintaining full
 // compatibility with Raft's network transport requirements.
-
 package netutil
 
 import (

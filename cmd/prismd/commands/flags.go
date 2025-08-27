@@ -1,4 +1,25 @@
-// Package commands contains Cobra CLI command definitions for prismd.
+// Package commands provides flag management and configuration binding for prismd.
+//
+// This package implements the comprehensive flag system for the Prism daemon CLI,
+// handling all command-line configuration options including network addresses,
+// cluster formation parameters, and operational settings. It provides intelligent
+// flag validation and explicit user override tracking for sophisticated defaults.
+//
+// FLAG CATEGORIES:
+// The flag system organizes daemon configuration into logical groups:
+//   - Network Flags: Serf, Raft, gRPC, and API service addresses with defaults
+//   - Cluster Flags: Join addresses, bootstrap modes, and formation strategies
+//   - Operational Flags: Node naming, logging levels, and data directories
+//   - Safety Flags: Strict join mode and bootstrap expect for production use
+//
+// EXPLICIT TRACKING:
+// The package tracks which flags were explicitly set by users versus inherited
+// from defaults, enabling intelligent address inheritance and atomic port binding
+// strategies that respect user preferences while providing sensible automation.
+//
+// FLAG VALIDATION:
+// All flags include comprehensive help text with examples, mutually exclusive
+// flag handling, and production safety warnings for cluster formation options.
 package commands
 
 import (

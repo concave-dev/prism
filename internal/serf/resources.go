@@ -29,7 +29,6 @@
 // Coordinated timeout configuration prevents competing timeouts between HTTP
 // clients, Serf queries, and response processing to ensure reliable end-to-end
 // operation across the distributed orchestration platform.
-
 package serf
 
 import (

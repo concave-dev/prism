@@ -25,7 +25,6 @@
 // Sandbox creation and execution operations trigger intelligent placement and
 // scheduling decisions based on the cluster's resource scoring system. The
 // execution engine coordinates with Firecracker VM runtime for secure isolation.
-
 package handlers
 
 import (

@@ -1,6 +1,43 @@
-// Package config handles configuration management for the Prism daemon.
-// This includes configuration values, defaults, and validation logic
-// for network addresses, data directories, and daemon settings.
+// Package config provides comprehensive configuration management for the Prism daemon.
+//
+// This package implements the complete configuration system for the prismd daemon
+// including network address management, service port coordination, data directory
+// handling, and cluster formation parameters. It provides centralized configuration
+// state with explicit user override tracking for sophisticated default behavior.
+//
+// CONFIGURATION ARCHITECTURE:
+// The configuration system manages four critical service endpoints with intelligent
+// address inheritance and port coordination:
+//
+//   - Serf: Cluster membership gossip protocol (UDP+TCP, user-configurable)
+//   - Raft: Distributed consensus engine (TCP, inherits Serf IP by default)
+//   - gRPC: Inter-node communication server (TCP, inherits Serf IP by default)
+//   - HTTP API: REST management interface (TCP, inherits Serf IP by default)
+//
+// ADDRESS INHERITANCE STRATEGY:
+// The daemon uses intelligent address inheritance to minimize configuration burden
+// while maintaining flexibility for complex network topologies:
+//
+//   - Serf: Explicitly configured or defaults to system bind address
+//   - Raft/gRPC/API: Inherit Serf IP address unless explicitly overridden
+//   - Port Management: Each service gets unique port with auto-discovery fallback
+//
+// This pattern ensures cluster-wide accessibility while allowing per-service
+// customization when needed for firewall rules, network segmentation, or
+// multi-interface scenarios.
+//
+// EXPLICIT OVERRIDE TRACKING:
+// The configuration system tracks which values were explicitly set by users
+// versus inherited from defaults. This enables sophisticated behavior like:
+//
+//   - Smart address inheritance only when addresses aren't explicitly set
+//   - Atomic port binding strategies that respect user preferences
+//   - Validation that accounts for user intent vs automatic configuration
+//
+// CLUSTER FORMATION:
+// Configuration supports both legacy bootstrap mode and modern BootstrapExpect
+// cluster formation with join address lists for fault-tolerant cluster startup
+// and automatic peer discovery in distributed environments.
 package config
 
 import (
@@ -60,7 +97,9 @@ type Config struct {
 // Global configuration instance
 var Global Config
 
-// SetExplicitlySet marks a specific configuration field as explicitly set by user
+// SetExplicitlySet marks a configuration field as explicitly set by the user.
+// Enables intelligent address inheritance and atomic port binding strategies
+// that respect user preferences versus automatic configuration defaults.
 func (c *Config) SetExplicitlySet(field ConfigField, value bool) {
 	switch field {
 	case SerfField:
@@ -76,7 +115,9 @@ func (c *Config) SetExplicitlySet(field ConfigField, value bool) {
 	}
 }
 
-// IsExplicitlySet returns whether a specific configuration field was explicitly set by user
+// IsExplicitlySet returns whether a configuration field was explicitly set by the user.
+// Used by the daemon to determine when to apply address inheritance versus
+// respecting explicit user configuration for network binding decisions.
 func (c *Config) IsExplicitlySet(field ConfigField) bool {
 	switch field {
 	case SerfField:

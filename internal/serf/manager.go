@@ -14,7 +14,6 @@
 // - Use odd numbers (3, 5, 7, etc.) for optimal consensus and conflict resolution
 // - Minimum 3 nodes for production to avoid split-brain scenarios
 // - Larger clusters (4+ nodes) provide more decisive conflict resolution
-
 package serf
 
 import (

@@ -15,7 +15,6 @@
 // Server lifecycle management includes graceful startup with binding validation,
 // middleware configuration for cross-cutting concerns, and clean shutdown handling
 // to ensure proper resource cleanup during daemon termination or restarts.
-
 package api
 
 import (

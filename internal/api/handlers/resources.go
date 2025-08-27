@@ -1,4 +1,17 @@
-// Package handlers provides HTTP request handlers for resource queries
+// Package handlers provides HTTP request handlers for the Prism API.
+//
+// This file implements resource endpoint handlers that aggregate node resource
+// information across the cluster using gRPC with Serf fallback. Handlers return
+// normalized resource structures for both cluster-wide and per-node queries,
+// supporting operational visibility and scheduling decisions.
+//
+// ENDPOINTS:
+//   - GET /cluster/resources: Aggregated resources for all nodes (sortable)
+//   - GET /nodes/:id/resources: Resources for a specific node
+//
+// DESIGN:
+// Prefer gRPC for fast node-to-node queries with automatic Serf fallback when
+// remote calls fail, ensuring resilient resource collection across the cluster.
 package handlers
 
 import (

@@ -1,6 +1,24 @@
-// Package commands contains Cobra CLI command definitions for prismd.
-// The Prism daemon provides distributed sandbox infrastructure for secure
-// AI-generated code execution using Firecracker microVMs.
+// Package commands provides the complete CLI command structure for the Prism daemon.
+//
+// This package implements the root command and command hierarchy for prismd,
+// the distributed AI orchestration daemon. It manages the CLI interface for
+// daemon configuration, cluster formation, and operational parameters through
+// a comprehensive flag system and validation pipeline.
+//
+// COMMAND ARCHITECTURE:
+// The daemon uses a simple root command structure with extensive flag support:
+//   - Root Command: Main daemon execution with cluster configuration
+//   - Flag System: Comprehensive network, cluster, and operational settings
+//   - Validation Pipeline: Pre-execution configuration validation and setup
+//   - Logo Display: Professional daemon startup presentation
+//
+// DAEMON CAPABILITIES:
+// The CLI enables distributed sandbox infrastructure for AI-generated code
+// execution using Firecracker microVMs with automatic cluster formation,
+// fault-tolerant joining, and production-ready operational features.
+//
+// TODO: Future expansion will include subcommands for cluster management,
+// sandbox operations, and maintenance tasks as the daemon functionality grows.
 package commands
 
 import (

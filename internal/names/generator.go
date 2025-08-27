@@ -27,7 +27,6 @@
 // by enabling intuitive node recognition compared to UUID-based identification systems.
 //
 // Examples: "cosmic-dragon", "quantum-nebula", "divine-titanium", "neural-phoenix", "focused-lens", "prismatic-ray"
-
 package names
 
 import (

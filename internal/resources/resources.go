@@ -24,7 +24,6 @@
 // All resource data structures support JSON serialization for efficient network
 // transmission via Serf queries, HTTP APIs, and inter-node communication protocols.
 // Enables real-time resource discovery and monitoring across the distributed cluster.
-
 package resources
 
 import (

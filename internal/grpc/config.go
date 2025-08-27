@@ -1,6 +1,31 @@
-// Package grpc provides gRPC server for high-performance inter-node communication.
-// This enables fast resource queries and other real-time operations between Prism nodes
-// without the overhead of Serf's gossip protocol.
+// Package grpc provides gRPC server configuration for high-performance inter-node communication.
+//
+// This package implements the configuration system for the gRPC server that enables
+// fast, direct communication between Prism cluster nodes. The gRPC interface provides
+// efficient alternatives to Serf's gossip protocol for time-sensitive operations like
+// resource queries, health checks, and real-time cluster coordination.
+//
+// GRPC COMMUNICATION MODEL:
+// The gRPC server complements Serf's membership management with direct node-to-node
+// communication for operations requiring immediate responses:
+//   - Resource Queries: Fast CPU, memory, and capacity information retrieval
+//   - Health Checks: Real-time node health assessment and service availability
+//   - Cluster Coordination: Direct inter-node communication for scheduling decisions
+//
+// TIMEOUT MANAGEMENT:
+// The configuration implements sophisticated timeout hierarchies to prevent race
+// conditions between client and server operations:
+//   - Server Health Check Timeout: Time limit for internal health assessments
+//   - Client Call Timeout: Overall timeout for gRPC requests from clients
+//   - Resource Query Timeout: Specific timeout for resource information requests
+//
+// The critical relationship is ClientCallTimeout > HealthCheckTimeout to ensure
+// servers complete internal checks before clients timeout, preventing race conditions.
+//
+// SECURITY MODEL:
+// Current implementation focuses on functionality with placeholder TLS configuration
+// for future secure communication. Production deployments should implement proper
+// authentication, authorization, and encrypted transport for inter-node communication.
 package grpc
 
 import (

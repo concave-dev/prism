@@ -14,7 +14,6 @@
 //
 // All middleware integrates with Prism's structured logging system to maintain
 // consistent log formatting across the entire cluster management platform.
-
 package api
 
 import (
