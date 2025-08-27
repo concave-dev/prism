@@ -9,14 +9,14 @@ option go_package = "github.com/concave-dev/prism/internal/grpc/proto";
 import "google/protobuf/timestamp.proto";
 
 // NodeService provides resource information and health status for cluster nodes.
-// Supports the agent mesh architecture for AI workload scheduling and monitoring.
+// Supports distributed AI workload scheduling and monitoring.
 //
 // TODO: Add authentication for secure inter-node communication using mTLS
 // TODO: Add streaming methods for real-time resource monitoring
-// TODO: Add job scheduling and placement methods for agent workloads
+// TODO: Add job scheduling and placement methods for AI workloads
 service NodeService {
   // GetResources returns current resource utilization and capacity for this node.
-  // Used by scheduler nodes for AI agent workload placement decisions.
+  // Used by scheduler nodes for AI workload placement decisions.
   rpc GetResources(GetResourcesRequest) returns (GetResourcesResponse);
   
   // GetHealth returns comprehensive health status for this node.
@@ -80,8 +80,8 @@ message GetResourcesResponse {
   double load15 = 23;            // System load average (15 minutes)
   
   // Job Capacity and Utilization
-  int32 max_jobs = 24;           // Maximum concurrent AI agent jobs
-  int32 current_jobs = 25;       // Currently running AI agent jobs
+  int32 max_jobs = 24;           // Maximum concurrent AI jobs
+  int32 current_jobs = 25;       // Currently running AI jobs
   int32 available_slots = 26;    // Available job slots (max_jobs - current_jobs)
   
   // Resource Score for Intelligent Scheduling

@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/concave-dev/prism/internal/logging"
+	"github.com/concave-dev/prism/internal/raft"
 	"github.com/concave-dev/prism/internal/serf"
 	"github.com/gin-gonic/gin"
 )
@@ -46,18 +47,16 @@ const (
 // while ensuring write operations are processed by the authoritative leader.
 //
 // ARCHITECTURAL INTEGRATION:
-// LeaderForwarder demonstrates the clean layering pattern used throughout Prism:
+// LeaderForwarder provides transparent request routing for write operations:
 //
-//	HTTP Request → LeaderForwarder → AgentManager → RaftManager
+//	HTTP Request → LeaderForwarder → RaftManager
 //
-// The forwarder uses AgentManager interface rather than directly accessing
-// RaftManager, maintaining proper separation of concerns and enabling future
-// extensibility where different resource types (agents, MCP, memory, storage)
-// can each have their own manager following the same pattern.
+// The forwarder accesses RaftManager directly for leadership checks and leader
+// resolution, providing clean separation between HTTP handling and consensus operations.
 //
 // FORWARDING STRATEGY:
-// 1. Check leadership via AgentManager.IsLeader()
-// 2. Get leader ID via AgentManager.Leader()
+// 1. Check leadership via RaftManager.IsLeader()
+// 2. Get leader ID via RaftManager.Leader()
 // 3. Resolve leader ID to network address via SerfMembershipProvider
 // 4. Forward HTTP request to leader's API endpoint
 // 5. Stream response back to client transparently
@@ -65,9 +64,9 @@ const (
 // Essential for distributed consistency as it maintains the Raft requirement that
 // only leaders process write operations while providing seamless client experience.
 type LeaderForwarder struct {
-	agentManager AgentManager           // Interface to check leadership and get leader ID
-	serfManager  SerfMembershipProvider // Interface to resolve node IDs to network addresses
-	nodeID       string                 // Current node ID for loop prevention
+	raftManager *raft.RaftManager      // Direct access to Raft manager for leadership operations
+	serfManager SerfMembershipProvider // Interface to resolve node IDs to network addresses
+	nodeID      string                 // Current node ID for loop prevention
 }
 
 // SerfMembershipProvider provides access to cluster membership information
@@ -80,17 +79,17 @@ type SerfMembershipProvider interface {
 }
 
 // NewLeaderForwarder creates a new leader forwarding middleware with the provided
-// agent manager for leadership checks, serf manager for address resolution,
+// raft manager for leadership checks, serf manager for address resolution,
 // and node identification.
 //
-// The agent manager provides access to Raft leadership state and current leader
+// The raft manager provides access to Raft leadership state and current leader
 // address needed for intelligent request routing decisions. The serf manager
 // provides cluster membership data for resolving API endpoints from Raft addresses.
-func NewLeaderForwarder(agentManager AgentManager, serfManager SerfMembershipProvider, nodeID string) *LeaderForwarder {
+func NewLeaderForwarder(raftManager *raft.RaftManager, serfManager SerfMembershipProvider, nodeID string) *LeaderForwarder {
 	return &LeaderForwarder{
-		agentManager: agentManager,
-		serfManager:  serfManager,
-		nodeID:       nodeID,
+		raftManager: raftManager,
+		serfManager: serfManager,
+		nodeID:      nodeID,
 	}
 }
 
@@ -116,14 +115,14 @@ func (lf *LeaderForwarder) ForwardWriteRequests() gin.HandlerFunc {
 		}
 
 		// Check if this node is the leader
-		if lf.agentManager.IsLeader() {
+		if lf.raftManager.IsLeader() {
 			logging.Debug("Processing write request locally (this node is leader)")
 			c.Next()
 			return
 		}
 
 		// Get current leader address
-		leaderAddr := lf.agentManager.Leader()
+		leaderAddr := lf.raftManager.Leader()
 		if leaderAddr == "" {
 			logging.Error("No Raft leader available for request forwarding")
 			c.JSON(http.StatusServiceUnavailable, gin.H{

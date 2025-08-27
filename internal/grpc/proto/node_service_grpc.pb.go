@@ -31,14 +31,14 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
 // NodeService provides resource information and health status for cluster nodes.
-// Supports the agent mesh architecture for AI workload scheduling and monitoring.
+// Supports distributed AI workload scheduling and monitoring.
 //
 // TODO: Add authentication for secure inter-node communication using mTLS
 // TODO: Add streaming methods for real-time resource monitoring
-// TODO: Add job scheduling and placement methods for agent workloads
+// TODO: Add job scheduling and placement methods for AI workloads
 type NodeServiceClient interface {
 	// GetResources returns current resource utilization and capacity for this node.
-	// Used by scheduler nodes for AI agent workload placement decisions.
+	// Used by scheduler nodes for AI workload placement decisions.
 	GetResources(ctx context.Context, in *GetResourcesRequest, opts ...grpc.CallOption) (*GetResourcesResponse, error)
 	// GetHealth returns comprehensive health status for this node.
 	// Used by the cluster for failure detection and load balancing decisions.
@@ -78,14 +78,14 @@ func (c *nodeServiceClient) GetHealth(ctx context.Context, in *GetHealthRequest,
 // for forward compatibility.
 //
 // NodeService provides resource information and health status for cluster nodes.
-// Supports the agent mesh architecture for AI workload scheduling and monitoring.
+// Supports distributed AI workload scheduling and monitoring.
 //
 // TODO: Add authentication for secure inter-node communication using mTLS
 // TODO: Add streaming methods for real-time resource monitoring
-// TODO: Add job scheduling and placement methods for agent workloads
+// TODO: Add job scheduling and placement methods for AI workloads
 type NodeServiceServer interface {
 	// GetResources returns current resource utilization and capacity for this node.
-	// Used by scheduler nodes for AI agent workload placement decisions.
+	// Used by scheduler nodes for AI workload placement decisions.
 	GetResources(context.Context, *GetResourcesRequest) (*GetResourcesResponse, error)
 	// GetHealth returns comprehensive health status for this node.
 	// Used by the cluster for failure detection and load balancing decisions.

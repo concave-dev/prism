@@ -469,7 +469,7 @@ func (n *NodeServiceImpl) checkSerfMembershipHealth(ctx context.Context, now tim
 	}
 
 	// Get local member role and address for reporting
-	localRole := "agent" // Default role
+	localRole := "worker" // Default role
 	if localMember.Tags != nil {
 		if role, exists := localMember.Tags["role"]; exists {
 			localRole = role

@@ -9,7 +9,7 @@
 //   - Provides thread-safe access to NodeService clients for remote procedure calls
 //   - Handles connection lifecycle management and cleanup
 //
-// This forms a critical part of the agent mesh architecture where nodes need to
+// This forms a critical part of the distributed architecture where nodes need to
 // efficiently communicate for resource discovery, workload scheduling, and
 // health monitoring. The gRPC layer provides type-safe, high-performance
 // inter-node communication that scales with cluster size.

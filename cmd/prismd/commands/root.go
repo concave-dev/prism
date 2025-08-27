@@ -1,5 +1,5 @@
 // Package commands contains Cobra CLI command definitions for prismd.
-// The Prism daemon provides distributed runtime infrastructure for AI agents
+// The Prism daemon provides distributed runtime infrastructure for AI workloads
 // with isolated VMs, sandboxed execution, serverless functions, and workflows.
 package commands
 
@@ -14,10 +14,10 @@ import (
 // Root command for the Prism daemon
 var RootCmd = &cobra.Command{
 	Use:   "prismd",
-	Short: "Prism distributed runtime platform daemon for AI agents, MCP tools and workflows",
-	Long: `Prism daemon (prismd) provides distributed runtime infrastructure for AI agents.
+	Short: "Prism distributed runtime platform daemon for MCP tools and AI workflows",
+	Long: `Prism daemon (prismd) provides distributed runtime infrastructure for AI workloads.
 
-Think Kubernetes for AI agents - with isolated VMs, sandboxed execution, 
+Think Kubernetes for AI workloads - with isolated VMs, sandboxed execution, 
 serverless functions, native memory, workflows, and other AI-first primitives.
 
 Auto-configures network addresses and data directory when not explicitly specified.`,

@@ -1,7 +1,7 @@
 // Package utils provides common utility functions for the Prism orchestration platform.
 //
 // This file implements unified ID generation functionality used across the platform
-// for creating unique identifiers. Provides consistent ID formats for nodes, agents,
+// for creating unique identifiers. Provides consistent ID formats for nodes, sandboxes,
 // and other cluster resources while eliminating code duplication.
 //
 // ID GENERATION STRATEGY:
@@ -11,7 +11,7 @@
 //
 // USAGE PATTERNS:
 // - Node IDs: Unique cluster node identification for membership and routing
-// - Agent IDs: Unique AI agent identification for lifecycle management
+// - Sandbox IDs: Unique sandbox identification for lifecycle management
 // - Resource IDs: Future extensions for other cluster resources
 //
 // The unified approach ensures consistent ID formats across all platform components

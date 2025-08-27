@@ -197,7 +197,7 @@ func (m *RaftManager) Start() error {
 	}
 
 	// Initialize FSM (Finite State Machine)
-	// Use PrismFSM for comprehensive agent lifecycle and orchestration management
+	// Use PrismFSM for comprehensive sandbox lifecycle and orchestration management
 	m.fsm = NewPrismFSM()
 
 	// Setup transport layer for Raft communication
@@ -993,11 +993,11 @@ func (m *RaftManager) buildRaftConfig(logWriter io.Writer) *raft.Config {
 
 // simpleFSM implements a basic finite state machine for Raft command processing
 // and state management. Provides the foundation for distributed state operations
-// that will be expanded for AI agent lifecycle and orchestration management.
+// that will be expanded for AI sandbox lifecycle and orchestration management.
 //
 // Critical for Raft consensus as it applies committed log entries to maintain
 // consistent state across all cluster nodes. Currently implements basic state
-// tracking that will evolve into comprehensive agent state management.
+// tracking that will evolve into comprehensive sandbox state management.
 type simpleFSM struct {
 	mu    sync.RWMutex
 	state map[string]interface{}
@@ -1009,7 +1009,7 @@ type simpleFSM struct {
 //
 // Essential for distributed state consistency as it ensures all nodes apply
 // the same state changes in the same sequence. Forms the foundation for
-// future AI agent state management and orchestration operations.
+// future AI sandbox state management and orchestration operations.
 func (f *simpleFSM) Apply(log *raft.Log) interface{} {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -1585,7 +1585,7 @@ func (m *RaftManager) IsRaftHealthy() bool {
 }
 
 // GetFSM returns the PrismFSM instance for direct state access and operations.
-// Provides access to the finite state machine for agent queries and state
+// Provides access to the finite state machine for sandbox queries and state
 // monitoring without requiring distributed Raft operations.
 //
 // Essential for local state queries and monitoring operations that need
@@ -1603,7 +1603,7 @@ func (m *RaftManager) GetFSM() *PrismFSM {
 // 30 seconds at debug level for troubleshooting and development purposes.
 //
 // Essential for development and troubleshooting as it provides regular state
-// updates for debugging placement decisions, load distribution, and agent
+// updates for debugging placement decisions, load distribution, and sandbox
 // lifecycle tracking. Should only be called when debug logging is desired.
 func (m *RaftManager) StartStateLogging() {
 	go func() {

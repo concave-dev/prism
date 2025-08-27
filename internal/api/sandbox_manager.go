@@ -40,7 +40,7 @@ import (
 // from pure consensus protocol implementation. This enables:
 //
 //   - Clean layering: API → SandboxManager → RaftManager
-//   - Extensible design: Follows same pattern as AgentManager for consistency
+//   - Extensible design: Follows consistent patterns for future resource managers
 //   - Interface segregation: API components depend only on what they need
 //   - Single responsibility: Each layer handles its specific concerns
 //
@@ -70,7 +70,7 @@ type SandboxManager interface {
 //   - Clean testing: API components can be tested with mock implementations
 //   - Consistent interface: All distributed operations use the same contract
 //   - Resource isolation: Sandbox operations are logically separated from
-//     agent operations while sharing the same underlying consensus mechanism
+//     other operations while sharing the same underlying consensus mechanism
 //
 // DELEGATION STRATEGY:
 // Most methods are simple pass-through calls to RaftManager, but this layer

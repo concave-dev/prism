@@ -119,10 +119,10 @@ func (s *Server) Start() error {
 	router.Use(gin.Recovery())
 
 	// Add leader forwarding middleware for write operations
-	// Uses AgentManager interface (not direct RaftManager) to maintain clean layering:
-	// API Layer → Manager Interface → RaftManager. This provides leadership detection
-	// for forwarding ALL write operations (agents, sandboxes, future resources).
-	leaderForwarder := NewLeaderForwarder(s.GetAgentManager(), s.serfManager, s.GetNodeID())
+	// Uses RaftManager directly for leadership detection and request forwarding.
+	// This provides leadership detection for forwarding ALL write operations
+	// (sandboxes, future resources).
+	leaderForwarder := NewLeaderForwarder(s.raftManager, s.serfManager, s.GetNodeID())
 	router.Use(leaderForwarder.ForwardWriteRequests())
 
 	// Setup routes
@@ -287,19 +287,8 @@ func (s *Server) getHandlerRaftPeers() gin.HandlerFunc {
 }
 
 // ============================================================================
-// AGENT MANAGEMENT INTEGRATION
+// SANDBOX MANAGEMENT INTEGRATION
 // ============================================================================
-
-// GetAgentManager returns an AgentManager implementation for agent lifecycle
-// operations. Creates a bridge between the HTTP API layer and the underlying
-// Raft consensus system for distributed agent management.
-//
-// Essential for agent handlers to access distributed state management
-// capabilities while maintaining clean separation of concerns between
-// HTTP handling and consensus operations.
-func (s *Server) GetAgentManager() AgentManager {
-	return NewServerAgentManager(s.raftManager)
-}
 
 // GetSandboxManager returns a SandboxManager implementation for sandbox lifecycle
 // operations. Creates a bridge between the HTTP API layer and the underlying
@@ -307,8 +296,7 @@ func (s *Server) GetAgentManager() AgentManager {
 //
 // Essential for sandbox handlers to access distributed state management
 // capabilities while maintaining clean separation of concerns between
-// HTTP handling and consensus operations. Follows the same architectural
-// pattern as AgentManager for consistency and extensibility.
+// HTTP handling and consensus operations.
 func (s *Server) GetSandboxManager() SandboxManager {
 	return NewServerSandboxManager(s.raftManager)
 }

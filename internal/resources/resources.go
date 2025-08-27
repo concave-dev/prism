@@ -260,7 +260,7 @@ func NodeResourcesFromJSON(data []byte) (*NodeResources, error) {
 //
 // Score ranges from 0.0 (fully utilized/unavailable) to 100.0 (maximum capacity).
 // This enables intelligent scheduling by prioritizing nodes with optimal resource
-// availability for AI agent workloads and distributed orchestration tasks.
+// availability for AI workloads and distributed orchestration tasks.
 //
 // Note: If the system load average exceeds the number of CPU cores, the load availability
 // score becomes negative and is capped at 0 to handle overloaded systems. This ensures
@@ -275,7 +275,7 @@ func CalculateNodeScore(resources *NodeResources) float64 {
 	cpuScore := resources.CPUAvailable * 0.30
 
 	// Memory Score: Based on available memory percentage (0-100)
-	// Weight: 40% - Memory is critical for AI models and agent runtime environments
+	// Weight: 40% - Memory is critical for AI models and sandbox runtime environments
 	var memoryScore float64
 	if resources.MemoryTotal > 0 {
 		memoryAvailablePercent := (float64(resources.MemoryAvailable) /
@@ -293,7 +293,7 @@ func CalculateNodeScore(resources *NodeResources) float64 {
 	}
 
 	// Load Score: Inverse of normalized load average (lower load = higher score)
-	// Weight: 10% - System responsiveness indicator for real-time agent operations
+	// Weight: 10% - System responsiveness indicator for real-time operations
 	var loadScore float64
 	if resources.CPUCores > 0 {
 		// Normalize load1 by CPU cores (load of 1.0 per core is fully utilized)

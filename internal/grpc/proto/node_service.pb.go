@@ -160,8 +160,8 @@ type GetResourcesResponse struct {
 	Load5         float64 `protobuf:"fixed64,22,opt,name=load5,proto3" json:"load5,omitempty"`                                     // System load average (5 minutes)
 	Load15        float64 `protobuf:"fixed64,23,opt,name=load15,proto3" json:"load15,omitempty"`                                   // System load average (15 minutes)
 	// Job Capacity and Utilization
-	MaxJobs        int32 `protobuf:"varint,24,opt,name=max_jobs,json=maxJobs,proto3" json:"max_jobs,omitempty"`                      // Maximum concurrent AI agent jobs
-	CurrentJobs    int32 `protobuf:"varint,25,opt,name=current_jobs,json=currentJobs,proto3" json:"current_jobs,omitempty"`          // Currently running AI agent jobs
+	MaxJobs        int32 `protobuf:"varint,24,opt,name=max_jobs,json=maxJobs,proto3" json:"max_jobs,omitempty"`                      // Maximum concurrent AI jobs
+	CurrentJobs    int32 `protobuf:"varint,25,opt,name=current_jobs,json=currentJobs,proto3" json:"current_jobs,omitempty"`          // Currently running AI jobs
 	AvailableSlots int32 `protobuf:"varint,26,opt,name=available_slots,json=availableSlots,proto3" json:"available_slots,omitempty"` // Available job slots (max_jobs - current_jobs)
 	// Resource Score for Intelligent Scheduling
 	Score         float64 `protobuf:"fixed64,27,opt,name=score,proto3" json:"score,omitempty"` // Composite resource score for workload placement (0.0-100.0)

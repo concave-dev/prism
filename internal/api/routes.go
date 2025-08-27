@@ -63,18 +63,6 @@ func (s *Server) setupRoutes(router *gin.Engine) {
 		nodes.GET("/:id/health", s.handleNodeHealth)
 	}
 
-	// Agent lifecycle management endpoints
-	agents := v1.Group("/agents")
-	{
-		agentMgr := s.GetAgentManager()
-		nodeID := s.GetNodeID()
-		agents.POST("", handlers.CreateAgent(agentMgr, nodeID))
-		agents.GET("", handlers.ListAgents(agentMgr))
-		agents.GET("/:id", handlers.GetAgent(agentMgr))
-		agents.DELETE("/:id", handlers.DeleteAgent(agentMgr, nodeID))
-		// TODO: Add update endpoint when placement logic is implemented
-	}
-
 	// Sandbox lifecycle management endpoints
 	sandboxes := v1.Group("/sandboxes")
 	{

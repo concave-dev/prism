@@ -57,7 +57,7 @@ const (
 // The optional port fields (GRPCPort, RaftPort, APIPort) are intentionally kept
 // here to avoid circular dependencies while allowing service discovery via Serf tags.
 type Config struct {
-	BindAddr            string            // Network address to bind Serf agent to
+	BindAddr            string            // Network address to bind Serf to
 	BindPort            int               // Network port for cluster communication
 	NodeName            string            // Unique name identifier for this node
 	Tags                map[string]string // Key-value metadata tags for node capabilities/roles
