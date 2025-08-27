@@ -1,4 +1,45 @@
-// Package grpc provides gRPC service implementations for inter-node communication
+// Package grpc provides gRPC service implementations for inter-node communication.
+//
+// This package implements the NodeService gRPC interface that enables secure,
+// high-performance communication between Prism cluster nodes. It provides essential
+// services for distributed cluster operations including resource discovery,
+// health monitoring, and node status reporting across the cluster.
+//
+// GRPC SERVICE ARCHITECTURE:
+// The gRPC services replace slower Serf query mechanisms with direct node-to-node
+// communication for time-sensitive operations:
+//
+//   - Resource Queries: Fast collection of CPU, memory, disk, and job capacity
+//     information for intelligent sandbox placement decisions
+//   - Health Monitoring: Comprehensive health checks covering all node services
+//     (Serf, Raft, gRPC, API) and system resources for failure detection
+//   - Service Discovery: Integration with Serf tags for automatic service
+//     endpoint discovery and cluster topology awareness
+//
+// HEALTH CHECK SYSTEM:
+// Implements a comprehensive health monitoring system with progressive status levels:
+//
+//   - HEALTHY: All services operational, ready for new workloads
+//   - DEGRADED: Minor issues detected, monitor closely but still functional
+//   - UNHEALTHY: Serious problems, should not receive new workloads
+//   - UNKNOWN: Health status cannot be determined due to errors or timeouts
+//
+// RESOURCE MONITORING:
+// Provides real-time system resource information essential for:
+//   - Sandbox placement decisions based on available capacity
+//   - Load balancing across cluster nodes
+//   - Early detection of resource pressure before failures
+//   - Cluster capacity planning and scaling decisions
+//
+// SECURITY CONSIDERATIONS:
+// Currently implements basic gRPC communication without authentication.
+// Future versions will include mTLS for secure inter-node communication
+// and rate limiting to prevent resource query abuse in production environments.
+//
+// PERFORMANCE OPTIMIZATION:
+// Health checks run concurrently to minimize latency, with configurable timeouts
+// to prevent slow checks from blocking cluster operations. Resource gathering
+// uses efficient system calls and caching where appropriate.
 package grpc
 
 import (
@@ -469,6 +510,9 @@ func (n *NodeServiceImpl) checkSerfMembershipHealth(ctx context.Context, now tim
 	}
 
 	// Get local member role and address for reporting
+	// TODO: Role-based functionality is not fully implemented yet.
+	// Currently all nodes default to "worker" role. Future implementation will support
+	// scheduler, control, and worker roles with differentiated behavior and capabilities.
 	localRole := "worker" // Default role
 	if localMember.Tags != nil {
 		if role, exists := localMember.Tags["role"]; exists {
