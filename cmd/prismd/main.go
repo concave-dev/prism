@@ -1,6 +1,6 @@
 // Package main implements the Prism daemon (prismd).
 // Prism is a distributed runtime platform for AI workloads with primitives like
-// isolated VMs, sandboxed code execution, serverless functions, and workflows.
+// secure Firecracker VM sandboxes for AI-generated code execution.
 package main
 
 import (

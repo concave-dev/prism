@@ -1,6 +1,6 @@
 // Package commands contains Cobra CLI command definitions for prismd.
-// The Prism daemon provides distributed runtime infrastructure for AI workloads
-// with isolated VMs, sandboxed execution, serverless functions, and workflows.
+// The Prism daemon provides distributed sandbox infrastructure for secure
+// AI-generated code execution using Firecracker microVMs.
 package commands
 
 import (
@@ -14,11 +14,11 @@ import (
 // Root command for the Prism daemon
 var RootCmd = &cobra.Command{
 	Use:   "prismd",
-	Short: "Prism distributed runtime platform daemon for MCP tools and AI workflows",
-	Long: `Prism daemon (prismd) provides distributed runtime infrastructure for AI workloads.
+	Short: "Prism distributed sandbox platform daemon for AI code execution",
+	Long: `Prism daemon (prismd) provides distributed sandbox infrastructure for AI-generated code.
 
-Think Kubernetes for AI workloads - with isolated VMs, sandboxed execution, 
-serverless functions, native memory, workflows, and other AI-first primitives.
+Built on Firecracker microVMs for secure, isolated execution of AI-generated code 
+with high performance and Docker compatibility.
 
 Auto-configures network addresses and data directory when not explicitly specified.`,
 	Version:      version.PrismdVersion,

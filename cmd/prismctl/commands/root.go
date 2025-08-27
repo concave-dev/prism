@@ -8,12 +8,12 @@ import (
 // Root command
 var RootCmd = &cobra.Command{
 	Use:   "prismctl",
-	Short: "CLI tool for managing MCP tools and AI workflows",
+	Short: "CLI tool for managing distributed AI code execution sandboxes",
 	Long: `Prism CLI (prismctl) is a command-line tool for managing
-MCP tools and AI workflows in Prism clusters.
+AI-generated code execution in secure Firecracker VM sandboxes.
 
-Similar to kubectl for Kubernetes, prismctl lets you run 
-AI-generated code in sandboxes, manage workflows, and inspect cluster state.`,
+Similar to kubectl for Kubernetes, prismctl lets you create sandboxes,
+execute AI-generated code securely, and inspect cluster state.`,
 	SilenceUsage: true,
 	Example: `  # Show cluster information
   prismctl info

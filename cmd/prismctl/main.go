@@ -1,5 +1,5 @@
 // Package main implements the Prism CLI tool (prismctl).
-// This tool provides commands for managing MCP tools and running AI workflows
+// This tool provides commands for managing AI code execution sandboxes
 // in Prism clusters, similar to kubectl for Kubernetes.
 package main
 

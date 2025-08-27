@@ -13,8 +13,8 @@ func DisplayLogo(version string) {
  ░█▀▀░█▀▄░░█░░▀▀█░█░█░█░
  ░▀░░░▀░▀░▀▀▀░▀▀▀░▀░▀░▀░
  ░░░░░░░░░░░░░░░░░░░░░░░`)
-	fmt.Printf("\n Prism v%s - Distributed AI Runtime\n", version)
-	fmt.Println(" Kubernetes for AI workloads, MCP tools and workflows")
+	fmt.Printf("\n Prism v%s\n", version)
+	fmt.Println(" Secure AI code execution with Firecracker sandboxes")
 	fmt.Println()
 }
 

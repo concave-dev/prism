@@ -11,8 +11,7 @@
 // delegates to specialized sub-FSMs for different operational domains:
 //
 //   - SandboxFSM: Manages code execution sandbox environments
-//   - Future: mcpFSM for MCP server management, memoryFSM for distributed memory
-//   - Future: configFSM for dynamic configuration, secretsFSM for secrets vault
+//   - Future: Additional FSMs for extended functionality as the platform grows
 //
 // COMMAND PROCESSING:
 // Commands are JSON-encoded operations that specify the target FSM and action.
@@ -85,18 +84,17 @@ func truncateOutput(output string) string {
 //
 // Serves as the central coordination point for all distributed operations
 // including sandbox lifecycle management, resource allocation, and future
-// extensions for MCP servers, distributed memory, and configuration management.
+// extensions for advanced sandbox features and cluster management capabilities.
 // Processes Raft commands and ensures state consistency across nodes.
 type PrismFSM struct {
 	mu         sync.RWMutex // Protects all FSM state from concurrent access
 	sandboxFSM *SandboxFSM  // Manages code execution sandbox environments
 
-	// Future FSM extensions for comprehensive orchestration:
-	// mcpFSM    *McpFSM    // MCP server lifecycle and mesh management
-	// memoryFSM *MemoryFSM // Distributed external memory and RAG operations
-	// configFSM *ConfigFSM // Dynamic configuration and feature flags
-	// secretsFSM *SecretsFSM // Secrets vault and credential management
-	// And others
+	// Future FSM extensions for advanced sandbox capabilities:
+	// networkFSM  *NetworkFSM  // Sandbox networking and isolation policies
+	// storageFSM  *StorageFSM  // Persistent volumes and snapshots
+	// imageFSM    *ImageFSM    // Container image management and caching
+	// resourceFSM *ResourceFSM // Advanced resource allocation and limits
 }
 
 // SandboxFSM manages the complete lifecycle of code execution sandboxes in the
@@ -106,8 +104,7 @@ type PrismFSM struct {
 //
 // Maintains authoritative state for all sandboxes across the cluster and processes
 // execution requests through secure isolation boundaries. Provides the foundation
-// for safe AI-generated code execution and user workflow orchestration within
-// the distributed AI orchestration platform.
+// for safe AI-generated code execution within the distributed sandbox platform.
 type SandboxFSM struct {
 	sandboxes map[string]*Sandbox // sandboxID -> Sandbox state for all sandboxes in cluster
 
@@ -170,7 +167,7 @@ type ExecutionRecord struct {
 // Commands are replicated through Raft to ensure all nodes process the same
 // operations in the same order, maintaining strong consistency guarantees.
 type Command struct {
-	Type      string          `json:"type"`      // Command type: "sandbox", "mcp", "memory", etc.
+	Type      string          `json:"type"`      // Command type: "sandbox", "network", "storage", etc.
 	Operation string          `json:"operation"` // Operation: "create", "update", "delete", "place"
 	Data      json.RawMessage `json:"data"`      // Operation-specific data payload
 	Timestamp time.Time       `json:"timestamp"` // Command creation timestamp
@@ -583,7 +580,7 @@ func (f *PrismFSM) LogCurrentState(nodeID string) {
 	defer f.mu.RUnlock()
 
 	// Focus on sandbox state for orchestration monitoring
-	// TODO: Add other FSM states (MCP servers, memory, config, secrets) as they're implemented
+	// TODO: Add other FSM states (networking, storage, images) as they're implemented
 	sandboxCount := len(f.sandboxFSM.sandboxes)
 	sandboxStatusCounts := make(map[string]int)
 	sandboxExecCounts := make(map[string]int)
