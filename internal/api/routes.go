@@ -4,9 +4,9 @@
 // monitoring distributed Prism clusters. The routing system organizes endpoints
 // into logical groups based on functionality:
 //   - Health endpoints for service monitoring and readiness checks
-//   - Cluster endpoints for distributed system operations and membership
+//   - Cluster endpoints for distributed system operations, membership, and consensus
 //   - Node endpoints for individual node management and resource queries
-//   - Raft endpoints for consensus protocol inspection and debugging
+//   - Sandbox endpoints for container lifecycle management and execution
 //
 // All routes are versioned under /api/v1 to enable future API evolution while
 // maintaining backward compatibility. The route structure follows RESTful
@@ -54,7 +54,7 @@ func (s *Server) setupRoutes(router *gin.Engine) {
 		cluster.GET("/peers", s.handleRaftPeers)
 	}
 
-	// Node-specific endpoints (for future use)
+	// Node-specific endpoints
 	nodes := v1.Group("/nodes")
 	{
 		nodes.GET("", s.handleNodes)
