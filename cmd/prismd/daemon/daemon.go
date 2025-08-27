@@ -1,6 +1,47 @@
-// Package daemon contains the core Prism daemon logic.
-// This handles the complete daemon lifecycle from initialization to graceful shutdown,
-// including service startup, port binding, and cluster integration.
+// Package daemon provides the core Prism daemon orchestration and lifecycle management.
+//
+// This package implements the complete distributed system initialization and coordination
+// logic for the Prism AI orchestration cluster. It manages the startup, integration, and
+// graceful shutdown of all core cluster services including distributed consensus, cluster
+// membership, inter-node communication, and management APIs.
+//
+// DAEMON ARCHITECTURE:
+// The daemon orchestrates four critical distributed system components:
+//
+//   - Serf: Gossip-based cluster membership and failure detection using UDP/TCP protocols
+//   - Raft: Distributed consensus engine for cluster coordination and state management
+//   - gRPC: High-performance inter-node communication for resource queries and health checks
+//   - HTTP API: REST management interface for cluster operations and monitoring
+//
+// ATOMIC PORT BINDING STRATEGY:
+// The daemon implements sophisticated atomic port binding to eliminate race conditions
+// in high-concurrency environments where multiple daemon instances start simultaneously:
+//
+//   - Pre-binding Phase: Reserve TCP listeners for Raft, gRPC, and API before any service starts
+//   - Service Startup Phase: Start services with guaranteed port reservations
+//   - Serf Exception: Uses traditional find+bind as the failure-dictating service
+//
+// This strategy ensures production-ready reliability by preventing "address already in use"
+// failures that plague traditional port discovery patterns.
+//
+// SERVICE INTEGRATION FLOW:
+// 1. Port validation and discovery with dual-protocol support (UDP+TCP for Serf)
+// 2. Atomic port reservation for all TCP services to eliminate race conditions
+// 3. Sequential service startup in dependency order: Serf → Raft → gRPC → API
+// 4. Cluster integration with automatic peer discovery and leader election
+// 5. Operational monitoring with real-time status reporting and diagnostics
+// 6. Graceful shutdown with reverse dependency order and timeout handling
+//
+// CLUSTER INTEGRATION:
+// The daemon supports flexible cluster joining strategies including strict join mode
+// (exit on failure) and isolation mode (continue standalone) for various deployment
+// scenarios from development to production multi-node clusters.
+//
+// FAULT TOLERANCE:
+// All services include comprehensive error handling, connection retry logic, and
+// graceful degradation patterns to ensure cluster stability even during network
+// partitions, node failures, or partial service outages.
+
 package daemon
 
 import (
