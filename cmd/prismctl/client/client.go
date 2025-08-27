@@ -8,7 +8,6 @@
 // The PrismAPIClient provides methods for:
 // - Cluster management (members, info, resources)
 // - Node operations (resources, health)
-// - Agent lifecycle (create, list, info, delete)
 // - Raft peer management and inspection
 //
 // All API calls include proper error handling, connection retry mechanisms,
@@ -69,38 +68,6 @@ type ClusterInfo struct {
 	StartTime  time.Time       `json:"startTime"`
 	RaftLeader string          `json:"raftLeader,omitempty"`
 	ClusterID  string          `json:"clusterId,omitempty"`
-}
-
-// Agent response types
-type Agent struct {
-	ID       string            `json:"id"`
-	Name     string            `json:"name"`
-	Type     string            `json:"type"`
-	Status   string            `json:"status"`
-	Created  time.Time         `json:"created"`
-	Metadata map[string]string `json:"metadata,omitempty"`
-}
-
-// GetID returns the ID for AgentLike interface
-func (a Agent) GetID() string {
-	return a.ID
-}
-
-// GetName returns the Name for AgentLike interface
-func (a Agent) GetName() string {
-	return a.Name
-}
-
-type AgentCreateResponse struct {
-	AgentID   string `json:"agent_id"`
-	AgentName string `json:"agent_name"`
-	Status    string `json:"status"`
-	Message   string `json:"message"`
-}
-
-type AgentListResponse struct {
-	Agents []Agent `json:"agents"`
-	Count  int     `json:"count"`
 }
 
 // Sandbox response types
@@ -638,126 +605,6 @@ func (api *PrismAPIClient) GetNodeHealth(nodeID string) (*NodeHealth, error) {
 	}
 
 	return nil, fmt.Errorf("unexpected response format for node health")
-}
-
-// GetAgents fetches all agents from the API
-func (api *PrismAPIClient) GetAgents() ([]Agent, error) {
-	var response AgentListResponse
-
-	resp, err := api.client.R().
-		SetResult(&response).
-		Get("/agents")
-
-	if err != nil {
-		logging.Error("Failed to connect to API server: %v", err)
-		logging.Error("Make sure a Prism daemon with API server is running at %s", api.baseURL)
-		return nil, fmt.Errorf("connection failed")
-	}
-
-	if resp.StatusCode() != 200 {
-		logging.Error("API request failed with status %d: %s", resp.StatusCode(), resp.String())
-		return nil, fmt.Errorf("API request failed")
-	}
-
-	return response.Agents, nil
-}
-
-// GetAgent fetches a specific agent by ID from the API
-func (api *PrismAPIClient) GetAgent(agentID string) (*Agent, error) {
-	var agent Agent
-
-	resp, err := api.client.R().
-		SetResult(&agent).
-		Get(fmt.Sprintf("/agents/%s", agentID))
-
-	if err != nil {
-		logging.Error("Failed to connect to API server: %v", err)
-		logging.Error("Make sure a Prism daemon with API server is running at %s", api.baseURL)
-		return nil, fmt.Errorf("connection failed")
-	}
-
-	if resp.StatusCode() == 404 {
-		logging.Error("Agent '%s' not found in cluster", agentID)
-		return nil, fmt.Errorf("agent not found")
-	}
-
-	if resp.StatusCode() != 200 {
-		logging.Error("API request failed with status %d: %s", resp.StatusCode(), resp.String())
-		return nil, fmt.Errorf("API request failed")
-	}
-
-	return &agent, nil
-}
-
-// CreateAgent creates a new agent via the API
-func (api *PrismAPIClient) CreateAgent(name, agentKind string, metadata map[string]string) (*AgentCreateResponse, error) {
-	var response AgentCreateResponse
-
-	// Prepare request payload
-	payload := map[string]interface{}{
-		"name": name,
-		"type": agentKind,
-	}
-	if len(metadata) > 0 {
-		payload["metadata"] = metadata
-	}
-
-	resp, err := api.client.R().
-		SetBody(payload).
-		SetResult(&response).
-		Post("/agents")
-
-	if err != nil {
-		logging.Error("Failed to connect to API server: %v", err)
-		logging.Error("Make sure a Prism daemon with API server is running at %s", api.baseURL)
-		return nil, fmt.Errorf("connection failed")
-	}
-
-	if resp.StatusCode() == 400 {
-		logging.Error("Invalid request: %s", resp.String())
-		return nil, fmt.Errorf("invalid request")
-	}
-
-	if resp.StatusCode() == 307 {
-		logging.Error("Not cluster leader, request redirected")
-		return nil, fmt.Errorf("not cluster leader - retry request")
-	}
-
-	if resp.StatusCode() != 202 {
-		logging.Error("API request failed with status %d: %s", resp.StatusCode(), resp.String())
-		return nil, fmt.Errorf("API request failed")
-	}
-
-	return &response, nil
-}
-
-// DeleteAgent deletes an agent via the API
-func (api *PrismAPIClient) DeleteAgent(agentID string) error {
-	resp, err := api.client.R().
-		Delete(fmt.Sprintf("/agents/%s", agentID))
-
-	if err != nil {
-		logging.Error("Failed to connect to API server: %v", err)
-		logging.Error("Make sure a Prism daemon with API server is running at %s", api.baseURL)
-		return fmt.Errorf("connection failed")
-	}
-
-	if resp.StatusCode() == 404 {
-		logging.Error("Agent '%s' not found", agentID)
-		return fmt.Errorf("agent not found")
-	}
-
-	if resp.StatusCode() == 307 {
-		logging.Error("Not cluster leader, request redirected")
-		return fmt.Errorf("not cluster leader - retry request")
-	}
-
-	if resp.StatusCode() != 200 {
-		logging.Error("API request failed with status %d: %s", resp.StatusCode(), resp.String())
-		return fmt.Errorf("API request failed")
-	}
-
-	return nil
 }
 
 // GetSandboxes fetches all sandboxes from the API

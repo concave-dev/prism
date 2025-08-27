@@ -6,7 +6,6 @@
 // related command handlers and helper functions.
 //
 // The package is organized as follows:
-// - agent.go: AI agent lifecycle management (create, list, info, delete)
 // - node.go: Cluster node and resource monitoring (ls, info, top, cluster info)
 // - peer.go: Raft peer management and connectivity (list, info)
 // - sandbox.go: Code execution environment management (create, list, exec, logs, destroy)

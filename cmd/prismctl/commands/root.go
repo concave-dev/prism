@@ -2,18 +2,17 @@
 package commands
 
 import (
-	"github.com/concave-dev/prism/cmd/prismctl/config"
 	"github.com/spf13/cobra"
 )
 
 // Root command
 var RootCmd = &cobra.Command{
 	Use:   "prismctl",
-	Short: "CLI tool for managing and deploying AI agents, MCP tools and workflows",
-	Long: `Prism CLI (prismctl) is a command-line tool for deploying and managing
-AI agents, MCP tools, and AI workflows in Prism clusters.
+	Short: "CLI tool for managing MCP tools and AI workflows",
+	Long: `Prism CLI (prismctl) is a command-line tool for managing
+MCP tools and AI workflows in Prism clusters.
 
-Similar to kubectl for Kubernetes, prismctl lets you deploy agents, run 
+Similar to kubectl for Kubernetes, prismctl lets you run 
 AI-generated code in sandboxes, manage workflows, and inspect cluster state.`,
 	SilenceUsage: true,
 	Example: `  # Show cluster information
@@ -51,9 +50,6 @@ func SetupCommands() {
 	RootCmd.AddCommand(infoCmd)
 	RootCmd.AddCommand(nodeCmd)
 	RootCmd.AddCommand(peerCmd)
-	if config.Features.EnableAgent {
-		RootCmd.AddCommand(agentCmd)
-	}
 	RootCmd.AddCommand(sandboxCmd)
 }
 

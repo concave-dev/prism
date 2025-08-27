@@ -30,7 +30,7 @@
 // RESOLVER TYPES:
 //   - Standard Resolvers: Support full resolution hierarchy including partial matching
 //   - Strict Resolvers: Exact matching only for safety-critical operations
-//   - Resource-Specific: Specialized resolvers for nodes, peers, agents, and sandboxes
+//   - Resource-Specific: Specialized resolvers for nodes, peers, and sandboxes
 
 package utils
 
@@ -49,12 +49,6 @@ type MemberLike interface {
 
 // PeerLike represents anything with ID and Name for peer resolution
 type PeerLike interface {
-	GetID() string
-	GetName() string
-}
-
-// AgentLike represents anything with ID and Name for agent resolution
-type AgentLike interface {
 	GetID() string
 	GetName() string
 }
@@ -152,49 +146,6 @@ func ResolvePeerIdentifierFromPeers(peers []PeerLike, identifier string) (string
 
 	// No partial match found, return original identifier
 	// (will be handled by the API as either full ID or peer name)
-	return identifier, nil
-}
-
-// ResolveAgentIdentifierFromAgents resolves an agent identifier from a pre-fetched list
-// of cluster agents using Docker-style partial ID matching for user convenience.
-// Performs hex prefix matching on identifiers that look like partial IDs while
-// avoiding duplicate API calls by operating on data already available to the caller.
-//
-// Essential for agent management workflows where users need to identify specific
-// agent instances using short ID prefixes during debugging and operational tasks.
-// Provides robust error handling for ambiguous prefixes to ensure users can
-// distinguish between multiple agents with similar ID prefixes.
-func ResolveAgentIdentifierFromAgents(agents []AgentLike, identifier string) (string, error) {
-	// Check for partial ID matches (only for identifiers that look like hex and have valid length)
-	if IsHexString(identifier) && IsValidPartialIDLength(identifier) {
-		var matches []AgentLike
-		for _, agent := range agents {
-			if strings.HasPrefix(agent.GetID(), identifier) {
-				matches = append(matches, agent)
-			}
-		}
-
-		if len(matches) == 1 {
-			// Unique partial match found
-			logging.Info("Resolved partial ID '%s' to full ID '%s' (agent: %s)",
-				identifier, matches[0].GetID(), matches[0].GetName())
-			return matches[0].GetID(), nil
-		} else if len(matches) > 1 {
-			// Multiple matches - not unique
-			var matchIDs []string
-			for _, match := range matches {
-				matchIDs = append(matchIDs, fmt.Sprintf("%s (%s)", match.GetID(), match.GetName()))
-			}
-			logging.Error("Partial ID '%s' is not unique, matches multiple agents:", identifier)
-			for _, matchID := range matchIDs {
-				logging.Error("  %s", matchID)
-			}
-			return "", fmt.Errorf("partial ID not unique")
-		}
-	}
-
-	// No partial match found, return original identifier
-	// (will be handled by the API as either full ID or agent name)
 	return identifier, nil
 }
 

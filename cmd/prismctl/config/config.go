@@ -19,34 +19,11 @@ var Global struct {
 	Output   string // Output format: table, json
 }
 
-// Features holds CLI feature flags that gate availability of commands.
-//
-// These flags let us keep command scaffolding in place while gradually
-// enabling functionality. Defaults are safe for general usage and can
-// be toggled in code as features become ready. Keeping the flag here
-// avoids scattering build tags or ad-hoc checks across the CLI code.
-var Features struct {
-	EnableAgent bool // Enable agent-related commands in prismctl
-}
-
 // Node holds the node command configuration
 var Node struct {
 	Watch        bool   // Enable watch mode for live updates
 	StatusFilter string // Filter nodes by status (alive, failed, left)
 	Sort         string // Sort nodes by: uptime, name, score
-}
-
-// Agent holds the agent command configuration
-var Agent struct {
-	Name         string   // Agent name for creation
-	Kind         string   // Agent kind: task or service (default: task)
-	Metadata     []string // Agent metadata as key=value pairs
-	Watch        bool     // Enable watch mode for live updates
-	StatusFilter string   // Filter agents by status
-	KindFilter   string   // Filter agents by kind
-	Sort         string   // Sort agents by: created, name (default: created)
-	Force        bool     // Force operations without confirmation
-	Output       string   // Output format: table, json
 }
 
 // Peer holds the peer command configuration
@@ -66,9 +43,4 @@ var Sandbox struct {
 	Sort         string   // Sort sandboxes by: created, name (default: created)
 	Force        bool     // Force operations without confirmation
 	Output       string   // Output format: table, json
-}
-
-func init() {
-	// Explicitly disable agent commands until they're ready for production
-	Features.EnableAgent = false
 }

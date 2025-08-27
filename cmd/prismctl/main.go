@@ -1,6 +1,6 @@
 // Package main implements the Prism CLI tool (prismctl).
-// This tool provides commands for deploying AI agents, managing MCP tools,
-// and running AI workflows in Prism clusters, similar to kubectl for Kubernetes.
+// This tool provides commands for managing MCP tools and running AI workflows
+// in Prism clusters, similar to kubectl for Kubernetes.
 package main
 
 import (
@@ -24,9 +24,6 @@ func init() {
 	commands.SetupCommands()
 	commands.SetupNodeCommands()
 	commands.SetupPeerCommands()
-	if config.Features.EnableAgent {
-		commands.SetupAgentCommands()
-	}
 	commands.SetupSandboxCommands()
 
 	// Setup global flags
@@ -37,12 +34,6 @@ func init() {
 	nodeLsCmd, nodeTopCmd, nodeInfoCmd := commands.GetNodeCommands()
 	commands.SetupNodeFlags(nodeLsCmd, nodeTopCmd, nodeInfoCmd,
 		&config.Node.Watch, &config.Node.StatusFilter, &config.Node.Sort)
-
-	// Setup agent command flags
-	if config.Features.EnableAgent {
-		agentCreateCmd, agentLsCmd, agentInfoCmd, agentDeleteCmd := commands.GetAgentCommands()
-		setupAgentFlags(agentCreateCmd, agentLsCmd, agentInfoCmd, agentDeleteCmd)
-	}
 
 	// Setup peer command flags
 	peerLsCmd, peerInfoCmd := commands.GetPeerCommands()
@@ -71,13 +62,6 @@ func setupCommandHandlers() {
 	peerLsCmd.RunE = handlers.HandlePeerList
 	peerInfoCmd.RunE = handlers.HandlePeerInfo
 	infoCmd.RunE = handlers.HandleClusterInfo
-	if config.Features.EnableAgent {
-		agentCreateCmd, agentLsCmd, agentInfoCmd, agentDeleteCmd := commands.GetAgentCommands()
-		agentCreateCmd.RunE = handlers.HandleAgentCreate
-		agentLsCmd.RunE = handlers.HandleAgentList
-		agentInfoCmd.RunE = handlers.HandleAgentInfo
-		agentDeleteCmd.RunE = handlers.HandleAgentDelete
-	}
 
 	// Setup sandbox command handlers
 	sandboxCreateCmd, sandboxLsCmd, sandboxExecCmd, sandboxLogsCmd, sandboxInfoCmd, sandboxDestroyCmd := commands.GetSandboxCommands()
@@ -87,23 +71,6 @@ func setupCommandHandlers() {
 	sandboxLogsCmd.RunE = handlers.HandleSandboxLogs
 	sandboxInfoCmd.RunE = handlers.HandleSandboxInfo
 	sandboxDestroyCmd.RunE = handlers.HandleSandboxDestroy
-}
-
-// setupAgentFlags configures flags for agent commands
-func setupAgentFlags(createCmd, lsCmd, _ /* infoCmd */, _ /* deleteCmd */ *cobra.Command) {
-	// Agent create flags
-	createCmd.Flags().StringVar(&config.Agent.Name, "name", "", "Agent name (auto-generated if not provided)")
-	createCmd.Flags().StringVar(&config.Agent.Kind, "kind", "task", "Agent kind: task or service")
-	createCmd.Flags().StringSliceVar(&config.Agent.Metadata, "metadata", nil, "Agent metadata (key=value format)")
-
-	// Agent list flags
-	lsCmd.Flags().BoolVarP(&config.Agent.Watch, "watch", "w", false, "Watch for live updates")
-	lsCmd.Flags().StringVar(&config.Agent.StatusFilter, "status", "", "Filter by status")
-	lsCmd.Flags().StringVar(&config.Agent.KindFilter, "kind", "", "Filter by kind")
-	lsCmd.Flags().StringVar(&config.Agent.Sort, "sort", "created", "Sort agents by: created, name")
-
-	// Agent info and delete commands use global flags only for now
-	// infoCmd and deleteCmd parameters reserved for future flag additions
 }
 
 // setupSandboxFlags configures flags for sandbox commands

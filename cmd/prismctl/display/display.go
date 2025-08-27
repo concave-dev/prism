@@ -1,13 +1,12 @@
 // Package display provides output formatting and display functions for prismctl.
 //
 // This package handles all user-facing output formatting including table and JSON
-// output for cluster nodes, agents, resources, and health information. It provides
+// output for cluster nodes, resources, and health information. It provides
 // consistent formatting across all prismctl commands with support for verbose mode,
 // different output formats, and proper error handling for display operations.
 //
 // The display functions handle:
 // - Cluster member and resource information formatting
-// - Agent lifecycle and status display
 // - Node health and detailed resource information
 // - Raft peer status and connectivity display
 // - Consistent table formatting using text/tabwriter
@@ -412,76 +411,6 @@ func DisplayNodeInfo(resource client.NodeResources, isLeader bool, health *clien
 						chk.Name, strings.ToLower(chk.Status), chk.Message, chk.Timestamp.Format(time.RFC3339))
 				}
 			}
-		}
-	}
-}
-
-// DisplayAgents displays agents in table or JSON format
-func DisplayAgents(agents []client.Agent) {
-	if len(agents) == 0 {
-		if config.Global.Output == "json" {
-			fmt.Println("[]")
-		} else {
-			fmt.Println("No agents found")
-		}
-		return
-	}
-
-	// Sort agents based on configured sort option
-	switch config.Agent.Sort {
-	case "created":
-		// Sort by creation time (newest first)
-		sort.Slice(agents, func(i, j int) bool {
-			return agents[i].Created.After(agents[j].Created)
-		})
-	case "name":
-		fallthrough
-	default:
-		// Sort by name (default)
-		sort.Slice(agents, func(i, j int) bool {
-			return agents[i].Name < agents[j].Name
-		})
-	}
-
-	if config.Global.Output == "json" {
-		// JSON output
-		encoder := json.NewEncoder(os.Stdout)
-		encoder.SetIndent("", "  ")
-		if err := encoder.Encode(agents); err != nil {
-			logging.Error("Failed to encode JSON: %v", err)
-			fmt.Println("Error encoding JSON output")
-		}
-	} else {
-		// Table output
-		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		defer w.Flush()
-
-		// Header
-		fmt.Fprintln(w, "ID\tNAME\tKIND\tSTATUS\tCREATED")
-
-		// Display each agent
-		for _, agent := range agents {
-			created := utils.FormatDuration(time.Since(agent.Created))
-
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-				internalutils.TruncateIDSafe(agent.ID), agent.Name, agent.Type, agent.Status, created)
-		}
-	}
-}
-
-// DisplayAgentInfo displays agent information in table format
-func DisplayAgentInfo(agent *client.Agent) {
-	fmt.Printf("Agent Information:\n")
-	fmt.Printf("  ID:      %s\n", agent.ID)
-	fmt.Printf("  Name:    %s\n", agent.Name)
-	fmt.Printf("  Kind:    %s\n", agent.Type)
-	fmt.Printf("  Status:  %s\n", agent.Status)
-	fmt.Printf("  Created: %s\n", agent.Created.Format("2006-01-02 15:04:05 MST"))
-
-	if len(agent.Metadata) > 0 {
-		fmt.Printf("  Metadata:\n")
-		for key, value := range agent.Metadata {
-			fmt.Printf("    %s: %s\n", key, value)
 		}
 	}
 }

@@ -174,7 +174,7 @@ func HandleNodeInfo(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// If not found by ID, try to find by name (similar to peer/agent/sandbox info pattern)
+	// If not found by ID, try to find by name (similar to peer/sandbox info pattern)
 	if targetMember == nil {
 		for _, member := range members {
 			if member.Name == nodeIdentifier {
