@@ -1,4 +1,25 @@
-// Package config provides configuration management for the prismctl CLI.
+// Package config provides configuration validation utilities for the prismctl CLI.
+//
+// This package implements comprehensive validation for all CLI configuration parameters
+// including global flags, command-specific options, and user inputs. The validation
+// layer ensures proper configuration before executing cluster operations, preventing
+// runtime failures and providing clear error messages for troubleshooting.
+//
+// VALIDATION SCOPE:
+// The package validates critical CLI settings:
+//   - API Connectivity: Server addresses, port ranges, and network reachability
+//   - Output Formatting: Supported display modes for command results
+//   - Global Flags: Cross-command configuration that affects CLI behavior
+//
+// VALIDATION PHILOSOPHY:
+// All validation occurs early in the command lifecycle, providing immediate feedback
+// to users before attempting cluster operations. This prevents wasted time on operations
+// that would fail due to configuration issues and guides users toward correct CLI usage.
+//
+// The validation leverages the internal validate package for network address validation
+// while providing CLI-specific validation logic for output formats and user experience
+// considerations like preventing unroutable addresses in client configurations.
+
 package config
 
 import (
@@ -9,7 +30,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// ValidateGlobalFlags validates all global flags before running any command
+// ValidateGlobalFlags validates all global CLI flags before executing any prismctl command
+// to ensure proper configuration and prevent runtime failures. Performs comprehensive
+// validation of API connectivity settings and output format preferences.
+//
+// Provides early validation feedback to users before attempting cluster operations,
+// preventing common configuration errors that could cause command failures or
+// unexpected behavior during cluster management tasks.
 func ValidateGlobalFlags(cmd *cobra.Command, args []string) error {
 	if err := ValidateAPIAddress(); err != nil {
 		return err
@@ -22,7 +49,13 @@ func ValidateGlobalFlags(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// ValidateAPIAddress validates the --api flag
+// ValidateAPIAddress validates the API server address configuration for client connectivity.
+// Ensures the address is properly formatted, uses routable IP addresses, and specifies
+// valid port numbers for establishing HTTP connections to the Prism daemon.
+//
+// Prevents connection failures by rejecting unroutable addresses (0.0.0.0) and invalid
+// port ranges before attempting API communication. Provides clear error messages to
+// guide users toward correct address configuration for successful cluster interaction.
 func ValidateAPIAddress() error {
 	// Parse and validate API server address
 	netAddr, err := validate.ParseBindAddress(Global.APIAddr)
@@ -46,7 +79,13 @@ func ValidateAPIAddress() error {
 	return nil
 }
 
-// ValidateOutputFormat validates the --output flag
+// ValidateOutputFormat validates the output format specification for command results.
+// Ensures only supported output formats are used, maintaining consistent behavior
+// across all prismctl commands and preventing formatting errors.
+//
+// Supports table and JSON output modes, enabling both human-readable displays and
+// machine-parseable output for automation scenarios. Provides immediate feedback
+// for unsupported format specifications to guide proper CLI usage.
 func ValidateOutputFormat() error {
 	validOutputs := map[string]bool{
 		"table": true,

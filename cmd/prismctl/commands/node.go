@@ -1,4 +1,17 @@
-// Package commands contains all CLI command definitions for prismctl.
+// Package commands provides node management command definitions for prismctl.
+//
+// This file implements the complete node command tree for cluster node discovery,
+// monitoring, and inspection operations. Node commands enable operators to manage
+// and observe individual cluster members and their resource utilization.
+//
+// NODE COMMANDS:
+//   - ls: List all cluster nodes with status and filtering options
+//   - top: Resource overview showing CPU, memory, and capacity metrics
+//   - info: Detailed information for specific nodes by name or ID
+//
+// All node commands support watch mode for real-time monitoring and flexible
+// output formats for both human operators and automation tools.
+
 package commands
 
 import (
