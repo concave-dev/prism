@@ -1,6 +1,6 @@
 # Prism
 
-Open-Source distributed sandbox environment for running AI generated code.
+Open-Source distributed sandbox runtime for running AI-generated code.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://github.com/user-attachments/assets/bde09417-d8f3-4daa-af08-b0c11db3cd4c">
@@ -13,7 +13,7 @@ Open-Source distributed sandbox environment for running AI generated code.
 
 ## Overview  
 
-Prism is a high-performance distributed sandbox platform designed specifically for AI-generated code execution. Built on battle-tested [Firecracker](https://firecracker-microvm.github.io/) microVMs, it provides strong isolation without the overhead of traditional containers.
+Prism is a high-performance distributed sandbox runtime designed specifically for running AI-generated code. Built on battle-tested [Firecracker](https://firecracker-microvm.github.io/) microVMs, it provides strong isolation without the overhead of traditional containers.
 
 - **Security-First Architecture**: True isolation via dedicated kernels with minimal attack surface.
 - **Horizontal Scalability**: Distributed system that scales across multiple nodes.

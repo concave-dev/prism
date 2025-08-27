@@ -14,7 +14,7 @@ import (
 // Root command for the Prism daemon
 var RootCmd = &cobra.Command{
 	Use:   "prismd",
-	Short: "Prism distributed sandbox platform daemon for AI code execution",
+	Short: "Open-Source distributed sandbox runtime for running AI-generated code",
 	Long: `Prism daemon (prismd) provides distributed sandbox infrastructure for AI-generated code.
 
 Built on Firecracker microVMs for secure, isolated execution of AI-generated code 

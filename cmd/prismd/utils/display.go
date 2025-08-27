@@ -6,16 +6,17 @@ import (
 )
 
 // DisplayLogo prints the Prism ASCII logo with version information
+// in a bordered box format for professional presentation
 func DisplayLogo(version string) {
-	fmt.Println()
-	fmt.Println(` ░░░░░░░░░░░░░░░░░░░░░░░
- ░█▀█░█▀▄░▀█▀░█▀▀░█▀█▀█░
- ░█▀▀░█▀▄░░█░░▀▀█░█░█░█░
- ░▀░░░▀░▀░▀▀▀░▀▀▀░▀░▀░▀░
- ░░░░░░░░░░░░░░░░░░░░░░░`)
-	fmt.Printf("\n Prism v%s\n", version)
-	fmt.Println(" Secure AI code execution with Firecracker sandboxes")
-	fmt.Println()
+	fmt.Printf("\n"+
+		"░░░░░░░░░░░░░░░░░░░░░░░░░\n"+
+		"░░█▀█░█▀▄░▀█▀░█▀▀░█▀█▀█░░\n"+
+		"░░█▀▀░█▀▄░░█░░▀▀█░█░█░█░░\n"+
+		"░░▀░░░▀░▀░▀▀▀░▀▀▀░▀░▀░▀░░\n"+
+		"░░░░░░░░░░░░░░░░░░░░░░░░░\n\n"+
+		"Prism (v%s)\n"+
+		"Open-Source distributed sandbox runtime for running AI-generated code\n\n",
+		version)
 }
 
 // ░█▀█░█▀▄░█▀▀░█▀▄░█▀▀░█▀▀░█▀▀░█░█░▀█▀░░░█░░

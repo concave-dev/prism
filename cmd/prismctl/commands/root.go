@@ -8,7 +8,7 @@ import (
 // Root command
 var RootCmd = &cobra.Command{
 	Use:   "prismctl",
-	Short: "CLI tool for managing distributed AI code execution sandboxes",
+	Short: "CLI tool for Open-Source distributed sandbox runtime for running AI-generated code",
 	Long: `Prism CLI (prismctl) is a command-line tool for managing
 AI-generated code execution in secure Firecracker VM sandboxes.
 
