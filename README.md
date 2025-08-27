@@ -3,9 +3,9 @@
 Open-Source distributed sandbox environment for running AI generated code.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/user-attachments/assets/2f52d4a2-dcea-48f9-9dc3-03fcff5afcd1">
-  <source media="(prefers-color-scheme: light)" srcset="https://github.com/user-attachments/assets/d618f99c-6fb1-4b3c-9dc7-312fdff60752">
-  <img alt="prismd screenshot" src="https://github.com/user-attachments/assets/2f52d4a2-dcea-48f9-9dc3-03fcff5afcd1">
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/user-attachments/assets/bde09417-d8f3-4daa-af08-b0c11db3cd4c">
+  <source media="(prefers-color-scheme: light)" srcset="https://github.com/user-attachments/assets/a0adadf3-3dfd-41c9-97fa-69d3907a92d2">
+  <img alt="prismd screenshot" src="https://github.com/user-attachments/assets/bde09417-d8f3-4daa-af08-b0c11db3cd4c">
 </picture>
 
 > [!CAUTION]
