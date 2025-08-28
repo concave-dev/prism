@@ -64,6 +64,21 @@ const (
 	// This controls how long a client will wait for resource information from remote nodes.
 	// Can be shorter than health checks since resource queries are typically faster.
 	DefaultResourceCallTimeout = 3 * time.Second
+
+	// DefaultMemorySampleInterval is the interval between memory usage samples for timeseries tracking.
+	// This controls how frequently we collect memory usage data points for trend analysis.
+	// Shorter intervals provide more granular trend detection but use more memory.
+	DefaultMemorySampleInterval = 30 * time.Second
+
+	// DefaultMemoryMaxSamples is the maximum number of memory samples to keep in the timeseries.
+	// This controls the memory usage and historical depth of trend analysis.
+	// 20 samples at 30s intervals = 10 minutes of memory trend history.
+	DefaultMemoryMaxSamples = 20
+
+	// DefaultMemoryTrendWindow is the minimum time window for memory trend analysis.
+	// This controls how far back we look when calculating memory usage velocity and trends.
+	// Should be less than total sample history (MaxSamples * SampleInterval).
+	DefaultMemoryTrendWindow = 5 * time.Minute
 )
 
 // Config holds configuration for the gRPC server including timeout management
@@ -93,9 +108,18 @@ type Config struct {
 	HealthCheckTimeout  time.Duration // Timeout for server-side health checks
 	ClientCallTimeout   time.Duration // Timeout for client gRPC calls
 	ResourceCallTimeout time.Duration // Timeout for resource query calls
-	EnableTLS           bool          // Whether to enable TLS (future use)
-	CertFile            string        // Path to TLS certificate file (future use)
-	KeyFile             string        // Path to TLS private key file (future use)
+
+	// Memory timeseries configuration for intelligent memory pressure monitoring.
+	// These settings control how memory usage trends are tracked and analyzed to provide
+	// context-aware health status instead of arbitrary percentage thresholds.
+	// Critical for environments running many VMs/sandboxes where high memory usage is expected.
+	MemorySampleInterval time.Duration // Interval between memory usage samples
+	MemoryMaxSamples     int           // Maximum number of samples to keep in timeseries
+	MemoryTrendWindow    time.Duration // Time window for trend analysis calculations
+
+	EnableTLS bool   // Whether to enable TLS (future use)
+	CertFile  string // Path to TLS certificate file (future use)
+	KeyFile   string // Path to TLS private key file (future use)
 }
 
 // DefaultConfig returns a default gRPC configuration
@@ -103,15 +127,18 @@ type Config struct {
 // TODO: Add support for Unix domain sockets for local communication
 func DefaultConfig() *Config {
 	return &Config{
-		BindAddr:            config.DefaultBindAddr,
-		BindPort:            DefaultGRPCPort,
-		LogLevel:            config.DefaultLogLevel,
-		MaxMsgSize:          DefaultMaxMsgSize,
-		ShutdownTimeout:     DefaultShutdownTimeout,
-		HealthCheckTimeout:  DefaultHealthCheckTimeout,
-		ClientCallTimeout:   DefaultClientCallTimeout,
-		ResourceCallTimeout: DefaultResourceCallTimeout,
-		EnableTLS:           false,
+		BindAddr:             config.DefaultBindAddr,
+		BindPort:             DefaultGRPCPort,
+		LogLevel:             config.DefaultLogLevel,
+		MaxMsgSize:           DefaultMaxMsgSize,
+		ShutdownTimeout:      DefaultShutdownTimeout,
+		HealthCheckTimeout:   DefaultHealthCheckTimeout,
+		ClientCallTimeout:    DefaultClientCallTimeout,
+		ResourceCallTimeout:  DefaultResourceCallTimeout,
+		MemorySampleInterval: DefaultMemorySampleInterval,
+		MemoryMaxSamples:     DefaultMemoryMaxSamples,
+		MemoryTrendWindow:    DefaultMemoryTrendWindow,
+		EnableTLS:            false,
 	}
 }
 
@@ -138,6 +165,17 @@ func (c *Config) Validate() error {
 		return err
 	}
 	if err := validate.ValidatePositiveTimeout(c.ResourceCallTimeout, "resource call timeout"); err != nil {
+		return err
+	}
+
+	// Validate memory timeseries configuration
+	if err := validate.ValidatePositiveTimeout(c.MemorySampleInterval, "memory sample interval"); err != nil {
+		return err
+	}
+	if c.MemoryMaxSamples <= 0 {
+		return fmt.Errorf("memory max samples must be positive")
+	}
+	if err := validate.ValidatePositiveTimeout(c.MemoryTrendWindow, "memory trend window"); err != nil {
 		return err
 	}
 

@@ -47,6 +47,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/concave-dev/prism/internal/grpc/proto"
@@ -56,6 +57,156 @@ import (
 	serfpkg "github.com/hashicorp/serf/serf"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+// MemoryMetrics represents a single memory usage sample point in the timeseries.
+// Each sample captures memory state at a specific timestamp for trend analysis
+// and intelligent pressure detection based on usage patterns over time.
+type MemoryMetrics struct {
+	Timestamp time.Time // When this sample was taken
+	Usage     float64   // Memory usage percentage (0-100)
+	Available uint64    // Available memory in bytes
+	Total     uint64    // Total memory in bytes
+}
+
+// MemoryTimeSeries maintains a rolling window of memory usage samples
+// to enable intelligent memory pressure detection based on trends and velocity
+// rather than arbitrary percentage thresholds. Critical for VM/sandbox environments
+// where high memory usage is expected and normal.
+type MemoryTimeSeries struct {
+	samples    []MemoryMetrics // Rolling window of memory samples
+	maxSamples int             // Maximum samples to keep in the window
+	mu         sync.RWMutex    // Protects concurrent access to samples
+}
+
+// NewMemoryTimeSeries creates a new memory timeseries tracker with the specified capacity
+func NewMemoryTimeSeries(maxSamples int) *MemoryTimeSeries {
+	return &MemoryTimeSeries{
+		samples:    make([]MemoryMetrics, 0, maxSamples),
+		maxSamples: maxSamples,
+	}
+}
+
+// AddSample adds a new memory usage sample to the timeseries,
+// maintaining the rolling window by removing oldest samples when at capacity
+func (mts *MemoryTimeSeries) AddSample(sample MemoryMetrics) {
+	mts.mu.Lock()
+	defer mts.mu.Unlock()
+
+	mts.samples = append(mts.samples, sample)
+
+	// Remove oldest sample if we exceed max capacity
+	if len(mts.samples) > mts.maxSamples {
+		mts.samples = mts.samples[1:]
+	}
+}
+
+// GetSamples returns a copy of all current samples for analysis
+func (mts *MemoryTimeSeries) GetSamples() []MemoryMetrics {
+	mts.mu.RLock()
+	defer mts.mu.RUnlock()
+
+	result := make([]MemoryMetrics, len(mts.samples))
+	copy(result, mts.samples)
+	return result
+}
+
+// CalculateUsageVelocity calculates the rate of memory usage change over the specified time window.
+// Returns percentage points per minute (e.g., +2.5 means usage increasing by 2.5% per minute).
+// Requires at least 2 samples within the time window to calculate velocity.
+func (mts *MemoryTimeSeries) CalculateUsageVelocity(window time.Duration) float64 {
+	samples := mts.GetSamples()
+	if len(samples) < 2 {
+		return 0.0 // Cannot calculate velocity with insufficient samples
+	}
+
+	now := time.Now()
+	cutoff := now.Add(-window)
+
+	// Find samples within the time window
+	var recentSamples []MemoryMetrics
+	for _, sample := range samples {
+		if sample.Timestamp.After(cutoff) {
+			recentSamples = append(recentSamples, sample)
+		}
+	}
+
+	if len(recentSamples) < 2 {
+		return 0.0 // Insufficient recent samples
+	}
+
+	// Calculate linear regression slope for usage over time
+	first := recentSamples[0]
+	last := recentSamples[len(recentSamples)-1]
+
+	timeDiff := last.Timestamp.Sub(first.Timestamp).Minutes()
+	if timeDiff <= 0 {
+		return 0.0 // Avoid division by zero
+	}
+
+	usageDiff := last.Usage - first.Usage
+	return usageDiff / timeDiff // Percentage points per minute
+}
+
+// GetSustainedHighUsage checks if memory usage has been consistently high over the specified window.
+// Returns true if memory usage was above the threshold for the entire duration, false otherwise.
+// Used to detect sustained memory pressure rather than temporary spikes.
+func (mts *MemoryTimeSeries) GetSustainedHighUsage(threshold float64, window time.Duration) (bool, time.Duration) {
+	samples := mts.GetSamples()
+	if len(samples) == 0 {
+		return false, 0
+	}
+
+	now := time.Now()
+	cutoff := now.Add(-window)
+
+	// Find samples within the time window and check if all are above threshold
+	var recentSamples []MemoryMetrics
+	for _, sample := range samples {
+		if sample.Timestamp.After(cutoff) {
+			recentSamples = append(recentSamples, sample)
+		}
+	}
+
+	if len(recentSamples) == 0 {
+		return false, 0
+	}
+
+	// Check if all samples are above threshold
+	for _, sample := range recentSamples {
+		if sample.Usage < threshold {
+			return false, 0
+		}
+	}
+
+	// Calculate actual duration of sustained high usage
+	sustainedDuration := now.Sub(recentSamples[0].Timestamp)
+	return true, sustainedDuration
+}
+
+// DetermineMemoryTrend analyzes memory usage patterns to classify the current trend.
+// Returns one of: "increasing", "stable", "decreasing", or "insufficient_data"
+// based on usage velocity and variance over the specified time window.
+func (mts *MemoryTimeSeries) DetermineMemoryTrend(window time.Duration) string {
+	velocity := mts.CalculateUsageVelocity(window)
+
+	// Define velocity thresholds for trend classification
+	const (
+		stableThreshold     = 0.5 // Less than 0.5% per minute is considered stable
+		increasingThreshold = 1.0 // More than 1% per minute is significant increase
+	)
+
+	if velocity > increasingThreshold {
+		return "increasing"
+	} else if velocity < -increasingThreshold {
+		return "decreasing"
+	} else if velocity >= -stableThreshold && velocity <= stableThreshold {
+		return "stable"
+	} else if velocity > 0 {
+		return "slowly_increasing"
+	} else {
+		return "slowly_decreasing"
+	}
+}
 
 // Health check name constants for critical services
 // These services are essential for cluster participation and their failure
@@ -81,15 +232,21 @@ type NodeServiceImpl struct {
 	raftManager *raft.RaftManager // Access to Raft consensus status for health checks
 	grpcServer  *Server           // Reference to gRPC server for health checks
 	config      *Config           // gRPC configuration for timeout values
+
+	// Memory timeseries tracking for intelligent pressure monitoring.
+	// Maintains rolling window of memory usage samples to detect trends and velocity
+	// rather than relying on arbitrary percentage thresholds.
+	memoryTimeSeries *MemoryTimeSeries // Rolling window of memory usage samples
 }
 
 // NewNodeServiceImpl creates a new NodeService implementation
 func NewNodeServiceImpl(serfManager *serf.SerfManager, raftManager *raft.RaftManager, config *Config) *NodeServiceImpl {
 	return &NodeServiceImpl{
-		serfManager: serfManager,
-		raftManager: raftManager,
-		grpcServer:  nil, // Will be set after server creation to avoid circular dependency
-		config:      config,
+		serfManager:      serfManager,
+		raftManager:      raftManager,
+		grpcServer:       nil, // Will be set after server creation to avoid circular dependency
+		config:           config,
+		memoryTimeSeries: NewMemoryTimeSeries(config.MemoryMaxSamples),
 	}
 }
 
@@ -193,17 +350,17 @@ func (n *NodeServiceImpl) GetHealth(ctx context.Context, req *proto.GetHealthReq
 
 	if len(requestedChecks) == 0 {
 		// Default: run all available health checks
-		selectedChecks = []string{"serf", "raft", "grpc", "api", "cpu", "memory", "disk"}
+		selectedChecks = []string{"serf", "raft", "grpc", "api", "cpu", "memory_pressure", "disk"}
 	} else {
 		// Filter to only supported check types
 		supportedChecks := map[string]bool{
-			"serf":   true,
-			"raft":   true,
-			"grpc":   true,
-			"api":    true,
-			"cpu":    true,
-			"memory": true,
-			"disk":   true,
+			"serf":            true,
+			"raft":            true,
+			"grpc":            true,
+			"api":             true,
+			"cpu":             true,
+			"memory_pressure": true,
+			"disk":            true,
 		}
 
 		for _, checkType := range requestedChecks {
@@ -266,9 +423,9 @@ func (n *NodeServiceImpl) GetHealth(ctx context.Context, req *proto.GetHealthReq
 			go func() {
 				checkChan <- checkResult{n.checkCPUResourceHealth(checkCtx, now), "cpu"}
 			}()
-		case "memory":
+		case "memory_pressure":
 			go func() {
-				checkChan <- checkResult{n.checkMemoryResourceHealth(checkCtx, now), "memory"}
+				checkChan <- checkResult{n.checkMemoryPressureHealth(checkCtx, now), "memory_pressure"}
 			}()
 		case "disk":
 			go func() {
@@ -862,19 +1019,20 @@ func (n *NodeServiceImpl) checkCPUResourceHealth(ctx context.Context, now time.T
 	}
 }
 
-// checkMemoryResourceHealth monitors memory usage to detect potential out-of-memory
-// conditions that could impact sandbox stability. Uses progressive thresholds to
-// provide early warning of memory pressure before critical failures occur.
+// checkMemoryPressureHealth monitors memory pressure using intelligent timeseries analysis
+// instead of arbitrary percentage thresholds. Analyzes usage trends, velocity, and sustained
+// pressure patterns to provide context-aware health status appropriate for VM/sandbox environments
+// where high memory usage is expected and normal.
 //
-// Health thresholds:
-// - HEALTHY: Memory usage < 80%
-// - DEGRADED: Memory usage 80-95% (monitor closely, may impact performance)
-// - UNHEALTHY: Memory usage > 95% (high risk of OOM, avoid new sandboxes)
-func (n *NodeServiceImpl) checkMemoryResourceHealth(ctx context.Context, now time.Time) *proto.HealthCheck {
+// Health logic:
+// - HEALTHY: Low usage OR high usage with stable/decreasing trend
+// - DEGRADED: High usage with slow increasing trend OR sustained very high usage
+// - UNHEALTHY: High usage with rapid increasing trend indicating imminent problems
+func (n *NodeServiceImpl) checkMemoryPressureHealth(ctx context.Context, now time.Time) *proto.HealthCheck {
 	// Check context before starting
 	if ctx.Err() != nil {
 		return &proto.HealthCheck{
-			Name:      "memory_resource",
+			Name:      "memory_pressure",
 			Status:    proto.HealthStatus_UNKNOWN,
 			Message:   "Health check cancelled",
 			Timestamp: timestamppb.New(now),
@@ -884,7 +1042,7 @@ func (n *NodeServiceImpl) checkMemoryResourceHealth(ctx context.Context, now tim
 	// Guard against nil serfManager
 	if n.serfManager == nil {
 		return &proto.HealthCheck{
-			Name:      "memory_resource",
+			Name:      "memory_pressure",
 			Status:    proto.HealthStatus_UNKNOWN,
 			Message:   "Serf manager not available for resource monitoring",
 			Timestamp: timestamppb.New(now),
@@ -898,36 +1056,61 @@ func (n *NodeServiceImpl) checkMemoryResourceHealth(ctx context.Context, now tim
 		n.serfManager.GetStartTime(),
 	)
 
-	// Define health thresholds for memory monitoring
-	const (
-		memoryHealthyThreshold  = 80.0 // Below this is healthy
-		memoryDegradedThreshold = 95.0 // Above this is unhealthy
-	)
+	// Create and add current sample to timeseries
+	currentSample := MemoryMetrics{
+		Timestamp: now,
+		Usage:     nodeResources.MemoryUsage,
+		Available: nodeResources.MemoryAvailable,
+		Total:     nodeResources.MemoryTotal,
+	}
+	n.memoryTimeSeries.AddSample(currentSample)
 
-	memoryUsage := nodeResources.MemoryUsage
-	memoryTotal := nodeResources.MemoryTotal
-	memoryAvailable := nodeResources.MemoryAvailable
+	// Analyze memory trends using configured time window
+	trendWindow := n.config.MemoryTrendWindow
+	trend := n.memoryTimeSeries.DetermineMemoryTrend(trendWindow)
+	velocity := n.memoryTimeSeries.CalculateUsageVelocity(trendWindow)
+	sustained, sustainedDuration := n.memoryTimeSeries.GetSustainedHighUsage(90.0, trendWindow)
 
+	// Intelligent health status determination based on trends, not arbitrary thresholds
 	var status proto.HealthStatus
 	var message string
 
-	// Determine health status based on memory usage
-	if memoryUsage > memoryDegradedThreshold {
+	currentUsage := nodeResources.MemoryUsage
+
+	if currentUsage > 98.0 && (trend == "increasing" || trend == "slowly_increasing") {
+		// Critical: Very high usage with increasing trend
 		status = proto.HealthStatus_UNHEALTHY
-		message = fmt.Sprintf("Memory critically low: %.1f%% used, %s available of %s total",
-			memoryUsage, formatBytes(memoryAvailable), formatBytes(memoryTotal))
-	} else if memoryUsage > memoryHealthyThreshold {
+		message = fmt.Sprintf("Memory pressure critical: %.1f%% used, %s trend (+%.1f%%/min), %s available",
+			currentUsage, trend, velocity, formatBytes(nodeResources.MemoryAvailable))
+	} else if currentUsage > 95.0 && velocity > 2.0 {
+		// Critical: High usage with rapid increase
+		status = proto.HealthStatus_UNHEALTHY
+		message = fmt.Sprintf("Memory pressure rapidly increasing: %.1f%% used, +%.1f%%/min, %s available",
+			currentUsage, velocity, formatBytes(nodeResources.MemoryAvailable))
+	} else if sustained && sustainedDuration > 10*time.Minute {
+		// Degraded: Sustained very high usage for extended period
 		status = proto.HealthStatus_DEGRADED
-		message = fmt.Sprintf("Memory under pressure: %.1f%% used, %s available of %s total",
-			memoryUsage, formatBytes(memoryAvailable), formatBytes(memoryTotal))
+		message = fmt.Sprintf("Memory pressure sustained: %.1f%% used for %v, %s trend, %s available",
+			currentUsage, sustainedDuration.Round(time.Minute), trend, formatBytes(nodeResources.MemoryAvailable))
+	} else if currentUsage > 90.0 && (trend == "increasing" || trend == "slowly_increasing") {
+		// Degraded: High usage with increasing trend
+		status = proto.HealthStatus_DEGRADED
+		message = fmt.Sprintf("Memory pressure increasing: %.1f%% used, %s trend (+%.1f%%/min), %s available",
+			currentUsage, trend, velocity, formatBytes(nodeResources.MemoryAvailable))
 	} else {
+		// Healthy: Low usage OR high usage with stable/decreasing trend
 		status = proto.HealthStatus_HEALTHY
-		message = fmt.Sprintf("Memory healthy: %.1f%% used, %s available of %s total",
-			memoryUsage, formatBytes(memoryAvailable), formatBytes(memoryTotal))
+		if currentUsage > 80.0 {
+			message = fmt.Sprintf("Memory usage high but %s: %.1f%% used, %s available",
+				trend, currentUsage, formatBytes(nodeResources.MemoryAvailable))
+		} else {
+			message = fmt.Sprintf("Memory pressure healthy: %.1f%% used, %s trend, %s available",
+				currentUsage, trend, formatBytes(nodeResources.MemoryAvailable))
+		}
 	}
 
 	return &proto.HealthCheck{
-		Name:      "memory_resource",
+		Name:      "memory_pressure",
 		Status:    status,
 		Message:   message,
 		Timestamp: timestamppb.New(now),
