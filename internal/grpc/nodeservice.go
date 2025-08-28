@@ -1052,7 +1052,7 @@ func (n *NodeServiceImpl) checkMemoryPressureHealth(ctx context.Context, now tim
 	// Check context before starting
 	if ctx.Err() != nil {
 		return &proto.HealthCheck{
-			Name:      "memory_pressure",
+			Name:      CheckMemoryPressure,
 			Status:    proto.HealthStatus_UNKNOWN,
 			Message:   "Health check cancelled",
 			Timestamp: timestamppb.New(now),
@@ -1062,7 +1062,7 @@ func (n *NodeServiceImpl) checkMemoryPressureHealth(ctx context.Context, now tim
 	// Guard against nil serfManager
 	if n.serfManager == nil {
 		return &proto.HealthCheck{
-			Name:      "memory_pressure",
+			Name:      CheckMemoryPressure,
 			Status:    proto.HealthStatus_UNKNOWN,
 			Message:   "Serf manager not available for resource monitoring",
 			Timestamp: timestamppb.New(now),
@@ -1130,7 +1130,7 @@ func (n *NodeServiceImpl) checkMemoryPressureHealth(ctx context.Context, now tim
 	}
 
 	return &proto.HealthCheck{
-		Name:      "memory_pressure",
+		Name:      CheckMemoryPressure,
 		Status:    status,
 		Message:   message,
 		Timestamp: timestamppb.New(now),
