@@ -226,6 +226,7 @@ func Run() error {
 
 	// Store original Raft port for logging purposes
 	var raftManager *raft.RaftManager
+	var clusterIDCoordinator *raft.ClusterIDCoordinator
 	originalRaftPort := config.Global.RaftPort
 
 	// Set default Raft address if not explicitly set
@@ -444,6 +445,14 @@ func Run() error {
 		return fmt.Errorf("failed to start API server: %w", err)
 	}
 
+	// Start cluster ID coordinator (separate from autopilot)
+	// This ensures the cluster gets a persistent identifier established by the leader
+	logging.Info("Starting cluster ID coordinator")
+	clusterIDCoordinator = raft.NewClusterIDCoordinator(raftManager)
+	if err := clusterIDCoordinator.Start(); err != nil {
+		return fmt.Errorf("failed to start cluster ID coordinator: %w", err)
+	}
+
 	// Join cluster if addresses provided
 	// Serf will try each address in order until one succeeds (fault tolerance)
 	if len(config.Global.JoinAddrs) > 0 {
@@ -525,6 +534,13 @@ func Run() error {
 	// Cleanup gRPC client pool
 	if grpcClientPool != nil {
 		grpcClientPool.Close()
+	}
+
+	// Shutdown cluster ID coordinator (before Raft manager)
+	if clusterIDCoordinator != nil {
+		if err := clusterIDCoordinator.Stop(); err != nil {
+			logging.Error("Error shutting down cluster ID coordinator: %v", err)
+		}
 	}
 
 	// Shutdown Raft manager

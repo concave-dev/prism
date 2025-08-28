@@ -41,6 +41,7 @@ package raft
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -1621,4 +1622,69 @@ func (m *RaftManager) StartStateLogging() {
 			}
 		}
 	}()
+}
+
+// ============================================================================
+// CLUSTER ID MANAGEMENT - Persistent cluster identification
+// ============================================================================
+
+// GetClusterID returns the current cluster identifier from the FSM.
+// Provides access to the persistent cluster ID that was set by the leader
+// during initial cluster formation and persists across leadership changes.
+//
+// Returns empty string if no cluster ID has been established yet, which
+// occurs during initial cluster startup before the first leader generates
+// and applies the cluster identifier via Raft consensus.
+func (rm *RaftManager) GetClusterID() string {
+	if fsm := rm.GetFSM(); fsm != nil {
+		return fsm.GetClusterID()
+	}
+	return ""
+}
+
+// SetClusterID applies a cluster ID command via Raft consensus to establish
+// the persistent cluster identifier. This operation can only be performed
+// by the Raft leader to ensure consistency and prevent conflicts.
+//
+// Critical for cluster identity establishment during initial formation.
+// The cluster ID persists through leadership changes, node restarts, and
+// cluster recovery operations. Should only be called once during cluster lifecycle.
+func (rm *RaftManager) SetClusterID(clusterID string) error {
+	if rm.raft.State() != raft.Leader {
+		return fmt.Errorf("only leader can set cluster ID")
+	}
+
+	// Build the cluster ID command
+	cmd := Command{
+		Type:      "cluster_id",
+		Operation: "set",
+		Data:      json.RawMessage{},
+		Timestamp: time.Now(),
+		NodeID:    rm.config.NodeID,
+	}
+
+	// Marshal the cluster ID command data
+	clusterIDCmd := ClusterIDCommand{
+		ClusterID: clusterID,
+	}
+	cmdData, err := json.Marshal(clusterIDCmd)
+	if err != nil {
+		return fmt.Errorf("failed to marshal cluster ID command: %w", err)
+	}
+	cmd.Data = cmdData
+
+	// Marshal the complete command
+	cmdBytes, err := json.Marshal(cmd)
+	if err != nil {
+		return fmt.Errorf("failed to marshal cluster ID command: %w", err)
+	}
+
+	// Apply via Raft with timeout
+	future := rm.raft.Apply(cmdBytes, 5*time.Second)
+	if err := future.Error(); err != nil {
+		return fmt.Errorf("failed to apply cluster ID via Raft: %w", err)
+	}
+
+	logging.Info("Successfully set cluster ID: %s", clusterID)
+	return nil
 }
