@@ -136,9 +136,10 @@ func GatherSystemResources(nodeID, nodeName string, startTime time.Time) *NodeRe
 	diskUsage, err := disk.Usage("/")
 	if err != nil {
 		logging.Error("Failed to get disk usage stats: %v", err)
-		// Graceful degradation: provide zero values when disk monitoring fails
+		// Graceful degradation: use sentinel values to indicate disk monitoring failure
+		// Zero values would incorrectly suggest no disk space available
 		diskUsage = &disk.UsageStat{
-			Total: 0,
+			Total: 0, // Zero total signals unavailable data to health checks
 			Used:  0,
 			Free:  0,
 		}

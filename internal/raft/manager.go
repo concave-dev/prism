@@ -343,7 +343,7 @@ func (m *RaftManager) checkBootstrapExpectConditions() {
 		return
 	}
 
-	// Deterministically pick a single coordinator across all nodes using rendezvous hashing
+	// Deterministically pick a single coordinator by selecting the smallest node ID
 	coordinatorID := m.selectBootstrapCoordinator(eligibleIDs)
 	if coordinatorID != m.config.NodeID {
 		logging.Debug("Bootstrap-expect: Coordinator selected as %s, this node will not bootstrap", coordinatorID)
