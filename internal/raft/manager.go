@@ -1643,15 +1643,40 @@ func (rm *RaftManager) GetClusterID() string {
 }
 
 // SetClusterID applies a cluster ID command via Raft consensus to establish
-// the persistent cluster identifier. This operation can only be performed
-// by the Raft leader to ensure consistency and prevent conflicts.
+// the persistent cluster identifier. Performs comprehensive validation including
+// leadership checks, input validation, and overwrite protection with idempotency.
 //
-// Critical for cluster identity establishment during initial formation.
-// The cluster ID persists through leadership changes, node restarts, and
-// cluster recovery operations. Should only be called once during cluster lifecycle.
+// Implements defense-in-depth with caller-level checks and FSM-level guards
+// to prevent race conditions and ensure cluster ID can only be set once.
+// Provides clear error messages with leader redirection for better user experience.
+// The cluster ID persists through leadership changes, node restarts, and recovery.
 func (rm *RaftManager) SetClusterID(clusterID string) error {
-	if rm.raft.State() != raft.Leader {
-		return fmt.Errorf("only leader can set cluster ID")
+	// Raft readiness and leader gating
+	if rm.raft == nil {
+		return fmt.Errorf("raft not initialized")
+	}
+	if !rm.IsLeader() {
+		leader := rm.Leader()
+		if leader == "" {
+			return fmt.Errorf("only leader can set cluster ID")
+		}
+		return fmt.Errorf("not leader, redirect to %s", leader)
+	}
+
+	// Basic validation
+	if clusterID == "" {
+		return fmt.Errorf("cluster ID cannot be empty")
+	}
+
+	// Idempotency and overwrite protection
+	if fsm := rm.GetFSM(); fsm != nil {
+		if existing := fsm.GetClusterID(); existing != "" {
+			if existing == clusterID {
+				logging.Debug("Cluster ID already set; no-op")
+				return nil
+			}
+			return fmt.Errorf("cluster ID already set; refusing to overwrite")
+		}
 	}
 
 	// Build the cluster ID command
@@ -1676,13 +1701,20 @@ func (rm *RaftManager) SetClusterID(clusterID string) error {
 	// Marshal the complete command
 	cmdBytes, err := json.Marshal(cmd)
 	if err != nil {
-		return fmt.Errorf("failed to marshal cluster ID command: %w", err)
+		return fmt.Errorf("failed to marshal command envelope: %w", err)
 	}
 
 	// Apply via Raft with timeout
-	future := rm.raft.Apply(cmdBytes, 5*time.Second)
+	future := rm.raft.Apply(cmdBytes, 10*time.Second)
 	if err := future.Error(); err != nil {
 		return fmt.Errorf("failed to apply cluster ID via Raft: %w", err)
+	}
+
+	// Surface FSM-level rejection
+	if resp := future.Response(); resp != nil {
+		if err, ok := resp.(error); ok {
+			return fmt.Errorf("cluster ID apply rejected: %w", err)
+		}
 	}
 
 	logging.Info("Successfully set cluster ID: %s", clusterID)

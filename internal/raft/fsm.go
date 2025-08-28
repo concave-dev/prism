@@ -349,13 +349,21 @@ func (f *PrismFSM) GetClusterID() string {
 }
 
 // applyClusterIDCommand processes cluster ID commands to set the persistent
-// cluster identifier via Raft consensus. Only accepts "set" operations to
-// establish the cluster ID once during initial cluster formation.
+// cluster identifier via Raft consensus. Implements FSM-level protection with
+// early guard to prevent overwriting existing cluster IDs and race conditions.
 //
-// Critical for ensuring cluster identity consistency across all nodes.
-// The cluster ID is set once by the leader and persists through leadership
-// changes, node restarts, and cluster recovery operations.
+// Provides final authoritative validation as part of defense-in-depth strategy.
+// Only accepts "set" operations and ensures cluster ID can only be established
+// once during cluster lifecycle. Critical for maintaining cluster identity
+// consistency across all nodes through leadership changes and restarts.
 func (f *PrismFSM) applyClusterIDCommand(cmd Command) interface{} {
+	// Early guard: prevent overwriting existing cluster ID
+	if f.clusterID != "" {
+		err := fmt.Errorf("cluster ID already set")
+		logging.Error("FSM: %v", err)
+		return err
+	}
+
 	if cmd.Operation != "set" {
 		err := fmt.Errorf("unsupported cluster_id operation: %s", cmd.Operation)
 		logging.Error("FSM: %v", err)
@@ -368,7 +376,7 @@ func (f *PrismFSM) applyClusterIDCommand(cmd Command) interface{} {
 		return fmt.Errorf("failed to unmarshal cluster ID command: %w", err)
 	}
 
-	// Set the cluster ID (caller should ensure this only happens once)
+	// Set the cluster ID - now protected by early guard above
 	f.clusterID = clusterIDCmd.ClusterID
 	logging.Info("FSM: Set cluster ID to %s", f.clusterID)
 	return nil
