@@ -72,7 +72,7 @@ const (
 type Config struct {
 	SerfAddr        string   // Network address for Serf cluster membership
 	SerfPort        int      // Network port for Serf cluster membership
-	APIAddr         string   // HTTP API server address (defaults to 127.0.0.1:8008 for security)
+	APIAddr         string   // HTTP API server address (inherits Serf IP by default; port 8008)
 	APIPort         int      // HTTP API server port (derived from APIAddr)
 	RaftAddr        string   // Raft consensus address (defaults to same IP as serf with port 6969)
 	RaftPort        int      // Raft consensus port (derived from RaftAddr)
