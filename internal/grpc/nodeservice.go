@@ -1238,6 +1238,23 @@ func (n *NodeServiceImpl) checkMemoryPressureHealth(ctx context.Context, now tim
 
 	currentUsage := nodeResources.MemoryUsage
 
+	// If we do not have enough samples/span for a meaningful trend, mark the
+	// memory check as HEALTHY with a clear message about insufficient data.
+	// This avoids degrading overall node health when memory itself is fine.
+	if trend == "insufficient_data" {
+		return &proto.HealthCheck{
+			Name:   CheckMemoryPressure,
+			Status: proto.HealthStatus_HEALTHY,
+			Message: fmt.Sprintf(
+				"Memory trend: insufficient data (%.1f%% used, %s available, %v window)",
+				currentUsage,
+				formatBytes(nodeResources.MemoryAvailable),
+				trendWindow,
+			),
+			Timestamp: timestamppb.New(now),
+		}
+	}
+
 	if currentUsage > 98.0 && (trend == "increasing" || trend == "slowly_increasing") {
 		// Critical: Very high usage with increasing trend
 		status = proto.HealthStatus_UNHEALTHY
