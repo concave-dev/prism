@@ -131,16 +131,19 @@ func (mts *MemoryTimeSeries) GetSamples() []MemoryMetrics {
 	return result
 }
 
-// CalculateUsageVelocity calculates the rate of memory usage change over the specified time window
-// using linear regression (least-squares) over all available samples within the window.
-// Returns percentage points per minute (e.g., +2.5 means usage increasing by 2.5% per minute).
+// CalculateUsageVelocity calculates the rate of memory usage change over the
+// specified time window using linear regression (least-squares) over all
+// available samples within the window. Returns percentage points per minute
+// (e.g., +2.5 means usage increasing by 2.5% per minute).
 //
 // How it works:
-// 1. Validates the time window parameter (must be positive)
-// 2. Filters samples to those within the specified time window
-// 3. Ensures minimum sample count (≥3) and temporal coverage (≥25% of window)
-// 4. Applies least-squares linear regression to find best-fit trend line through all points
-// 5. Returns the slope of that line as velocity in percentage points per minute
+//  1. Validates the time window parameter (must be positive)
+//  2. Filters samples to those within the specified time window
+//  3. Prefers regression when we have ≥3 samples and coverage ≥10% of window
+//  4. Falls back to a two-point slope (first vs last) when exactly 2 samples
+//     are present and span ≥30s
+//  5. Applies least-squares regression or two-point fallback and returns
+//     slope as percentage points per minute
 //
 // Linear regression approach vs simple two-point calculation:
 // - Uses ALL samples in window (not just first/last)
@@ -164,9 +167,6 @@ func (mts *MemoryTimeSeries) CalculateUsageVelocity(window time.Duration) float6
 	}
 
 	samples := mts.GetSamples()
-	if len(samples) < 3 {
-		return 0.0 // Need minimum 3 samples for reliable regression
-	}
 
 	now := time.Now()
 	cutoff := now.Add(-window)
@@ -179,8 +179,9 @@ func (mts *MemoryTimeSeries) CalculateUsageVelocity(window time.Duration) float6
 		}
 	}
 
-	if len(recentSamples) < 3 {
-		return 0.0 // Insufficient recent samples for regression
+	// Require at least 2 samples for any slope calculation
+	if len(recentSamples) < 2 {
+		return 0.0
 	}
 
 	// Check sample density - require reasonable coverage of the window
@@ -192,11 +193,29 @@ func (mts *MemoryTimeSeries) CalculateUsageVelocity(window time.Duration) float6
 		return 0.0 // All samples at same time - no variance
 	}
 
-	// Require samples to span at least 25% of the requested window
-	// This ensures we have reasonable temporal coverage
-	minSpan := window.Minutes() * 0.25
+	// Coverage thresholds
+	minSpan := window.Minutes() * 0.10 // lighter coverage requirement
+	minTwoPointSpan := 30.0 / 60.0     // 30 seconds in minutes
+
+	// If exactly 2 samples, use two-point fallback when span is reasonable
+	if len(recentSamples) == 2 {
+		if timeSpan < minTwoPointSpan {
+			return 0.0
+		}
+		y1 := recentSamples[0].Usage
+		y2 := recentSamples[1].Usage
+		return (y2 - y1) / timeSpan
+	}
+
+	// For ≥3 samples, require reasonable temporal coverage; else attempt
+	// two-point fallback if span is at least 30s.
 	if timeSpan < minSpan {
-		return 0.0 // Insufficient temporal coverage
+		if timeSpan >= minTwoPointSpan {
+			y1 := recentSamples[0].Usage
+			y2 := recentSamples[len(recentSamples)-1].Usage
+			return (y2 - y1) / timeSpan
+		}
+		return 0.0
 	}
 
 	// Prepare for least-squares linear regression calculation
@@ -269,10 +288,47 @@ func (mts *MemoryTimeSeries) GetSustainedHighUsage(threshold float64, window tim
 	return true, sustainedDuration
 }
 
-// DetermineMemoryTrend analyzes memory usage patterns to classify the current trend.
-// Returns one of: "increasing", "stable", "decreasing", or "insufficient_data"
-// based on usage velocity and variance over the specified time window.
+// DetermineMemoryTrend analyzes memory usage patterns to classify the current
+// trend. Returns one of: "increasing", "stable", "decreasing",
+// "slowly_increasing", "slowly_decreasing", or "insufficient_data" when
+// we do not have enough samples/span to make a meaningful statement.
 func (mts *MemoryTimeSeries) DetermineMemoryTrend(window time.Duration) string {
+	if window <= 0 {
+		return "insufficient_data"
+	}
+
+	// Check sample sufficiency to avoid mislabeling as stable when data is sparse
+	samples := mts.GetSamples()
+	now := time.Now()
+	cutoff := now.Add(-window)
+	var recentSamples []MemoryMetrics
+	for _, s := range samples {
+		if s.Timestamp.After(cutoff) {
+			recentSamples = append(recentSamples, s)
+		}
+	}
+	if len(recentSamples) < 2 {
+		return "insufficient_data"
+	}
+	first := recentSamples[0]
+	last := recentSamples[len(recentSamples)-1]
+	spanMin := last.Timestamp.Sub(first.Timestamp).Minutes()
+	if spanMin <= 0 {
+		return "insufficient_data"
+	}
+	minSpan := window.Minutes() * 0.10
+	minTwoPointSpan := 30.0 / 60.0
+	if len(recentSamples) >= 3 {
+		if spanMin < minSpan {
+			// Not enough temporal coverage for a reliable trend
+			return "insufficient_data"
+		}
+	} else { // exactly 2 samples
+		if spanMin < minTwoPointSpan {
+			return "insufficient_data"
+		}
+	}
+
 	velocity := mts.CalculateUsageVelocity(window)
 
 	// Define velocity thresholds for trend classification
