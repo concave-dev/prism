@@ -57,6 +57,20 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+// Health check name constants for critical services
+// These services are essential for cluster participation and their failure
+// marks the entire node as UNHEALTHY rather than just DEGRADED
+const (
+	CheckSerf = "serf_service" // Cluster membership and failure detection
+	CheckRaft = "raft_service" // Consensus participation and state replication
+	CheckGRPC = "grpc_service" // Inter-node RPC communication
+	CheckAPI  = "api_service"  // Management and administration interface
+)
+
+// criticalServiceNames contains all critical service check names
+// Used for "all critical unknown" detection in health aggregation
+var criticalServiceNames = []string{CheckSerf, CheckRaft, CheckGRPC, CheckAPI}
+
 // NodeServiceImpl implements the NodeService gRPC interface
 // TODO: Add authentication middleware for secure inter-node communication
 // TODO: Add rate limiting to prevent resource query abuse
@@ -347,7 +361,6 @@ done:
 
 	// Check if ALL critical services are unknown (not just some)
 	// This indicates we cannot assess the node's ability to participate in cluster
-	criticalServiceNames := []string{"serf", "raft", "grpc", "api"}
 	allCriticalUnknown = true
 	for _, serviceName := range criticalServiceNames {
 		if status, exists := criticalChecks[serviceName]; !exists || status != proto.HealthStatus_UNKNOWN {
@@ -405,7 +418,7 @@ func (n *NodeServiceImpl) checkAPIServiceHealth(ctx context.Context, now time.Ti
 	member := n.serfManager.GetLocalMember()
 	if member == nil {
 		return &proto.HealthCheck{
-			Name:      "api_service",
+			Name:      CheckAPI,
 			Status:    proto.HealthStatus_UNKNOWN,
 			Message:   "Local member information unavailable",
 			Timestamp: timestamppb.New(now),
@@ -415,7 +428,7 @@ func (n *NodeServiceImpl) checkAPIServiceHealth(ctx context.Context, now time.Ti
 	apiPort, ok := member.Tags["api_port"]
 	if !ok || apiPort == "" {
 		return &proto.HealthCheck{
-			Name:      "api_service",
+			Name:      CheckAPI,
 			Status:    proto.HealthStatus_UNKNOWN,
 			Message:   "API port not advertised in Serf tags",
 			Timestamp: timestamppb.New(now),
@@ -439,7 +452,7 @@ func (n *NodeServiceImpl) checkAPIServiceHealth(ctx context.Context, now time.Ti
 		// Check context before each attempt
 		if ctx.Err() != nil {
 			return &proto.HealthCheck{
-				Name:      "api_service",
+				Name:      CheckAPI,
 				Status:    proto.HealthStatus_UNKNOWN,
 				Message:   "Health check cancelled",
 				Timestamp: timestamppb.New(now),
@@ -468,7 +481,7 @@ func (n *NodeServiceImpl) checkAPIServiceHealth(ctx context.Context, now time.Ti
 			// Remove "http://" prefix for cleaner display
 			endpoint := strings.TrimPrefix(url, "http://")
 			return &proto.HealthCheck{
-				Name:      "api_service",
+				Name:      CheckAPI,
 				Status:    proto.HealthStatus_HEALTHY,
 				Message:   fmt.Sprintf("HTTP API healthy at %s (status: %d)", endpoint, resp.StatusCode),
 				Timestamp: timestamppb.New(now),
@@ -489,7 +502,7 @@ func (n *NodeServiceImpl) checkAPIServiceHealth(ctx context.Context, now time.Ti
 	}
 
 	return &proto.HealthCheck{
-		Name:      "api_service",
+		Name:      CheckAPI,
 		Status:    proto.HealthStatus_UNHEALTHY,
 		Message:   message,
 		Timestamp: timestamppb.New(now),
@@ -503,7 +516,7 @@ func (n *NodeServiceImpl) checkSerfMembershipHealth(ctx context.Context, now tim
 	// Check context before starting
 	if ctx.Err() != nil {
 		return &proto.HealthCheck{
-			Name:      "serf_service",
+			Name:      CheckSerf,
 			Status:    proto.HealthStatus_UNKNOWN,
 			Message:   "Health check cancelled",
 			Timestamp: timestamppb.New(now),
@@ -511,7 +524,7 @@ func (n *NodeServiceImpl) checkSerfMembershipHealth(ctx context.Context, now tim
 	}
 	if n.serfManager == nil {
 		return &proto.HealthCheck{
-			Name:      "serf_service",
+			Name:      CheckSerf,
 			Status:    proto.HealthStatus_UNKNOWN,
 			Message:   "Serf manager not available",
 			Timestamp: timestamppb.New(now),
@@ -522,7 +535,7 @@ func (n *NodeServiceImpl) checkSerfMembershipHealth(ctx context.Context, now tim
 	localMember := n.serfManager.GetLocalMember()
 	if localMember == nil {
 		return &proto.HealthCheck{
-			Name:      "serf_service",
+			Name:      CheckSerf,
 			Status:    proto.HealthStatus_UNHEALTHY,
 			Message:   "Local member information unavailable",
 			Timestamp: timestamppb.New(now),
@@ -532,7 +545,7 @@ func (n *NodeServiceImpl) checkSerfMembershipHealth(ctx context.Context, now tim
 	// Check if we're marked as alive in cluster membership
 	if localMember.Status != serfpkg.StatusAlive {
 		return &proto.HealthCheck{
-			Name:      "serf_service",
+			Name:      CheckSerf,
 			Status:    proto.HealthStatus_UNHEALTHY,
 			Message:   fmt.Sprintf("Node status is %v, expected alive", localMember.Status),
 			Timestamp: timestamppb.New(now),
@@ -546,7 +559,7 @@ func (n *NodeServiceImpl) checkSerfMembershipHealth(ctx context.Context, now tim
 	// Handle edge case where no members are visible
 	if memberCount == 0 {
 		return &proto.HealthCheck{
-			Name:      "serf_service",
+			Name:      CheckSerf,
 			Status:    proto.HealthStatus_UNKNOWN,
 			Message:   "No cluster members visible (Serf membership may be initializing)",
 			Timestamp: timestamppb.New(now),
@@ -588,7 +601,7 @@ func (n *NodeServiceImpl) checkSerfMembershipHealth(ctx context.Context, now tim
 	if memberCount == 1 {
 		// Single node cluster - include role and address info
 		return &proto.HealthCheck{
-			Name:      "serf_service",
+			Name:      CheckSerf,
 			Status:    proto.HealthStatus_HEALTHY,
 			Message:   fmt.Sprintf("Single-node cluster (%s) at %s, gossip healthy", localRole, localAddr),
 			Timestamp: timestamppb.New(now),
@@ -602,7 +615,7 @@ func (n *NodeServiceImpl) checkSerfMembershipHealth(ctx context.Context, now tim
 			statusDetail = fmt.Sprintf(" (%d failed, %d left)", failedCount, leftCount)
 		}
 		return &proto.HealthCheck{
-			Name:      "serf_service",
+			Name:      CheckSerf,
 			Status:    proto.HealthStatus_UNHEALTHY,
 			Message:   fmt.Sprintf("Cluster isolation: %s at %s sees only %d of %d members alive%s", localRole, localAddr, aliveCount, memberCount, statusDetail),
 			Timestamp: timestamppb.New(now),
@@ -616,7 +629,7 @@ func (n *NodeServiceImpl) checkSerfMembershipHealth(ctx context.Context, now tim
 	}
 
 	return &proto.HealthCheck{
-		Name:      "serf_service",
+		Name:      CheckSerf,
 		Status:    proto.HealthStatus_HEALTHY,
 		Message:   fmt.Sprintf("Cluster gossip healthy: %s at %s sees %d of %d members alive%s", localRole, localAddr, aliveCount, memberCount, statusDetail),
 		Timestamp: timestamppb.New(now),
@@ -630,7 +643,7 @@ func (n *NodeServiceImpl) checkRaftServiceHealth(ctx context.Context, now time.T
 	// Check context before starting
 	if ctx.Err() != nil {
 		return &proto.HealthCheck{
-			Name:      "raft_service",
+			Name:      CheckRaft,
 			Status:    proto.HealthStatus_UNKNOWN,
 			Message:   "Health check cancelled",
 			Timestamp: timestamppb.New(now),
@@ -639,7 +652,7 @@ func (n *NodeServiceImpl) checkRaftServiceHealth(ctx context.Context, now time.T
 	if n.raftManager == nil {
 		// Raft not configured - this might be normal for some deployments
 		return &proto.HealthCheck{
-			Name:      "raft_service",
+			Name:      CheckRaft,
 			Status:    proto.HealthStatus_UNKNOWN,
 			Message:   "Raft consensus not configured",
 			Timestamp: timestamppb.New(now),
@@ -690,7 +703,7 @@ func (n *NodeServiceImpl) checkRaftServiceHealth(ctx context.Context, now time.T
 	}
 
 	return &proto.HealthCheck{
-		Name:      "raft_service",
+		Name:      CheckRaft,
 		Status:    raftStatus,
 		Message:   enhancedMessage,
 		Timestamp: timestamppb.New(now),
@@ -704,7 +717,7 @@ func (n *NodeServiceImpl) checkGRPCServiceHealth(ctx context.Context, now time.T
 	// Check context before starting
 	if ctx.Err() != nil {
 		return &proto.HealthCheck{
-			Name:      "grpc_service",
+			Name:      CheckGRPC,
 			Status:    proto.HealthStatus_UNKNOWN,
 			Message:   "Health check cancelled",
 			Timestamp: timestamppb.New(now),
@@ -713,7 +726,7 @@ func (n *NodeServiceImpl) checkGRPCServiceHealth(ctx context.Context, now time.T
 	if n.grpcServer == nil {
 		// gRPC server reference not set
 		return &proto.HealthCheck{
-			Name:      "grpc_service",
+			Name:      CheckGRPC,
 			Status:    proto.HealthStatus_UNKNOWN,
 			Message:   "gRPC server reference not available",
 			Timestamp: timestamppb.New(now),
@@ -752,7 +765,7 @@ func (n *NodeServiceImpl) checkGRPCServiceHealth(ctx context.Context, now time.T
 	}
 
 	return &proto.HealthCheck{
-		Name:      "grpc_service",
+		Name:      CheckGRPC,
 		Status:    grpcStatus,
 		Message:   enhancedMessage,
 		Timestamp: timestamppb.New(now),
@@ -1007,12 +1020,10 @@ func formatBytes(bytes uint64) string {
 // completely unusable, while actual service failures correctly indicate
 // nodes that cannot participate in cluster operations.
 func isCriticalService(checkName string) bool {
-	criticalServices := map[string]bool{
-		"serf": true, // Cluster membership - essential for communication
-		"raft": true, // Consensus participation - essential for state sync
-		"grpc": true, // Inter-node RPC - essential for cluster coordination
-		"api":  true, // Management API - essential for administration
+	switch checkName {
+	case CheckSerf, CheckRaft, CheckGRPC, CheckAPI:
+		return true
+	default:
+		return false
 	}
-
-	return criticalServices[checkName]
 }
