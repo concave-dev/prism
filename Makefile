@@ -1,4 +1,4 @@
-.PHONY: build prismd prismctl clean clean-bin stop delete-dir generate-grpc test test-coverage run bootstrap-expect
+.PHONY: build prismd prismctl clean clean-bin stop delete-dir generate-grpc test test-coverage run run-cluster bootstrap-expect
 
 BIN_DIR := bin
 PRISMD := $(BIN_DIR)/prismd
@@ -30,15 +30,15 @@ $(PRISMCTL):
 stop:
 	@echo "=== Stopping prismd processes ==="
 	-@pkill -f prismd 2>/dev/null || true
-	@echo "Killing by port ranges (Serf 4200-4219 TCP+UDP, Raft 6969-6988 TCP, gRPC 7117-7136 TCP, API 8008-8027 TCP)"
-	@start=4200; end=$$((start+20-1)); \
+	@echo "Killing by port ranges (Serf 4200-4299 TCP+UDP, Raft 6969-7068 TCP, gRPC 7117-7216 TCP, API 8008-8107 TCP)"
+	@start=4200; end=$$((start+100-1)); \
 		pids=$$(lsof -ti tcp:$$start-$$end -sTCP:LISTEN 2>/dev/null); [ -n "$$pids" ] && kill -9 $$pids 2>/dev/null || true; \
 		pids=$$(lsof -ti udp:$$start-$$end 2>/dev/null); [ -n "$$pids" ] && kill -9 $$pids 2>/dev/null || true
-	@start=6969; end=$$((start+20-1)); \
+	@start=6969; end=$$((start+100-1)); \
 		pids=$$(lsof -ti tcp:$$start-$$end -sTCP:LISTEN 2>/dev/null); [ -n "$$pids" ] && kill -9 $$pids 2>/dev/null || true
-	@start=7117; end=$$((start+20-1)); \
+	@start=7117; end=$$((start+100-1)); \
 		pids=$$(lsof -ti tcp:$$start-$$end -sTCP:LISTEN 2>/dev/null); [ -n "$$pids" ] && kill -9 $$pids 2>/dev/null || true
-	@start=8008; end=$$((start+20-1)); \
+	@start=8008; end=$$((start+100-1)); \
 		pids=$$(lsof -ti tcp:$$start-$$end -sTCP:LISTEN 2>/dev/null); [ -n "$$pids" ] && kill -9 $$pids 2>/dev/null || true
 
 delete-dir:
@@ -80,28 +80,40 @@ test-coverage:
 	@rm -f coverage.out
 
 run: build stop
-	@echo "=== Starting Prism cluster (1 bootstrap + 2 joining nodes) ==="
-	@echo "Starting bootstrap node..."
-	@if [ "$(BOOTSTRAP)" = "true" ]; then \
+	@$(MAKE) run-cluster NODES=3
+
+# Dynamic cluster creation with configurable node count
+# Usage: make run-cluster NODES=N (default: 3)
+run-cluster: build stop
+	@NODES=$${NODES:-3}; \
+	if [ $$NODES -lt 1 ]; then \
+		echo "Error: NODES must be at least 1"; \
+		exit 1; \
+	fi; \
+	echo "=== Starting Prism cluster with $$NODES nodes ==="; \
+	if [ $$NODES -eq 1 ]; then \
+		echo "Starting single bootstrap node..."; \
 		$(PRISMD) --bootstrap & \
+		echo "Single node cluster started! Use 'make stop' to stop."; \
 	else \
-		$(PRISMD) --bootstrap-expect=3 & \
+		echo "Using bootstrap-expect mode for $$NODES nodes..."; \
+		join_list=""; \
+		for i in $$(seq 0 $$(($$NODES-1))); do \
+			port=$$((4200+$$i)); \
+			if [ -z "$$join_list" ]; then \
+				join_list="0.0.0.0:$$port"; \
+			else \
+				join_list="$$join_list,0.0.0.0:$$port"; \
+			fi; \
+		done; \
+		for i in $$(seq 0 $$(($$NODES-1))); do \
+			serf_port=$$((4200+$$i)); \
+			echo "Starting node $$(($$i+1))/$$NODES (serf port $$serf_port)..."; \
+			$(PRISMD) --serf=0.0.0.0:$$serf_port --bootstrap-expect=$$NODES --join=$$join_list & \
+			sleep 1; \
+		done; \
+		echo "Cluster will form once all $$NODES nodes are discovered. Use 'make stop' to stop all nodes."; \
 	fi
-	@sleep 3
-	@echo "Starting joining node 1..."
-	@if [ "$(BOOTSTRAP)" = "true" ]; then \
-		$(PRISMD) --join=0.0.0.0:4200 & \
-	else \
-		$(PRISMD) --bootstrap-expect=3 --join=0.0.0.0:4200 & \
-	fi
-	@sleep 2
-	@echo "Starting joining node 2..."
-	@if [ "$(BOOTSTRAP)" = "true" ]; then \
-		$(PRISMD) --join=0.0.0.0:4200 & \
-	else \
-		$(PRISMD) --bootstrap-expect=3 --join=0.0.0.0:4200 & \
-	fi
-	@echo "Cluster started! Use 'make stop' to stop all nodes."
 
 bootstrap-expect: build stop
 	@echo "=== Starting Prism cluster with bootstrap-expect (3 nodes) ==="
@@ -114,5 +126,9 @@ bootstrap-expect: build stop
 	@echo "Starting node 3 with bootstrap-expect=3..."
 	@$(PRISMD) --serf=0.0.0.0:4202 --bootstrap-expect=3 --join=0.0.0.0:4200,0.0.0.0:4201,0.0.0.0:4202 &
 	@echo "Cluster will form once all 3 nodes are discovered. Use 'make stop' to stop all nodes."
+
+# Pattern rule for any number of nodes: make run-N
+run-%:
+	@$(MAKE) run-cluster NODES=$*
 
 
