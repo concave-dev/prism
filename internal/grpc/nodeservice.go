@@ -152,6 +152,10 @@ func (mts *MemoryTimeSeries) CalculateUsageVelocity(window time.Duration) float6
 // Returns true if memory usage was above the threshold for the entire duration, false otherwise.
 // Used to detect sustained memory pressure rather than temporary spikes.
 func (mts *MemoryTimeSeries) GetSustainedHighUsage(threshold float64, window time.Duration) (bool, time.Duration) {
+	if window <= 0 {
+		return false, 0
+	}
+
 	samples := mts.GetSamples()
 	if len(samples) == 0 {
 		return false, 0
