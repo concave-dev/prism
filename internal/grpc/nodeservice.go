@@ -297,28 +297,88 @@ done:
 		}
 	}
 
-	// Set overall status based on check results using proper health status hierarchy
-	// Priority order: UNHEALTHY > UNKNOWN > DEGRADED > HEALTHY
+	// ========================================================================
+	// HEALTH STATUS AGGREGATION - Service criticality-based policy
+	// ========================================================================
 	//
-	// Health Status Logic:
-	// - UNHEALTHY: Any service is unhealthy (serious issues)
-	// - UNKNOWN: All checks unknown or failed to complete
-	// - DEGRADED: Mixed states (some healthy, some unknown) - operational with minor issues
-	// - HEALTHY: All checks are healthy (fully operational)
-	var overallStatus proto.HealthStatus
-	totalChecks := len(checks)
+	// This logic distinguishes between control-plane services (critical for
+	// cluster participation) and resource monitors (affect performance only).
+	//
+	// SERVICE CLASSIFICATION:
+	// - Critical: serf, raft, grpc, api (cluster participation)
+	// - Resource: cpu_resource, memory_resource, disk_resource (performance)
+	//
+	// HEALTH STATUS HIERARCHY (evaluated in strict order):
+	// 1. UNHEALTHY: Any critical service is unhealthy → node unusable
+	// 2. UNKNOWN: All critical services are unknown → cannot assess participation
+	// 3. DEGRADED: Resource issues or partial visibility → functional but impaired
+	// 4. HEALTHY: All services healthy → fully operational
+	//
+	// REASONING:
+	// - Critical service failure = node cannot participate in cluster operations
+	// - Unknown critical status = cannot determine if node can participate safely
+	// - Resource degradation = node works but may have performance issues
+	// - Partial visibility = node functional but monitoring incomplete
 
-	if unhealthyCount > 0 {
-		// Any unhealthy service makes the entire node unhealthy
+	// Categorize health check results by service type
+	var criticalUnhealthy, allCriticalUnknown bool
+	var resourceUnhealthy, resourceDegraded, anyNonCriticalUnknown bool
+
+	criticalChecks := make(map[string]proto.HealthStatus)
+
+	for _, check := range checks {
+		if isCriticalService(check.Name) {
+			criticalChecks[check.Name] = check.Status
+			if check.Status == proto.HealthStatus_UNHEALTHY {
+				criticalUnhealthy = true
+			}
+		} else {
+			// Resource or other non-critical service
+			switch check.Status {
+			case proto.HealthStatus_UNHEALTHY:
+				resourceUnhealthy = true
+			case proto.HealthStatus_DEGRADED:
+				resourceDegraded = true
+			case proto.HealthStatus_UNKNOWN:
+				anyNonCriticalUnknown = true
+			}
+		}
+	}
+
+	// Check if ALL critical services are unknown (not just some)
+	// This indicates we cannot assess the node's ability to participate in cluster
+	criticalServiceNames := []string{"serf", "raft", "grpc", "api"}
+	allCriticalUnknown = true
+	for _, serviceName := range criticalServiceNames {
+		if status, exists := criticalChecks[serviceName]; !exists || status != proto.HealthStatus_UNKNOWN {
+			allCriticalUnknown = false
+			break
+		}
+	}
+
+	// Apply health status policy in strict hierarchical order
+	var overallStatus proto.HealthStatus
+
+	if criticalUnhealthy {
+		// POLICY RULE 1: Critical service failure → Node unusable
+		// Node cannot participate in cluster operations (voting, communication, etc.)
 		overallStatus = proto.HealthStatus_UNHEALTHY
-	} else if unknownCount == totalChecks {
-		// All checks are unknown - cannot determine health state
+
+	} else if allCriticalUnknown {
+		// POLICY RULE 2: Cannot assess critical services → Unknown operational state
+		// We cannot determine if the node can safely participate in cluster operations
 		overallStatus = proto.HealthStatus_UNKNOWN
-	} else if unknownCount > 0 {
-		// Mixed states: some healthy, some unknown - degraded but operational
+
+	} else if resourceUnhealthy || resourceDegraded || anyNonCriticalUnknown {
+		// POLICY RULE 3: Resource issues or partial visibility → Degraded but functional
+		// Critical services work, but either:
+		// - Resources are under pressure (affects performance)
+		// - Some monitoring is unavailable (partial visibility)
 		overallStatus = proto.HealthStatus_DEGRADED
+
 	} else {
-		// All checks are healthy - fully operational
+		// POLICY RULE 4: All services healthy → Fully operational
+		// Node is ready for full cluster participation and workload execution
 		overallStatus = proto.HealthStatus_HEALTHY
 	}
 
@@ -922,4 +982,37 @@ func formatBytes(bytes uint64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
+}
+
+// ============================================================================
+// HEALTH CHECK UTILITIES - Service criticality classification
+// ============================================================================
+
+// isCriticalService determines whether a health check represents a critical
+// service that is essential for cluster participation versus a resource check
+// that affects performance but doesn't prevent basic cluster functionality.
+//
+// Critical services (UNHEALTHY = Node UNHEALTHY):
+// - serf: Cluster membership and failure detection (cannot communicate)
+// - raft: Consensus participation (cannot vote or replicate state)
+// - grpc: Inter-node communication (cannot receive requests)
+// - api: Management interface (cannot serve admin requests)
+//
+// Resource services (DEGRADED/UNHEALTHY = Node DEGRADED):
+// - cpu_resource: CPU load/usage monitoring (affects performance)
+// - memory_resource: Memory pressure monitoring (affects capacity)
+// - disk_resource: Disk space monitoring (affects storage)
+//
+// This classification ensures that resource pressure doesn't mark nodes as
+// completely unusable, while actual service failures correctly indicate
+// nodes that cannot participate in cluster operations.
+func isCriticalService(checkName string) bool {
+	criticalServices := map[string]bool{
+		"serf": true, // Cluster membership - essential for communication
+		"raft": true, // Consensus participation - essential for state sync
+		"grpc": true, // Inter-node RPC - essential for cluster coordination
+		"api":  true, // Management API - essential for administration
+	}
+
+	return criticalServices[checkName]
 }
