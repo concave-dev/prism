@@ -552,7 +552,7 @@ func (api *PrismAPIClient) GetRaftPeers() (*RaftPeersResponse, error) {
 
 	resp, err := api.client.R().
 		SetResult(&response).
-		Get("/cluster/raft/peers")
+		Get("/cluster/peers")
 
 	if err != nil {
 		logging.Error("Failed to connect to API server: %v", err)
