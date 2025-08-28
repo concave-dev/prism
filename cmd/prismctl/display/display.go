@@ -105,8 +105,14 @@ func DisplayMembersFromAPI(members []client.ClusterMember) {
 					serfDisplay = "dead"
 				}
 
+				// Format status with health check counts for verbose mode
+				statusDisplay := member.Status
+				if member.TotalChecks > 0 {
+					statusDisplay = fmt.Sprintf("%s (%d/%d)", member.Status, member.HealthyChecks, member.TotalChecks)
+				}
+
 				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-					internalutils.TruncateIDSafe(member.ID), name, member.Address, member.Status,
+					internalutils.TruncateIDSafe(member.ID), name, member.Address, statusDisplay,
 					serfDisplay, raftStatus, lastSeen, leader)
 			} else {
 				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",

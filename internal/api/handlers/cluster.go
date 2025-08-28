@@ -60,6 +60,10 @@ type ClusterMember struct {
 	SerfStatus string `json:"serfStatus"` // alive, failed, dead
 	RaftStatus string `json:"raftStatus"` // alive, failed, dead
 	IsLeader   bool   `json:"isLeader"`   // true if this node is the current Raft leader
+
+	// Health check details (optional - populated when detailed health info is needed)
+	HealthyChecks int `json:"healthyChecks,omitempty"` // Number of healthy checks
+	TotalChecks   int `json:"totalChecks,omitempty"`   // Total number of health checks
 }
 
 // Represents cluster status in API responses
@@ -204,18 +208,20 @@ func HandleMembers(serfManager *serf.SerfManager, raftManager *raft.RaftManager,
 			isLeader := (raftLeader != "" && (raftLeader == member.ID || raftLeader == member.Name))
 
 			// Query health status via gRPC - fallback to Serf status if health check fails
-			healthStatus := getNodeHealthStatus(clientPool, member.ID, serfStatus)
+			healthDetails := getNodeHealthStatusDetails(clientPool, member.ID, serfStatus)
 
 			apiMember := ClusterMember{
-				ID:         member.ID,
-				Name:       member.Name,
-				Address:    fmt.Sprintf("%s:%d", member.Addr.String(), member.Port),
-				Status:     healthStatus,
-				Tags:       member.Tags,
-				LastSeen:   member.LastSeen,
-				SerfStatus: serfStatus,
-				RaftStatus: raftStatus,
-				IsLeader:   isLeader,
+				ID:            member.ID,
+				Name:          member.Name,
+				Address:       fmt.Sprintf("%s:%d", member.Addr.String(), member.Port),
+				Status:        healthDetails.Status,
+				Tags:          member.Tags,
+				LastSeen:      member.LastSeen,
+				SerfStatus:    serfStatus,
+				RaftStatus:    raftStatus,
+				IsLeader:      isLeader,
+				HealthyChecks: healthDetails.HealthyChecks,
+				TotalChecks:   healthDetails.TotalChecks,
 			}
 			apiMembers = append(apiMembers, apiMember)
 		}
@@ -271,23 +277,25 @@ func HandleClusterInfo(serfManager *serf.SerfManager, raftManager *raft.RaftMana
 			isLeader := (raftLeader != "" && (raftLeader == member.ID || raftLeader == member.Name))
 
 			// Query health status via gRPC - fallback to Serf status if health check fails
-			healthStatus := getNodeHealthStatus(clientPool, member.ID, serfStatus)
+			healthDetails := getNodeHealthStatusDetails(clientPool, member.ID, serfStatus)
 
 			apiMember := ClusterMember{
-				ID:         member.ID,
-				Name:       member.Name,
-				Address:    fmt.Sprintf("%s:%d", member.Addr.String(), member.Port),
-				Status:     healthStatus,
-				Tags:       member.Tags,
-				LastSeen:   member.LastSeen,
-				SerfStatus: serfStatus,
-				RaftStatus: raftStatus,
-				IsLeader:   isLeader,
+				ID:            member.ID,
+				Name:          member.Name,
+				Address:       fmt.Sprintf("%s:%d", member.Addr.String(), member.Port),
+				Status:        healthDetails.Status,
+				Tags:          member.Tags,
+				LastSeen:      member.LastSeen,
+				SerfStatus:    serfStatus,
+				RaftStatus:    raftStatus,
+				IsLeader:      isLeader,
+				HealthyChecks: healthDetails.HealthyChecks,
+				TotalChecks:   healthDetails.TotalChecks,
 			}
 			apiMembers = append(apiMembers, apiMember)
 
 			// Count stats by health status instead of Serf status for better reporting
-			statusCount[healthStatus]++
+			statusCount[healthDetails.Status]++
 		}
 
 		// Sort members
@@ -363,16 +371,26 @@ func getRaftPeerStatus(member *serf.PrismNode, raftPeers []string) RaftStatus {
 	return RaftFailed // In config but unreachable (network partition)
 }
 
-// getNodeHealthStatus queries the health status of a node via gRPC and returns
-// a user-friendly health status string. Falls back to Serf-based status if
-// health checks are unavailable or fail.
+// HealthStatusDetails contains detailed health information including check counts
+type HealthStatusDetails struct {
+	Status        string // health status string
+	HealthyChecks int    // number of healthy checks
+	TotalChecks   int    // total number of checks
+}
+
+// getNodeHealthStatusDetails queries the health status of a node via gRPC and returns
+// detailed health information including check counts. Falls back to Serf-based status
+// if health checks are unavailable or fail.
 //
-// Returns one of: "healthy", "unhealthy", "degraded", "unknown", "dead", "failed"
-// Health status takes priority over Serf status for better operational visibility.
-func getNodeHealthStatus(clientPool *grpc.ClientPool, nodeID, serfStatus string) string {
+// Returns detailed health status with check counts for enhanced operational visibility.
+func getNodeHealthStatusDetails(clientPool *grpc.ClientPool, nodeID, serfStatus string) HealthStatusDetails {
 	// If node is not in Serf (dead/failed), skip health checks as node is unreachable
 	if serfStatus == "dead" || serfStatus == "failed" {
-		return serfStatus
+		return HealthStatusDetails{
+			Status:        serfStatus,
+			HealthyChecks: 0,
+			TotalChecks:   0,
+		}
 	}
 
 	// Query health via gRPC with a short timeout to avoid blocking the list operation
@@ -381,30 +399,56 @@ func getNodeHealthStatus(clientPool *grpc.ClientPool, nodeID, serfStatus string)
 		if err != nil {
 			// Health check failed - return "unknown" rather than Serf status
 			// This indicates the node is reachable via Serf but health is unclear
-			return "unknown"
+			return HealthStatusDetails{
+				Status:        "unknown",
+				HealthyChecks: 0,
+				TotalChecks:   0,
+			}
+		}
+
+		// Count healthy checks for detailed reporting
+		healthyCount := 0
+		totalChecks := len(grpcRes.GetChecks())
+		for _, check := range grpcRes.GetChecks() {
+			if check.GetStatus().String() == "HEALTHY" {
+				healthyCount++
+			}
 		}
 
 		// Map gRPC health status to lowercase string for consistent display
+		var status string
 		switch grpcRes.GetStatus().String() {
 		case "HEALTHY":
-			return "healthy"
+			status = "healthy"
 		case "UNHEALTHY":
-			return "unhealthy"
+			status = "unhealthy"
 		case "DEGRADED":
-			return "degraded"
+			status = "degraded"
 		case "UNKNOWN":
-			return "unknown"
+			status = "unknown"
 		default:
-			return "unknown"
+			status = "unknown"
+		}
+
+		return HealthStatusDetails{
+			Status:        status,
+			HealthyChecks: healthyCount,
+			TotalChecks:   totalChecks,
 		}
 	}
 
 	// No gRPC client pool available - fall back to Serf status
 	// Map "alive" to "unknown" since we can't determine actual health
-	if serfStatus == "alive" {
-		return "unknown"
+	fallbackStatus := "unknown"
+	if serfStatus != "alive" {
+		fallbackStatus = serfStatus
 	}
-	return serfStatus
+
+	return HealthStatusDetails{
+		Status:        fallbackStatus,
+		HealthyChecks: 0,
+		TotalChecks:   0,
+	}
 }
 
 // isRaftNodeReachable performs a basic connectivity check to a Raft node

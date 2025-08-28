@@ -70,6 +70,10 @@ type ClusterMember struct {
 	SerfStatus string `json:"serfStatus"` // alive, failed, left
 	RaftStatus string `json:"raftStatus"` // alive, failed, left
 	IsLeader   bool   `json:"isLeader"`   // true if this node is the current Raft leader
+
+	// Health check details (optional - populated when detailed health info is needed)
+	HealthyChecks int `json:"healthyChecks,omitempty"` // Number of healthy checks
+	TotalChecks   int `json:"totalChecks,omitempty"`   // Total number of health checks
 }
 
 // GetID returns the unique cluster member identifier for MemberLike interface compliance.
@@ -444,15 +448,17 @@ func (api *PrismAPIClient) GetMembers() ([]ClusterMember, error) {
 		for _, memberData := range membersData {
 			if memberMap, ok := memberData.(map[string]any); ok {
 				member := ClusterMember{
-					ID:         utils.GetString(memberMap, "id"),
-					Name:       utils.GetString(memberMap, "name"),
-					Address:    utils.GetString(memberMap, "address"),
-					Status:     utils.GetString(memberMap, "status"),
-					Tags:       utils.GetStringMap(memberMap, "tags"),
-					LastSeen:   utils.GetTime(memberMap, "lastSeen"),
-					SerfStatus: utils.GetString(memberMap, "serfStatus"),
-					RaftStatus: utils.GetString(memberMap, "raftStatus"),
-					IsLeader:   utils.GetBool(memberMap, "isLeader"),
+					ID:            utils.GetString(memberMap, "id"),
+					Name:          utils.GetString(memberMap, "name"),
+					Address:       utils.GetString(memberMap, "address"),
+					Status:        utils.GetString(memberMap, "status"),
+					Tags:          utils.GetStringMap(memberMap, "tags"),
+					LastSeen:      utils.GetTime(memberMap, "lastSeen"),
+					SerfStatus:    utils.GetString(memberMap, "serfStatus"),
+					RaftStatus:    utils.GetString(memberMap, "raftStatus"),
+					IsLeader:      utils.GetBool(memberMap, "isLeader"),
+					HealthyChecks: utils.GetInt(memberMap, "healthyChecks"),
+					TotalChecks:   utils.GetInt(memberMap, "totalChecks"),
 				}
 				members = append(members, member)
 			}
@@ -503,15 +509,17 @@ func (api *PrismAPIClient) GetClusterInfo() (*ClusterInfo, error) {
 			for _, memberData := range membersData {
 				if memberMap, ok := memberData.(map[string]any); ok {
 					member := ClusterMember{
-						ID:         utils.GetString(memberMap, "id"),
-						Name:       utils.GetString(memberMap, "name"),
-						Address:    utils.GetString(memberMap, "address"),
-						Status:     utils.GetString(memberMap, "status"),
-						Tags:       utils.GetStringMap(memberMap, "tags"),
-						LastSeen:   utils.GetTime(memberMap, "lastSeen"),
-						SerfStatus: utils.GetString(memberMap, "serfStatus"),
-						RaftStatus: utils.GetString(memberMap, "raftStatus"),
-						IsLeader:   utils.GetBool(memberMap, "isLeader"),
+						ID:            utils.GetString(memberMap, "id"),
+						Name:          utils.GetString(memberMap, "name"),
+						Address:       utils.GetString(memberMap, "address"),
+						Status:        utils.GetString(memberMap, "status"),
+						Tags:          utils.GetStringMap(memberMap, "tags"),
+						LastSeen:      utils.GetTime(memberMap, "lastSeen"),
+						SerfStatus:    utils.GetString(memberMap, "serfStatus"),
+						RaftStatus:    utils.GetString(memberMap, "raftStatus"),
+						IsLeader:      utils.GetBool(memberMap, "isLeader"),
+						HealthyChecks: utils.GetInt(memberMap, "healthyChecks"),
+						TotalChecks:   utils.GetInt(memberMap, "totalChecks"),
 					}
 					members = append(members, member)
 				}

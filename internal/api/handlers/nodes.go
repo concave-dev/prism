@@ -70,18 +70,20 @@ func HandleNodeByID(serfManager *serf.SerfManager, raftManager *raft.RaftManager
 		isLeader := (raftLeader != "" && (raftLeader == member.ID || raftLeader == member.Name))
 
 		// Query health status via gRPC - fallback to Serf status if health check fails
-		healthStatus := getNodeHealthStatus(clientPool, member.ID, serfStatus)
+		healthDetails := getNodeHealthStatusDetails(clientPool, member.ID, serfStatus)
 
 		apiMember := ClusterMember{
-			ID:         member.ID,
-			Name:       member.Name,
-			Address:    fmt.Sprintf("%s:%d", member.Addr.String(), member.Port),
-			Status:     healthStatus,
-			Tags:       member.Tags,
-			LastSeen:   member.LastSeen,
-			SerfStatus: serfStatus,
-			RaftStatus: raftStatus,
-			IsLeader:   isLeader,
+			ID:            member.ID,
+			Name:          member.Name,
+			Address:       fmt.Sprintf("%s:%d", member.Addr.String(), member.Port),
+			Status:        healthDetails.Status,
+			Tags:          member.Tags,
+			LastSeen:      member.LastSeen,
+			SerfStatus:    serfStatus,
+			RaftStatus:    raftStatus,
+			IsLeader:      isLeader,
+			HealthyChecks: healthDetails.HealthyChecks,
+			TotalChecks:   healthDetails.TotalChecks,
 		}
 
 		c.JSON(http.StatusOK, gin.H{
