@@ -511,7 +511,13 @@ func Run() error {
 		logging.Info("Context cancelled")
 	}
 
-	// Graceful shutdown
+	// ============================================================================
+	// GRACEFUL SHUTDOWN SEQUENCE
+	// Services are shut down in reverse dependency order to prevent breaking
+	// active connections and ensure clean resource cleanup:
+	// API → gRPC → Client Pool → Cluster ID → Raft → Serf
+	// ============================================================================
+
 	logging.Info("Initiating graceful shutdown...")
 
 	// Shutdown API server if running
