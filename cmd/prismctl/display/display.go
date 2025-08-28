@@ -562,18 +562,35 @@ func DisplaySandboxInfo(sandbox *client.Sandbox) {
 // across the distributed cluster. Provides structured log output that maintains
 // readability while preserving execution context and timing information.
 //
+// The sandbox ID is shown in the header only when verbose mode is enabled,
+// following the same pattern as other prismctl commands for consistent UX.
+// In non-verbose mode, full IDs in log content are truncated to 12 characters.
+//
 // TODO: Future enhancement for real-time log streaming with --follow support
 // for continuous monitoring of active sandbox execution environments.
-func DisplaySandboxLogs(sandboxName string, logs []string) {
+func DisplaySandboxLogs(sandboxName, sandboxID string, logs []string, verbose bool) {
 	if len(logs) == 0 {
-		fmt.Printf("No logs available for sandbox '%s'\n", sandboxName)
+		if verbose {
+			fmt.Printf("No logs available for sandbox '%s' (%s)\n", sandboxName, internalutils.TruncateIDSafe(sandboxID))
+		} else {
+			fmt.Printf("No logs available for sandbox '%s'\n", sandboxName)
+		}
 		return
 	}
 
-	fmt.Printf("Logs for sandbox '%s':\n", sandboxName)
+	if verbose {
+		fmt.Printf("Logs for sandbox '%s' (%s):\n", sandboxName, internalutils.TruncateIDSafe(sandboxID))
+	} else {
+		fmt.Printf("Logs for sandbox '%s':\n", sandboxName)
+	}
 	fmt.Println("=" + strings.Repeat("=", 50))
 
 	for _, logLine := range logs {
+		// In non-verbose mode, truncate any full IDs in log content to match table display
+		if !verbose {
+			// Replace full sandbox ID with truncated version in log content
+			logLine = strings.ReplaceAll(logLine, fmt.Sprintf("(%s)", sandboxID), fmt.Sprintf("(%s)", internalutils.TruncateIDSafe(sandboxID)))
+		}
 		fmt.Println(logLine)
 	}
 }

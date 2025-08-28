@@ -305,7 +305,7 @@ func HandleSandboxLogs(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to encode JSON: %w", err)
 		}
 	} else {
-		display.DisplaySandboxLogs(sandboxName, logs)
+		display.DisplaySandboxLogs(sandboxName, resolvedSandboxID, logs, config.Global.Verbose)
 	}
 
 	logging.Success("Successfully retrieved logs for sandbox '%s' (%s)", sandboxName, resolvedSandboxID)
