@@ -51,9 +51,9 @@ func DisplayMembersFromAPI(members []client.ClusterMember) {
 		return
 	}
 
-	// Sort members by name for consistent output
+	// Sort members by last seen time (most recent first)
 	sort.Slice(members, func(i, j int) bool {
-		return members[i].Name < members[j].Name
+		return members[i].LastSeen.After(members[j].LastSeen)
 	})
 
 	if config.Global.Output == "json" {
