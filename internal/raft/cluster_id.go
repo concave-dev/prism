@@ -37,7 +37,6 @@ import (
 
 	"github.com/concave-dev/prism/internal/logging"
 	"github.com/concave-dev/prism/internal/utils"
-	"github.com/hashicorp/raft"
 )
 
 // ClusterIDCoordinator manages the persistent cluster identifier for the
@@ -150,7 +149,7 @@ func (c *ClusterIDCoordinator) coordinateClusterID() {
 // the same utility functions as other cluster resources for consistency.
 func (c *ClusterIDCoordinator) ensureClusterID() {
 	// Only leader can generate and set cluster ID
-	if c.raftManager.raft.State() != raft.Leader {
+	if c.raftManager == nil || !c.raftManager.IsLeader() {
 		logging.Debug("ClusterID: Node is not leader, skipping cluster ID check")
 		return
 	}
