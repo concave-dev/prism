@@ -247,7 +247,7 @@ func (s *Server) handleClusterResources(c *gin.Context) {
 	handler(c)
 }
 
-// getHandlerClusterResources creates cluster resources handler with gRPC and Serf.
+// getHandlerClusterResources creates cluster resources handler with gRPC only.
 func (s *Server) getHandlerClusterResources() gin.HandlerFunc {
 	return handlers.HandleClusterResources(s.grpcClientPool, s.serfManager)
 }
@@ -258,7 +258,7 @@ func (s *Server) handleNodeResources(c *gin.Context) {
 	handler(c)
 }
 
-// getHandlerNodeResources creates node resources handler with gRPC and Serf.
+// getHandlerNodeResources creates node resources handler with gRPC only.
 func (s *Server) getHandlerNodeResources() gin.HandlerFunc {
 	return handlers.HandleNodeResources(s.grpcClientPool, s.serfManager)
 }

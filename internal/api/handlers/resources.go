@@ -1,7 +1,7 @@
 // Package handlers provides HTTP request handlers for the Prism API.
 //
 // This file implements resource endpoint handlers that aggregate node resource
-// information across the cluster using gRPC with Serf fallback. Handlers return
+// information across the cluster using gRPC exclusively. Handlers return
 // normalized resource structures for both cluster-wide and per-node queries,
 // supporting operational visibility and scheduling decisions.
 //
@@ -10,8 +10,8 @@
 //   - GET /nodes/:id/resources: Resources for a specific node
 //
 // DESIGN:
-// Prefer gRPC for fast node-to-node queries with automatic Serf fallback when
-// remote calls fail, ensuring resilient resource collection across the cluster.
+// Uses gRPC exclusively for node-to-node resource queries with fail-fast error
+// handling. Returns partial results with unreachable node lists for transparency.
 package handlers
 
 import (
@@ -25,7 +25,6 @@ import (
 	"github.com/concave-dev/prism/internal/grpc"
 	"github.com/concave-dev/prism/internal/grpc/proto"
 	"github.com/concave-dev/prism/internal/logging"
-	"github.com/concave-dev/prism/internal/resources"
 	"github.com/concave-dev/prism/internal/serf"
 	"github.com/gin-gonic/gin"
 )
@@ -83,61 +82,6 @@ type NodeResourcesResponse struct {
 	Score float64 `json:"score"` // Composite resource score for workload placement
 }
 
-// convertToAPIResponse converts resources.NodeResources to API response format
-func convertToAPIResponse(nodeRes *resources.NodeResources) NodeResourcesResponse {
-	return NodeResourcesResponse{
-		NodeID:    nodeRes.NodeID,
-		NodeName:  nodeRes.NodeName,
-		Timestamp: nodeRes.Timestamp,
-
-		// CPU Information
-		CPUCores:     nodeRes.CPUCores,
-		CPUUsage:     nodeRes.CPUUsage,
-		CPUAvailable: nodeRes.CPUAvailable,
-
-		// Memory Information
-		MemoryTotal:     nodeRes.MemoryTotal,
-		MemoryUsed:      nodeRes.MemoryUsed,
-		MemoryAvailable: nodeRes.MemoryAvailable,
-		MemoryUsage:     nodeRes.MemoryUsage,
-
-		// Disk Information
-		DiskTotal:     nodeRes.DiskTotal,
-		DiskUsed:      nodeRes.DiskUsed,
-		DiskAvailable: nodeRes.DiskAvailable,
-		DiskUsage:     nodeRes.DiskUsage,
-
-		// Go Runtime Information
-		GoRoutines: nodeRes.GoRoutines,
-		GoMemAlloc: nodeRes.GoMemAlloc,
-		GoMemSys:   nodeRes.GoMemSys,
-		GoGCCycles: nodeRes.GoGCCycles,
-		GoGCPause:  nodeRes.GoGCPause,
-
-		// Node Status
-		Uptime: formatDuration(nodeRes.Uptime),
-		Load1:  nodeRes.Load1,
-		Load5:  nodeRes.Load5,
-		Load15: nodeRes.Load15,
-
-		// Capacity Limits
-		MaxJobs:        nodeRes.MaxJobs,
-		CurrentJobs:    nodeRes.CurrentJobs,
-		AvailableSlots: nodeRes.AvailableSlots,
-
-		// Human-readable sizes (in MB)
-		MemoryTotalMB:     int(nodeRes.MemoryTotal / (1024 * 1024)),
-		MemoryUsedMB:      int(nodeRes.MemoryUsed / (1024 * 1024)),
-		MemoryAvailableMB: int(nodeRes.MemoryAvailable / (1024 * 1024)),
-		DiskTotalMB:       int(nodeRes.DiskTotal / (1024 * 1024)),
-		DiskUsedMB:        int(nodeRes.DiskUsed / (1024 * 1024)),
-		DiskAvailableMB:   int(nodeRes.DiskAvailable / (1024 * 1024)),
-
-		// Resource Score
-		Score: nodeRes.Score,
-	}
-}
-
 // formatDuration formats a duration into human-readable format
 func formatDuration(d time.Duration) string {
 	if d < time.Minute {
@@ -153,46 +97,26 @@ func formatDuration(d time.Duration) string {
 	}
 }
 
-// HandleClusterResources returns resources from all cluster nodes using gRPC with serf fallback
+// HandleClusterResources returns resources from all cluster nodes using gRPC exclusively.
+// Returns partial results with unreachable nodes listed for transparency.
 func HandleClusterResources(clientPool *grpc.ClientPool, serfManager *serf.SerfManager) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Try gRPC first for faster communication - this now includes all nodes (local + remote)
+		// Get all cluster members from serf for node discovery
 		allMembers := serfManager.GetMembers()
 		var resList []NodeResourcesResponse
+		var unreachable []string
 
-		// Query all nodes (including local) using the unified approach
+		// Query all nodes using gRPC - fail fast, no fallbacks
 		for nodeID := range allMembers {
 			grpcRes, err := clientPool.GetResourcesFromNode(nodeID)
 			if err != nil {
 				logging.Warn("Failed to get resources from node %s via gRPC: %v", nodeID, err)
+				unreachable = append(unreachable, nodeID)
 				continue
 			}
 
 			apiRes := convertFromGRPCResponse(grpcRes)
 			resList = append(resList, apiRes)
-		}
-
-		// If we didn't get enough nodes via gRPC, fall back to serf for missing nodes
-		expectedNodes := len(serfManager.GetMembers())
-		if len(resList) < expectedNodes {
-			logging.Warn("gRPC returned %d nodes, expected %d. Falling back to serf queries", len(resList), expectedNodes)
-
-			// Get all resources via serf as fallback
-			resourceMap, err := serfManager.QueryResources()
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{
-					"status":  "error",
-					"message": fmt.Sprintf("Failed to query cluster resources via gRPC or serf: %v", err),
-				})
-				return
-			}
-
-			// Use serf results instead
-			resList = []NodeResourcesResponse{}
-			for _, nodeRes := range resourceMap {
-				apiRes := convertToAPIResponse(nodeRes)
-				resList = append(resList, apiRes)
-			}
 		}
 
 		// Sort based on query parameter
@@ -222,15 +146,24 @@ func HandleClusterResources(clientPool *grpc.ClientPool, serfManager *serf.SerfM
 			})
 		}
 
-		c.JSON(http.StatusOK, gin.H{
+		response := gin.H{
 			"status": "success",
 			"data":   resList,
 			"count":  len(resList),
-		})
+		}
+
+		// Include unreachable nodes for observability if any failed
+		if len(unreachable) > 0 {
+			response["unreachable"] = unreachable
+			response["unreachable_count"] = len(unreachable)
+		}
+
+		c.JSON(http.StatusOK, response)
 	}
 }
 
-// HandleNodeResources returns resources from a specific node using gRPC with serf fallback
+// HandleNodeResources returns resources from a specific node using gRPC exclusively.
+// Returns 503 Service Unavailable if the node cannot be reached via gRPC.
 func HandleNodeResources(clientPool *grpc.ClientPool, serfManager *serf.SerfManager) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		nodeID := c.Param("id")
@@ -252,25 +185,13 @@ func HandleNodeResources(clientPool *grpc.ClientPool, serfManager *serf.SerfMana
 			return
 		}
 
-		// Try gRPC first - unified approach for all nodes (local and remote)
+		// Query node using gRPC - fail fast, no fallbacks
 		grpcRes, err := clientPool.GetResourcesFromNode(nodeID)
 		if err != nil {
-			logging.Warn("gRPC query failed for node %s, falling back to serf: %v", nodeID, err)
-
-			// Fall back to serf query
-			nodeRes, serfErr := serfManager.QueryResourcesFromNode(nodeID)
-			if serfErr != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{
-					"status":  "error",
-					"message": fmt.Sprintf("Failed to query node resources via gRPC or serf: %v", serfErr),
-				})
-				return
-			}
-
-			apiRes := convertToAPIResponse(nodeRes)
-			c.JSON(http.StatusOK, gin.H{
-				"status": "success",
-				"data":   apiRes,
+			logging.Error("Failed to get resources from node %s via gRPC: %v", nodeID, err)
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"status":  "error",
+				"message": fmt.Sprintf("Node '%s' is unreachable via gRPC: %v", nodeID, err),
 			})
 			return
 		}
