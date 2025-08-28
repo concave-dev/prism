@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"github.com/concave-dev/prism/internal/config"
+	"github.com/concave-dev/prism/internal/logging"
 )
 
 const (
@@ -146,14 +147,8 @@ func (c *Config) Validate() error {
 	}
 
 	// Validate log level
-	validLogLevels := map[string]bool{
-		"DEBUG": true,
-		"INFO":  true,
-		"WARN":  true,
-		"ERROR": true,
-	}
-	if !validLogLevels[c.LogLevel] {
-		return fmt.Errorf("invalid log level: %s", c.LogLevel)
+	if err := logging.ValidateLogLevel(c.LogLevel); err != nil {
+		return err
 	}
 
 	return nil

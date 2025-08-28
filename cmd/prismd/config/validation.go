@@ -82,14 +82,8 @@ func ValidateConfig() error {
 		}
 	}
 
-	validLogLevels := map[string]bool{
-		"DEBUG": true,
-		"INFO":  true,
-		"WARN":  true,
-		"ERROR": true,
-	}
-	if !validLogLevels[Global.LogLevel] {
-		return fmt.Errorf("invalid log level: %s", Global.LogLevel)
+	if err := logging.ValidateLogLevel(Global.LogLevel); err != nil {
+		return err
 	}
 
 	// Configure HTTP API service address for cluster management operations.
