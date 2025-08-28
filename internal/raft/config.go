@@ -36,6 +36,7 @@ import (
 
 	"github.com/concave-dev/prism/internal/config"
 	"github.com/concave-dev/prism/internal/logging"
+	"github.com/concave-dev/prism/internal/validate"
 )
 
 const (
@@ -146,33 +147,33 @@ func DefaultConfig() *Config {
 // catching configuration errors early during startup. Validates both individual
 // parameter ranges and logical relationships between timeout settings.
 func (c *Config) Validate() error {
-	if c.BindAddr == "" {
-		return fmt.Errorf("bind address cannot be empty")
+	if err := validate.ValidateRequiredString(c.BindAddr, "bind address"); err != nil {
+		return err
 	}
-	if c.BindPort <= 0 || c.BindPort > 65535 {
-		return fmt.Errorf("bind port must be between 1 and 65535")
+	if err := validate.ValidatePortRange(c.BindPort); err != nil {
+		return fmt.Errorf("bind port validation failed: %w", err)
 	}
-	if c.NodeID == "" {
-		return fmt.Errorf("node ID cannot be empty")
+	if err := validate.ValidateRequiredString(c.NodeID, "node ID"); err != nil {
+		return err
 	}
 
 	// TODO: Path validation
-	if c.DataDir == "" {
-		return fmt.Errorf("data directory cannot be empty")
+	if err := validate.ValidateRequiredString(c.DataDir, "data directory"); err != nil {
+		return err
 	}
 
 	// Validate timeouts
-	if c.HeartbeatTimeout <= 0 {
-		return fmt.Errorf("heartbeat timeout must be positive")
+	if err := validate.ValidatePositiveTimeout(c.HeartbeatTimeout, "heartbeat timeout"); err != nil {
+		return err
 	}
-	if c.ElectionTimeout <= 0 {
-		return fmt.Errorf("election timeout must be positive")
+	if err := validate.ValidatePositiveTimeout(c.ElectionTimeout, "election timeout"); err != nil {
+		return err
 	}
-	if c.CommitTimeout <= 0 {
-		return fmt.Errorf("commit timeout must be positive")
+	if err := validate.ValidatePositiveTimeout(c.CommitTimeout, "commit timeout"); err != nil {
+		return err
 	}
-	if c.LeaderLeaseTimeout <= 0 {
-		return fmt.Errorf("leader lease timeout must be positive")
+	if err := validate.ValidatePositiveTimeout(c.LeaderLeaseTimeout, "leader lease timeout"); err != nil {
+		return err
 	}
 
 	// Validate log level

@@ -34,6 +34,7 @@ import (
 
 	"github.com/concave-dev/prism/internal/config"
 	"github.com/concave-dev/prism/internal/logging"
+	"github.com/concave-dev/prism/internal/validate"
 )
 
 const (
@@ -118,26 +119,26 @@ func DefaultConfig() *Config {
 // TODO: Add validation for TLS certificate files when TLS is enabled
 // TODO: Validate network address reachability
 func (c *Config) Validate() error {
-	if c.BindAddr == "" {
-		return fmt.Errorf("bind address cannot be empty")
+	if err := validate.ValidateRequiredString(c.BindAddr, "bind address"); err != nil {
+		return err
 	}
-	if c.BindPort <= 0 || c.BindPort > 65535 {
-		return fmt.Errorf("bind port must be between 1 and 65535")
+	if err := validate.ValidatePortRange(c.BindPort); err != nil {
+		return fmt.Errorf("bind port validation failed: %w", err)
 	}
-	if c.NodeID == "" {
-		return fmt.Errorf("node ID cannot be empty")
+	if err := validate.ValidateRequiredString(c.NodeID, "node ID"); err != nil {
+		return err
 	}
 	if c.MaxMsgSize <= 0 {
 		return fmt.Errorf("max message size must be positive")
 	}
-	if c.HealthCheckTimeout <= 0 {
-		return fmt.Errorf("health check timeout must be positive")
+	if err := validate.ValidatePositiveTimeout(c.HealthCheckTimeout, "health check timeout"); err != nil {
+		return err
 	}
-	if c.ClientCallTimeout <= 0 {
-		return fmt.Errorf("client call timeout must be positive")
+	if err := validate.ValidatePositiveTimeout(c.ClientCallTimeout, "client call timeout"); err != nil {
+		return err
 	}
-	if c.ResourceCallTimeout <= 0 {
-		return fmt.Errorf("resource call timeout must be positive")
+	if err := validate.ValidatePositiveTimeout(c.ResourceCallTimeout, "resource call timeout"); err != nil {
+		return err
 	}
 
 	// Validate timeout relationships to prevent race conditions

@@ -23,6 +23,7 @@ import (
 	"github.com/concave-dev/prism/internal/grpc"
 	"github.com/concave-dev/prism/internal/raft"
 	"github.com/concave-dev/prism/internal/serf"
+	"github.com/concave-dev/prism/internal/validate"
 )
 
 const (
@@ -101,11 +102,11 @@ func DefaultConfig() *Config {
 // TODO: Add validation for TLS certificate files when HTTPS is implemented
 // TODO: Add validation for middleware configuration
 func (c *Config) Validate() error {
-	if c.BindAddr == "" {
-		return fmt.Errorf("bind address cannot be empty")
+	if err := validate.ValidateRequiredString(c.BindAddr, "bind address"); err != nil {
+		return err
 	}
-	if c.BindPort <= 0 || c.BindPort > 65535 {
-		return fmt.Errorf("bind port must be between 1 and 65535")
+	if err := validate.ValidatePortRange(c.BindPort); err != nil {
+		return fmt.Errorf("bind port validation failed: %w", err)
 	}
 	if c.SerfManager == nil {
 		return fmt.Errorf("serf manager cannot be nil")
