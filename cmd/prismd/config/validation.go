@@ -20,8 +20,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/concave-dev/prism/internal/grpc"
 	"github.com/concave-dev/prism/internal/logging"
 	"github.com/concave-dev/prism/internal/names"
+	"github.com/concave-dev/prism/internal/raft"
 	"github.com/concave-dev/prism/internal/validate"
 )
 
@@ -127,7 +129,7 @@ func ValidateConfig() error {
 		Global.RaftPort = raftNetAddr.Port
 	} else {
 		Global.RaftAddr = Global.SerfAddr
-		Global.RaftPort = 6969 // TODO: Use raft.DefaultRaftPort constant
+		Global.RaftPort = raft.DefaultRaftPort
 	}
 
 	// Configure gRPC service address for high-performance inter-node communication.
@@ -148,7 +150,7 @@ func ValidateConfig() error {
 		Global.GRPCPort = grpcNetAddr.Port
 	} else {
 		Global.GRPCAddr = Global.SerfAddr
-		Global.GRPCPort = 7117 // TODO: Use grpc.DefaultGRPCPort constant
+		Global.GRPCPort = grpc.DefaultGRPCPort
 	}
 
 	// Validate cluster join addresses for fault-tolerant node discovery.
