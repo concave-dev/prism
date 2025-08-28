@@ -7,6 +7,11 @@ import (
 	"github.com/concave-dev/prism/internal/utils"
 )
 
+const (
+	// testNodeID is a fixed node ID used in test cases for consistency
+	testNodeID = "abc123def456"
+)
+
 // TestNewSerfManager tests SerfManager creation with valid configuration
 func TestNewSerfManager(t *testing.T) {
 	config := &Config{
@@ -115,7 +120,7 @@ func TestBuildNodeTags(t *testing.T) {
 			},
 			expected: map[string]string{
 				"env":       "prod",
-				"node_id":   "abc123def456",
+				"node_id":   testNodeID,
 				"serf_port": "4200",
 				"raft_port": "9000",
 				"grpc_port": "9001",
@@ -131,7 +136,7 @@ func TestBuildNodeTags(t *testing.T) {
 				Tags:     map[string]string{},
 			},
 			expected: map[string]string{
-				"node_id":   "abc123def456",
+				"node_id":   testNodeID,
 				"serf_port": "4200",
 			},
 		},
@@ -140,7 +145,7 @@ func TestBuildNodeTags(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			manager := &SerfManager{
-				NodeID: "abc123def456",
+				NodeID: testNodeID,
 				config: tt.config,
 			}
 
