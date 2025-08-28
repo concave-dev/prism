@@ -142,9 +142,11 @@ func (c *Config) Validate() error {
 	}
 
 	// Validate timeout relationships to prevent race conditions
-	if c.ClientCallTimeout <= c.HealthCheckTimeout {
-		return fmt.Errorf("client call timeout (%v) must be greater than health check timeout (%v)",
-			c.ClientCallTimeout, c.HealthCheckTimeout)
+	// Require minimum buffer to account for network latency and processing jitter
+	const minTimeoutBuffer = 500 * time.Millisecond
+	if c.ClientCallTimeout <= c.HealthCheckTimeout+minTimeoutBuffer {
+		return fmt.Errorf("client call timeout (%v) must be at least %v greater than health check timeout (%v) to account for network latency",
+			c.ClientCallTimeout, minTimeoutBuffer, c.HealthCheckTimeout)
 	}
 
 	// Validate log level
