@@ -70,6 +70,11 @@ const (
 	// RPC contact can be before it is considered suspect for demotion/removal.
 	DefaultAutopilotLastContactThreshold = 1 * time.Second
 
+	// DefaultPeerCheckTimeout controls timeout for peer connectivity health checks
+	// Used when testing if individual Raft peers are reachable via TCP
+	// Set to 3 seconds to handle variable network conditions and cloud environments
+	DefaultPeerCheckTimeout = 3 * time.Second
+
 	// DefaultAutopilotServerStabilizationTime enforces a quiet period with no
 	// membership churn before making any reconfiguration changes.
 	DefaultAutopilotServerStabilizationTime = 10 * time.Second
@@ -106,6 +111,7 @@ type Config struct {
 	// replicated FSM. They prevent coupling Serf membership directly to Raft.
 	CleanupDeadServers      bool          // Enable automatic cleanup of dead servers
 	LastContactThreshold    time.Duration // RPC last-contact threshold before suspect
+	PeerCheckTimeout        time.Duration // TCP connectivity timeout for peer health checks
 	ServerStabilizationTime time.Duration // Quiet period before reconfig operations
 	MaxTrailingLogs         uint64        // Max acceptable follower log lag
 }
@@ -134,6 +140,7 @@ func DefaultConfig() *Config {
 		// Autopilot conservative defaults
 		CleanupDeadServers:      true,
 		LastContactThreshold:    DefaultAutopilotLastContactThreshold,
+		PeerCheckTimeout:        DefaultPeerCheckTimeout,
 		ServerStabilizationTime: DefaultAutopilotServerStabilizationTime,
 		MaxTrailingLogs:         DefaultAutopilotMaxTrailingLogs,
 	}
@@ -184,6 +191,9 @@ func (c *Config) Validate() error {
 	// Validate autopilot thresholds
 	if c.LastContactThreshold < 0 {
 		return fmt.Errorf("last contact threshold must be >= 0")
+	}
+	if err := validate.ValidatePositiveTimeout(c.PeerCheckTimeout, "peer check timeout"); err != nil {
+		return err
 	}
 	if c.ServerStabilizationTime < 0 {
 		return fmt.Errorf("server stabilization time must be >= 0")

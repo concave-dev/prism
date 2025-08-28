@@ -1565,8 +1565,9 @@ func (m *RaftManager) checkPeerConnectivity(peers []string) (reachable, unreacha
 // Used for health monitoring to detect network connectivity issues that
 // could impact Raft consensus operations without affecting performance.
 func (m *RaftManager) isRaftPeerReachable(address string) bool {
-	// Use a short timeout for health checks - force IPv4 for consistency
-	conn, err := net.DialTimeout("tcp4", address, 1*time.Second)
+	// Use configurable timeout for health checks - force IPv4 for consistency
+	// Timeout is configurable to adapt to different network environments
+	conn, err := net.DialTimeout("tcp4", address, m.config.PeerCheckTimeout)
 	if err != nil {
 		return false
 	}
