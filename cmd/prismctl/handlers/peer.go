@@ -155,9 +155,9 @@ func HandlePeerInfo(cmd *cobra.Command, args []string) error {
 	if isLeader {
 		fmt.Printf("  Status:    Current Raft leader\n")
 	} else if targetPeer.Reachable {
-		fmt.Printf("  Status:    Follower (reachable)\n")
+		fmt.Printf("  Status:    Follower (TCP reachable)\n")
 	} else {
-		fmt.Printf("  Status:    Follower (unreachable)\n")
+		fmt.Printf("  Status:    Follower (TCP unreachable)\n")
 	}
 
 	return nil
