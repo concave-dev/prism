@@ -111,13 +111,41 @@ func (mts *MemoryTimeSeries) GetSamples() []MemoryMetrics {
 	return result
 }
 
-// CalculateUsageVelocity calculates the rate of memory usage change over the specified time window.
+// CalculateUsageVelocity calculates the rate of memory usage change over the specified time window
+// using linear regression (least-squares) over all available samples within the window.
 // Returns percentage points per minute (e.g., +2.5 means usage increasing by 2.5% per minute).
-// Requires at least 2 samples within the time window to calculate velocity.
+//
+// How it works:
+// 1. Validates the time window parameter (must be positive)
+// 2. Filters samples to those within the specified time window
+// 3. Ensures minimum sample count (≥3) and temporal coverage (≥25% of window)
+// 4. Applies least-squares linear regression to find best-fit trend line through all points
+// 5. Returns the slope of that line as velocity in percentage points per minute
+//
+// Linear regression approach vs simple two-point calculation:
+// - Uses ALL samples in window (not just first/last)
+// - Reduces noise sensitivity by considering multiple data points
+// - Provides statistically robust trend calculation
+// - Handles irregular sample spacing better
+//
+// Mathematical foundation:
+// - Converts timestamps to minutes relative to first sample (improves numerical stability)
+// - Uses standard least-squares formula: slope = (n*Σxy - Σx*Σy) / (n*Σx² - (Σx)²)
+// - Where x = time in minutes, y = usage percentage, n = sample count
+//
+// Edge case handling:
+// - Returns 0.0 for invalid window, insufficient samples, or zero time variance
+// - Validates temporal coverage to prevent misleading results from sparse data
+// - Ensures statistical significance with minimum sample requirements
 func (mts *MemoryTimeSeries) CalculateUsageVelocity(window time.Duration) float64 {
+	// Validate window parameter - must be positive and reasonable
+	if window <= 0 {
+		return 0.0 // Invalid window duration
+	}
+
 	samples := mts.GetSamples()
-	if len(samples) < 2 {
-		return 0.0 // Cannot calculate velocity with insufficient samples
+	if len(samples) < 3 {
+		return 0.0 // Need minimum 3 samples for reliable regression
 	}
 
 	now := time.Now()
@@ -131,21 +159,54 @@ func (mts *MemoryTimeSeries) CalculateUsageVelocity(window time.Duration) float6
 		}
 	}
 
-	if len(recentSamples) < 2 {
-		return 0.0 // Insufficient recent samples
+	if len(recentSamples) < 3 {
+		return 0.0 // Insufficient recent samples for regression
 	}
 
-	// Calculate linear regression slope for usage over time
+	// Check sample density - require reasonable coverage of the window
 	first := recentSamples[0]
 	last := recentSamples[len(recentSamples)-1]
+	timeSpan := last.Timestamp.Sub(first.Timestamp).Minutes()
 
-	timeDiff := last.Timestamp.Sub(first.Timestamp).Minutes()
-	if timeDiff <= 0 {
-		return 0.0 // Avoid division by zero
+	if timeSpan <= 0 {
+		return 0.0 // All samples at same time - no variance
 	}
 
-	usageDiff := last.Usage - first.Usage
-	return usageDiff / timeDiff // Percentage points per minute
+	// Require samples to span at least 25% of the requested window
+	// This ensures we have reasonable temporal coverage
+	minSpan := window.Minutes() * 0.25
+	if timeSpan < minSpan {
+		return 0.0 // Insufficient temporal coverage
+	}
+
+	// Prepare for least-squares linear regression calculation
+	// Convert timestamps to minutes relative to first sample to avoid large numbers
+	// This improves numerical stability in regression calculations
+	n := float64(len(recentSamples))
+	var sumX, sumY, sumXY, sumX2 float64
+
+	// Accumulate sums needed for least-squares formula
+	// We need: Σx, Σy, Σxy, Σx² where x=time, y=usage
+	for _, sample := range recentSamples {
+		x := sample.Timestamp.Sub(first.Timestamp).Minutes() // Time offset from first sample
+		y := sample.Usage                                    // Memory usage percentage
+
+		sumX += x      // Sum of time values
+		sumY += y      // Sum of usage values
+		sumXY += x * y // Sum of time×usage products
+		sumX2 += x * x // Sum of squared time values
+	}
+
+	// Apply least-squares linear regression formula to find slope
+	// Formula: slope = (n*Σxy - Σx*Σy) / (n*Σx² - (Σx)²)
+	// This gives us the best-fit line slope through all data points
+	denominator := n*sumX2 - sumX*sumX
+	if denominator == 0 {
+		return 0.0 // No variance in time - all samples at same timestamp
+	}
+
+	slope := (n*sumXY - sumX*sumY) / denominator
+	return slope // Slope represents percentage points per minute velocity
 }
 
 // GetSustainedHighUsage checks if memory usage has been consistently high over the specified window.
