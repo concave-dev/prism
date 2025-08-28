@@ -795,6 +795,16 @@ func (n *NodeServiceImpl) checkCPUResourceHealth(ctx context.Context, now time.T
 		}
 	}
 
+	// Guard against nil serfManager
+	if n.serfManager == nil {
+		return &proto.HealthCheck{
+			Name:      "cpu_resource",
+			Status:    proto.HealthStatus_UNKNOWN,
+			Message:   "Serf manager not available for resource monitoring",
+			Timestamp: timestamppb.New(now),
+		}
+	}
+
 	// Gather current system resources including CPU metrics
 	nodeResources := resources.GatherSystemResources(
 		n.serfManager.NodeID,
@@ -868,6 +878,16 @@ func (n *NodeServiceImpl) checkMemoryResourceHealth(ctx context.Context, now tim
 		}
 	}
 
+	// Guard against nil serfManager
+	if n.serfManager == nil {
+		return &proto.HealthCheck{
+			Name:      "memory_resource",
+			Status:    proto.HealthStatus_UNKNOWN,
+			Message:   "Serf manager not available for resource monitoring",
+			Timestamp: timestamppb.New(now),
+		}
+	}
+
 	// Gather current system resources including memory metrics
 	nodeResources := resources.GatherSystemResources(
 		n.serfManager.NodeID,
@@ -926,6 +946,16 @@ func (n *NodeServiceImpl) checkDiskResourceHealth(ctx context.Context, now time.
 			Name:      "disk_resource",
 			Status:    proto.HealthStatus_UNKNOWN,
 			Message:   "Health check cancelled",
+			Timestamp: timestamppb.New(now),
+		}
+	}
+
+	// Guard against nil serfManager
+	if n.serfManager == nil {
+		return &proto.HealthCheck{
+			Name:      "disk_resource",
+			Status:    proto.HealthStatus_UNKNOWN,
+			Message:   "Serf manager not available for resource monitoring",
 			Timestamp: timestamppb.New(now),
 		}
 	}
