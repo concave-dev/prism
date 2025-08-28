@@ -98,7 +98,13 @@ func (pb *PortBinder) BindTCP(address string, port int) (net.Listener, error) {
 // The search is bounded to prevent infinite loops in pathological scenarios
 // where many consecutive ports are occupied.
 func (pb *PortBinder) BindTCPWithFallback(address string, preferredPort int) (net.Listener, int, error) {
-	const maxAttempts = 100 // Try up to 100 ports to avoid infinite loops
+	return pb.BindTCPWithFallbackAndLimit(address, preferredPort, 100)
+}
+
+// BindTCPWithFallbackAndLimit is like BindTCPWithFallback but allows specifying the maximum
+// number of ports to try. This enables support for large cluster deployments that may need
+// to search through more than the default 100 ports.
+func (pb *PortBinder) BindTCPWithFallbackAndLimit(address string, preferredPort int, maxAttempts int) (net.Listener, int, error) {
 
 	for port := preferredPort; port < preferredPort+maxAttempts && port <= 65535; port++ {
 		listener, err := pb.BindTCP(address, port)

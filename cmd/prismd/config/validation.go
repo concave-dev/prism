@@ -17,6 +17,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -49,6 +50,23 @@ func ValidateConfig() error {
 	if os.Getenv("DEBUG") == "true" {
 		Global.LogLevel = "DEBUG"
 		logging.Info("DEBUG environment variable detected, setting log level to DEBUG")
+	}
+
+	// Handle MAX_PORTS environment variable to control port discovery range.
+	// This allows scaling to large cluster sizes (e.g., 150+ nodes) by expanding
+	// the search range beyond the default 100 ports for service auto-discovery.
+	if maxPortsEnv := os.Getenv("MAX_PORTS"); maxPortsEnv != "" {
+		if maxPorts, err := strconv.Atoi(maxPortsEnv); err == nil {
+			Global.MaxPorts = maxPorts
+			logging.Info("MAX_PORTS environment variable detected, setting max ports to %d", maxPorts)
+		} else {
+			logging.Warn("Invalid MAX_PORTS environment variable '%s', using default: %d", maxPortsEnv, Global.MaxPorts)
+		}
+	}
+
+	// Validate MaxPorts range
+	if Global.MaxPorts < 1 || Global.MaxPorts > 10000 {
+		return fmt.Errorf("max-ports must be between 1 and 10000, got: %d", Global.MaxPorts)
 	}
 
 	// Parse and validate Serf address for cluster membership and gossip protocol.

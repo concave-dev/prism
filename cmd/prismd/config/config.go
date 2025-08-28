@@ -85,6 +85,7 @@ type Config struct {
 	DataDir         string   // Data directory for persistent storage
 	Bootstrap       bool     // Whether to bootstrap a new Raft cluster (legacy single-node)
 	BootstrapExpect int      // Expected number of nodes for cluster formation (0 = disabled)
+	MaxPorts        int      // Maximum number of ports to try when finding available ports (default: 100)
 
 	// Flags to track if values were explicitly set by user
 	serfExplicitlySet     bool

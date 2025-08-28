@@ -2,8 +2,10 @@
 
 # Environment Variables:
 # NODES: Number of cluster nodes to start (default: 3)
-# MAX_PORTS: Maximum number of ports to allocate (default: 100)
-#            Controls port ranges: Serf 4200+, Raft 6969+, gRPC 7117+, API 8008+
+#
+# Port Management:
+# - Makefile automatically sets MAX_PORTS = NODES + 50
+# - For 150 nodes: MAX_PORTS=200 (provides 50-port buffer)
 
 BIN_DIR := bin
 PRISMD := $(BIN_DIR)/prismd
@@ -35,16 +37,15 @@ $(PRISMCTL):
 stop:
 	@echo "=== Stopping prismd processes ==="
 	-@pkill -f prismd 2>/dev/null || true
-	@MAX_PORTS=$${MAX_PORTS:-100}; \
-	echo "Killing by port ranges (Serf 4200-$$((4200+MAX_PORTS-1)) TCP+UDP, Raft 6969-$$((6969+MAX_PORTS-1)) TCP, gRPC 7117-$$((7117+MAX_PORTS-1)) TCP, API 8008-$$((8008+MAX_PORTS-1)) TCP)"; \
-	start=4200; end=$$((start+MAX_PORTS-1)); \
+	@echo "Killing by port ranges (Serf 4200-4499 TCP+UDP, Raft 6969-7268 TCP, gRPC 7117-7416 TCP, API 8008-8307 TCP)"
+	@start=4200; end=4499; \
 		pids=$$(lsof -ti tcp:$$start-$$end -sTCP:LISTEN 2>/dev/null); [ -n "$$pids" ] && kill -9 $$pids 2>/dev/null || true; \
-		pids=$$(lsof -ti udp:$$start-$$end 2>/dev/null); [ -n "$$pids" ] && kill -9 $$pids 2>/dev/null || true; \
-	start=6969; end=$$((start+MAX_PORTS-1)); \
-		pids=$$(lsof -ti tcp:$$start-$$end -sTCP:LISTEN 2>/dev/null); [ -n "$$pids" ] && kill -9 $$pids 2>/dev/null || true; \
-	start=7117; end=$$((start+MAX_PORTS-1)); \
-		pids=$$(lsof -ti tcp:$$start-$$end -sTCP:LISTEN 2>/dev/null); [ -n "$$pids" ] && kill -9 $$pids 2>/dev/null || true; \
-	start=8008; end=$$((start+MAX_PORTS-1)); \
+		pids=$$(lsof -ti udp:$$start-$$end 2>/dev/null); [ -n "$$pids" ] && kill -9 $$pids 2>/dev/null || true
+	@start=6969; end=7268; \
+		pids=$$(lsof -ti tcp:$$start-$$end -sTCP:LISTEN 2>/dev/null); [ -n "$$pids" ] && kill -9 $$pids 2>/dev/null || true
+	@start=7117; end=7416; \
+		pids=$$(lsof -ti tcp:$$start-$$end -sTCP:LISTEN 2>/dev/null); [ -n "$$pids" ] && kill -9 $$pids 2>/dev/null || true
+	@start=8008; end=8307; \
 		pids=$$(lsof -ti tcp:$$start-$$end -sTCP:LISTEN 2>/dev/null); [ -n "$$pids" ] && kill -9 $$pids 2>/dev/null || true
 
 delete-dir:
@@ -88,54 +89,51 @@ test-coverage:
 run: build stop
 	@$(MAKE) run-cluster NODES=3
 
-# Dynamic cluster creation with configurable node count
-# Usage: make run-cluster NODES=N MAX_PORTS=M (defaults: NODES=3, MAX_PORTS=100)
+# Dynamic cluster creation with configurable node count  
+# Usage: make run-cluster NODES=N (default: NODES=3)
 run-cluster: build stop
 	@NODES=$${NODES:-3}; \
-	MAX_PORTS=$${MAX_PORTS:-100}; \
+	MAX_PORTS=$$((NODES + 50)); \
 	if [ $$NODES -lt 1 ]; then \
 		echo "Error: NODES must be at least 1"; \
 		exit 1; \
 	fi; \
-	if [ $$NODES -gt $$MAX_PORTS ]; then \
-		echo "Error: NODES ($$NODES) cannot exceed MAX_PORTS ($$MAX_PORTS)"; \
-		exit 1; \
-	fi; \
-	echo "=== Starting Prism cluster with $$NODES nodes (MAX_PORTS=$$MAX_PORTS) ==="; \
+	echo "=== Starting Prism cluster with $$NODES nodes (MAX_PORTS: $$MAX_PORTS) ==="; \
 	if [ $$NODES -eq 1 ]; then \
 		echo "Starting single bootstrap node..."; \
-		$(PRISMD) --bootstrap & \
+		MAX_PORTS=$$MAX_PORTS $(PRISMD) --bootstrap & \
 		echo "Single node cluster started! Use 'make stop' to stop."; \
 	else \
 		echo "Using bootstrap-expect mode for $$NODES nodes..."; \
-		join_list=""; \
-		for i in $$(seq 0 $$(($$NODES-1))); do \
-			port=$$((4200+$$i)); \
-			if [ -z "$$join_list" ]; then \
-				join_list="0.0.0.0:$$port"; \
-			else \
-				join_list="$$join_list,0.0.0.0:$$port"; \
-			fi; \
-		done; \
-		for i in $$(seq 0 $$(($$NODES-1))); do \
-			serf_port=$$((4200+$$i)); \
-			echo "Starting node $$(($$i+1))/$$NODES (serf port $$serf_port)..."; \
-			$(PRISMD) --serf=0.0.0.0:$$serf_port --bootstrap-expect=3 --join=$$join_list & \
-			sleep 1; \
-		done; \
+		echo "Starting first 3 nodes (bootstrap cluster)..."; \
+		MAX_PORTS=$$MAX_PORTS $(PRISMD) --serf=0.0.0.0:4200 --bootstrap-expect=3 --join=0.0.0.0:4200,0.0.0.0:4201,0.0.0.0:4202 & \
+		sleep 3; \
+		MAX_PORTS=$$MAX_PORTS $(PRISMD) --serf=0.0.0.0:4201 --bootstrap-expect=3 --join=0.0.0.0:4200,0.0.0.0:4201,0.0.0.0:4202 & \
+		sleep 3; \
+		MAX_PORTS=$$MAX_PORTS $(PRISMD) --serf=0.0.0.0:4202 --bootstrap-expect=3 --join=0.0.0.0:4200,0.0.0.0:4201,0.0.0.0:4202 & \
+		echo "Waiting 10 seconds for initial 3-node cluster to form and elect leader..."; \
+		sleep 10; \
+		if [ $$NODES -gt 3 ]; then \
+			echo "Adding remaining $$(($$NODES-3)) nodes to established cluster..."; \
+			for i in $$(seq 4 $$NODES); do \
+				echo "Starting node $$i/$$NODES (joining established cluster)..."; \
+				MAX_PORTS=$$MAX_PORTS $(PRISMD) --join=0.0.0.0:4200 & \
+				sleep 2; \
+			done; \
+		fi; \
 		echo "Cluster will form once all $$NODES nodes are discovered. Use 'make stop' to stop all nodes."; \
 	fi
 
 bootstrap-expect: build stop
 	@echo "=== Starting Prism cluster with bootstrap-expect (3 nodes) ==="
-	@echo "Starting node 1 with bootstrap-expect=3..."
-	@$(PRISMD) --serf=0.0.0.0:4200 --bootstrap-expect=3 --join=0.0.0.0:4200,0.0.0.0:4201,0.0.0.0:4202 &
+	@echo "Starting first node (bootstrap seed)..."
+	@$(PRISMD) --bootstrap-expect=3 &
 	@sleep 2
-	@echo "Starting node 2 with bootstrap-expect=3..."
-	@$(PRISMD) --serf=0.0.0.0:4201 --bootstrap-expect=3 --join=0.0.0.0:4200,0.0.0.0:4201,0.0.0.0:4202 &
+	@echo "Starting second node (joining cluster)..."
+	@$(PRISMD) --bootstrap-expect=3 --join=0.0.0.0:4200 &
 	@sleep 2
-	@echo "Starting node 3 with bootstrap-expect=3..."
-	@$(PRISMD) --serf=0.0.0.0:4202 --bootstrap-expect=3 --join=0.0.0.0:4200,0.0.0.0:4201,0.0.0.0:4202 &
+	@echo "Starting third node (joining cluster)..."
+	@$(PRISMD) --bootstrap-expect=3 --join=0.0.0.0:4200 &
 	@echo "Cluster will form once all 3 nodes are discovered. Use 'make stop' to stop all nodes."
 
 # Pattern rule for any number of nodes: make run-N
