@@ -107,18 +107,18 @@ run-cluster: build stop
 		echo "Using bootstrap-expect mode for $$NODES nodes..."; \
 		echo "Starting first 3 nodes (bootstrap cluster)..."; \
 		MAX_PORTS=$$MAX_PORTS $(PRISMD) --serf=0.0.0.0:4200 --bootstrap-expect=3 --join=0.0.0.0:4200,0.0.0.0:4201,0.0.0.0:4202 & \
-		sleep 3; \
+		sleep 5; \
 		MAX_PORTS=$$MAX_PORTS $(PRISMD) --serf=0.0.0.0:4201 --bootstrap-expect=3 --join=0.0.0.0:4200,0.0.0.0:4201,0.0.0.0:4202 & \
-		sleep 3; \
+		sleep 5; \
 		MAX_PORTS=$$MAX_PORTS $(PRISMD) --serf=0.0.0.0:4202 --bootstrap-expect=3 --join=0.0.0.0:4200,0.0.0.0:4201,0.0.0.0:4202 & \
-		echo "Waiting 10 seconds for initial 3-node cluster to form and elect leader..."; \
-		sleep 10; \
+		echo "Waiting 15 seconds for initial 3-node cluster to form and elect leader..."; \
+		sleep 15; \
 		if [ $$NODES -gt 3 ]; then \
 			echo "Adding remaining $$(($$NODES-3)) nodes to established cluster..."; \
 			for i in $$(seq 4 $$NODES); do \
 				echo "Starting node $$i/$$NODES (joining established cluster)..."; \
 				MAX_PORTS=$$MAX_PORTS $(PRISMD) --join=0.0.0.0:4200 & \
-				sleep 2; \
+				sleep 4; \
 			done; \
 		fi; \
 		echo "Cluster will form once all $$NODES nodes are discovered. Use 'make stop' to stop all nodes."; \
@@ -128,10 +128,10 @@ bootstrap-expect: build stop
 	@echo "=== Starting Prism cluster with bootstrap-expect (3 nodes) ==="
 	@echo "Starting first node (bootstrap seed)..."
 	@$(PRISMD) --bootstrap-expect=3 &
-	@sleep 2
+	@sleep 5
 	@echo "Starting second node (joining cluster)..."
 	@$(PRISMD) --bootstrap-expect=3 --join=0.0.0.0:4200 &
-	@sleep 2
+	@sleep 5
 	@echo "Starting third node (joining cluster)..."
 	@$(PRISMD) --bootstrap-expect=3 --join=0.0.0.0:4200 &
 	@echo "Cluster will form once all 3 nodes are discovered. Use 'make stop' to stop all nodes."
