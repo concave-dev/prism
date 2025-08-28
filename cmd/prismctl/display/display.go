@@ -145,6 +145,8 @@ func DisplayClusterInfoFromAPI(info client.ClusterInfo) {
 		fmt.Printf("  Version:     %s\n", info.Version)
 		if info.ClusterID != "" {
 			fmt.Printf("  Cluster ID:  %s\n", info.ClusterID)
+		} else {
+			fmt.Printf("  Cluster ID:  Awaiting leader\n")
 		}
 		fmt.Printf("  Uptime:      %s\n", utils.FormatDuration(info.Uptime))
 		if !info.StartTime.IsZero() {

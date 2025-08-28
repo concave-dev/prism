@@ -29,7 +29,6 @@ import (
 	"github.com/concave-dev/prism/internal/grpc"
 	"github.com/concave-dev/prism/internal/raft"
 	"github.com/concave-dev/prism/internal/serf"
-	"github.com/concave-dev/prism/internal/utils"
 	"github.com/gin-gonic/gin"
 )
 
@@ -303,9 +302,12 @@ func HandleClusterInfo(serfManager *serf.SerfManager, raftManager *raft.RaftMana
 			return apiMembers[i].Name < apiMembers[j].Name
 		})
 
-		// Generate cluster ID (independent of node IDs)
-		// TODO: Store cluster ID persistently and reuse across restarts
-		clusterID, _ := utils.GenerateID()
+		// Get cluster ID from Raft FSM (persistent across restarts)
+		// Empty until leader generates and sets the cluster ID
+		clusterID := ""
+		if raftManager != nil {
+			clusterID = raftManager.GetClusterID()
+		}
 
 		info := ClusterInfo{
 			Version:   version,

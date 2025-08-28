@@ -41,6 +41,7 @@ package raft
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -1621,4 +1622,101 @@ func (m *RaftManager) StartStateLogging() {
 			}
 		}
 	}()
+}
+
+// ============================================================================
+// CLUSTER ID MANAGEMENT - Persistent cluster identification
+// ============================================================================
+
+// GetClusterID returns the current cluster identifier from the FSM.
+// Provides access to the persistent cluster ID that was set by the leader
+// during initial cluster formation and persists across leadership changes.
+//
+// Returns empty string if no cluster ID has been established yet, which
+// occurs during initial cluster startup before the first leader generates
+// and applies the cluster identifier via Raft consensus.
+func (rm *RaftManager) GetClusterID() string {
+	if fsm := rm.GetFSM(); fsm != nil {
+		return fsm.GetClusterID()
+	}
+	return ""
+}
+
+// SetClusterID applies a cluster ID command via Raft consensus to establish
+// the persistent cluster identifier. Performs comprehensive validation including
+// leadership checks, input validation, and overwrite protection with idempotency.
+//
+// Implements defense-in-depth with caller-level checks and FSM-level guards
+// to prevent race conditions and ensure cluster ID can only be set once.
+// Provides clear error messages with leader redirection for better user experience.
+// The cluster ID persists through leadership changes, node restarts, and recovery.
+func (rm *RaftManager) SetClusterID(clusterID string) error {
+	// Raft readiness and leader gating
+	if rm.raft == nil {
+		return fmt.Errorf("raft not initialized")
+	}
+	if !rm.IsLeader() {
+		leader := rm.Leader()
+		if leader == "" {
+			return fmt.Errorf("only leader can set cluster ID")
+		}
+		return fmt.Errorf("not leader, redirect to %s", leader)
+	}
+
+	// Basic validation
+	if clusterID == "" {
+		return fmt.Errorf("cluster ID cannot be empty")
+	}
+
+	// Idempotency and overwrite protection
+	if fsm := rm.GetFSM(); fsm != nil {
+		if existing := fsm.GetClusterID(); existing != "" {
+			if existing == clusterID {
+				logging.Debug("Cluster ID already set; no-op")
+				return nil
+			}
+			return fmt.Errorf("cluster ID already set; refusing to overwrite")
+		}
+	}
+
+	// Build the cluster ID command
+	cmd := Command{
+		Type:      "cluster_id",
+		Operation: "set",
+		Data:      json.RawMessage{},
+		Timestamp: time.Now(),
+		NodeID:    rm.config.NodeID,
+	}
+
+	// Marshal the cluster ID command data
+	clusterIDCmd := ClusterIDCommand{
+		ClusterID: clusterID,
+	}
+	cmdData, err := json.Marshal(clusterIDCmd)
+	if err != nil {
+		return fmt.Errorf("failed to marshal cluster ID command: %w", err)
+	}
+	cmd.Data = cmdData
+
+	// Marshal the complete command
+	cmdBytes, err := json.Marshal(cmd)
+	if err != nil {
+		return fmt.Errorf("failed to marshal command envelope: %w", err)
+	}
+
+	// Apply via Raft with timeout
+	future := rm.raft.Apply(cmdBytes, 10*time.Second)
+	if err := future.Error(); err != nil {
+		return fmt.Errorf("failed to apply cluster ID via Raft: %w", err)
+	}
+
+	// Surface FSM-level rejection
+	if resp := future.Response(); resp != nil {
+		if err, ok := resp.(error); ok {
+			return fmt.Errorf("cluster ID apply rejected: %w", err)
+		}
+	}
+
+	logging.Info("Successfully set cluster ID: %s", clusterID)
+	return nil
 }
