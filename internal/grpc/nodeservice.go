@@ -54,6 +54,7 @@ import (
 	"github.com/concave-dev/prism/internal/raft"
 	"github.com/concave-dev/prism/internal/resources"
 	"github.com/concave-dev/prism/internal/serf"
+	"github.com/concave-dev/prism/internal/utils"
 	serfpkg "github.com/hashicorp/serf/serf"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -856,7 +857,7 @@ func (n *NodeServiceImpl) checkRaftServiceHealth(ctx context.Context, now time.T
 		} else {
 			leaderInfo := "no leader"
 			if raftHealth.Leader != "" {
-				leaderInfo = fmt.Sprintf("leader: %s", raftHealth.Leader)
+				leaderInfo = fmt.Sprintf("leader: %s", utils.TruncateIDSafe(raftHealth.Leader))
 			}
 			enhancedMessage = fmt.Sprintf("Raft %s: %d-node cluster, %s (%d reachable peers)",
 				raftHealth.State, raftHealth.PeerCount, leaderInfo, raftHealth.ReachablePeers)
