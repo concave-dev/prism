@@ -232,6 +232,9 @@ func (n *NodeServiceImpl) GetHealth(ctx context.Context, req *proto.GetHealthReq
 	}
 
 	// Run health checks concurrently to reduce tail latency
+	// TODO: Consider worker pool pattern if health check types grow significantly (20+)
+	// Current implementation spawns one goroutine per check (max 7 currently)
+	// For many checks, this could create excessive goroutines and scheduler pressure
 	type checkResult struct {
 		check *proto.HealthCheck
 		name  string
