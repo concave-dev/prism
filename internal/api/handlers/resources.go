@@ -153,6 +153,8 @@ func HandleClusterResources(clientPool *grpc.ClientPool, serfManager *serf.SerfM
 		}
 
 		// Include unreachable nodes for observability if any failed
+		// Note: These fields are available in the API response but not currently
+		// consumed by prismctl - users will only see reachable node resources
 		if len(unreachable) > 0 {
 			response["unreachable"] = unreachable
 			response["unreachable_count"] = len(unreachable)
