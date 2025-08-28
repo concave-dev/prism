@@ -357,13 +357,6 @@ func (f *PrismFSM) GetClusterID() string {
 // once during cluster lifecycle. Critical for maintaining cluster identity
 // consistency across all nodes through leadership changes and restarts.
 func (f *PrismFSM) applyClusterIDCommand(cmd Command) interface{} {
-	// Early guard: prevent overwriting existing cluster ID
-	if f.clusterID != "" {
-		err := fmt.Errorf("cluster ID already set")
-		logging.Error("FSM: %v", err)
-		return err
-	}
-
 	if cmd.Operation != "set" {
 		err := fmt.Errorf("unsupported cluster_id operation: %s", cmd.Operation)
 		logging.Error("FSM: %v", err)
@@ -376,9 +369,42 @@ func (f *PrismFSM) applyClusterIDCommand(cmd Command) interface{} {
 		return fmt.Errorf("failed to unmarshal cluster ID command: %w", err)
 	}
 
-	// Set the cluster ID - now protected by early guard above
+	// Reject empty input
+	if clusterIDCmd.ClusterID == "" {
+		err := fmt.Errorf("cluster ID cannot be empty")
+		logging.Error(
+			"FSM: %v (provided=%q existing=%q)",
+			err, clusterIDCmd.ClusterID, f.clusterID,
+		)
+		return err
+	}
+
+	// Idempotency and overwrite protection
+	if f.clusterID != "" {
+		if f.clusterID == clusterIDCmd.ClusterID {
+			logging.Info(
+				"FSM: Cluster ID already set; idempotent replay accepted "+
+					"(provided=%s existing=%s)",
+				clusterIDCmd.ClusterID, f.clusterID,
+			)
+			return nil
+		}
+		err := fmt.Errorf(
+			"cluster ID already set; refusing to change (provided=%s "+
+				"existing=%s)",
+			clusterIDCmd.ClusterID, f.clusterID,
+		)
+		logging.Error("FSM: %v", err)
+		return err
+	}
+
+	// Establish cluster ID
+	prev := f.clusterID
 	f.clusterID = clusterIDCmd.ClusterID
-	logging.Info("FSM: Set cluster ID to %s", f.clusterID)
+	logging.Info(
+		"FSM: Set cluster ID (provided=%s previous=%s)",
+		clusterIDCmd.ClusterID, prev,
+	)
 	return nil
 }
 
