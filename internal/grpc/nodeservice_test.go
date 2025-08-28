@@ -185,3 +185,62 @@ func TestMemoryTimeSeries_GetSustainedHighUsage_NormalOperation(t *testing.T) {
 		})
 	}
 }
+
+// TestNewMemoryTimeSeries_InputValidation tests that the constructor properly
+// validates and clamps maxSamples input to prevent memory allocation issues.
+// Ensures negative values are handled and excessive values are clamped to safe limits.
+func TestNewMemoryTimeSeries_InputValidation(t *testing.T) {
+	tests := []struct {
+		name           string
+		input          int
+		expectedOutput int
+	}{
+		{
+			name:           "negative input clamped to 1",
+			input:          -100,
+			expectedOutput: 1,
+		},
+		{
+			name:           "zero input clamped to 1",
+			input:          0,
+			expectedOutput: 1,
+		},
+		{
+			name:           "normal input unchanged",
+			input:          50,
+			expectedOutput: 50,
+		},
+		{
+			name:           "maximum allowed input unchanged",
+			input:          maxAllowedSamples,
+			expectedOutput: maxAllowedSamples,
+		},
+		{
+			name:           "excessive input clamped to maximum",
+			input:          maxAllowedSamples + 1000,
+			expectedOutput: maxAllowedSamples,
+		},
+		{
+			name:           "extremely large input clamped to maximum",
+			input:          1000000000,
+			expectedOutput: maxAllowedSamples,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mts := NewMemoryTimeSeries(tt.input)
+			
+			if mts.maxSamples != tt.expectedOutput {
+				t.Errorf("NewMemoryTimeSeries(%d) maxSamples = %d, want %d",
+					tt.input, mts.maxSamples, tt.expectedOutput)
+			}
+			
+			// Verify slice capacity matches the clamped value
+			if cap(mts.samples) != tt.expectedOutput {
+				t.Errorf("NewMemoryTimeSeries(%d) samples capacity = %d, want %d",
+					tt.input, cap(mts.samples), tt.expectedOutput)
+			}
+		})
+	}
+}

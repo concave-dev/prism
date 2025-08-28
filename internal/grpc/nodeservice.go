@@ -59,6 +59,13 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+const (
+	// maxAllowedSamples defines the upper bound for memory timeseries samples
+	// to prevent memory exhaustion from excessive allocations. This limit
+	// balances memory usage with monitoring granularity needs.
+	maxAllowedSamples = 10000
+)
+
 // MemoryMetrics represents a single memory usage sample point in the timeseries.
 // Each sample captures memory state at a specific timestamp for trend analysis
 // and intelligent pressure detection based on usage patterns over time.
@@ -79,8 +86,21 @@ type MemoryTimeSeries struct {
 	mu         sync.RWMutex    // Protects concurrent access to samples
 }
 
-// NewMemoryTimeSeries creates a new memory timeseries tracker with the specified capacity
+// NewMemoryTimeSeries creates a new memory timeseries tracker with the specified capacity.
+// The maxSamples parameter is validated and clamped to prevent memory allocation issues:
+// negative values are treated as 1, and values exceeding maxAllowedSamples are clamped
+// to the maximum. This ensures safe memory allocation while maintaining functionality.
 func NewMemoryTimeSeries(maxSamples int) *MemoryTimeSeries {
+	// Validate and clamp input to safe bounds
+	// Negative values default to minimal capacity of 1
+	if maxSamples < 1 {
+		maxSamples = 1
+	}
+	// Prevent excessive memory allocation by clamping to reasonable upper bound
+	if maxSamples > maxAllowedSamples {
+		maxSamples = maxAllowedSamples
+	}
+
 	return &MemoryTimeSeries{
 		samples:    make([]MemoryMetrics, 0, maxSamples),
 		maxSamples: maxSamples,
