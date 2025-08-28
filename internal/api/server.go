@@ -203,9 +203,9 @@ func (s *Server) handleMembers(c *gin.Context) {
 	handler(c)
 }
 
-// getHandlerMembers creates members endpoint handler with cluster managers.
+// getHandlerMembers creates members endpoint handler with cluster managers and gRPC client pool.
 func (s *Server) getHandlerMembers() gin.HandlerFunc {
-	return handlers.HandleMembers(s.serfManager, s.raftManager)
+	return handlers.HandleMembers(s.serfManager, s.raftManager, s.grpcClientPool)
 }
 
 // handleClusterInfo provides comprehensive cluster status endpoint.
@@ -216,7 +216,7 @@ func (s *Server) handleClusterInfo(c *gin.Context) {
 
 // getHandlerClusterInfo creates cluster info handler with all cluster data.
 func (s *Server) getHandlerClusterInfo() gin.HandlerFunc {
-	return handlers.HandleClusterInfo(s.serfManager, s.raftManager, version.PrismdVersion, startTime)
+	return handlers.HandleClusterInfo(s.serfManager, s.raftManager, s.grpcClientPool, version.PrismdVersion, startTime)
 }
 
 // handleNodes provides list of all cluster nodes endpoint.
@@ -227,7 +227,7 @@ func (s *Server) handleNodes(c *gin.Context) {
 
 // getHandlerNodes creates nodes list handler with cluster managers.
 func (s *Server) getHandlerNodes() gin.HandlerFunc {
-	return handlers.HandleNodes(s.serfManager, s.raftManager)
+	return handlers.HandleNodes(s.serfManager, s.raftManager, s.grpcClientPool)
 }
 
 // handleNodeByID provides individual node information endpoint.
@@ -238,7 +238,7 @@ func (s *Server) handleNodeByID(c *gin.Context) {
 
 // getHandlerNodeByID creates node detail handler with cluster managers.
 func (s *Server) getHandlerNodeByID() gin.HandlerFunc {
-	return handlers.HandleNodeByID(s.serfManager, s.raftManager)
+	return handlers.HandleNodeByID(s.serfManager, s.raftManager, s.grpcClientPool)
 }
 
 // handleClusterResources provides aggregated cluster resource information endpoint.

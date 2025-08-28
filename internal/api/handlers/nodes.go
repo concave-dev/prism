@@ -13,19 +13,20 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/concave-dev/prism/internal/grpc"
 	"github.com/concave-dev/prism/internal/raft"
 	"github.com/concave-dev/prism/internal/serf"
 	"github.com/gin-gonic/gin"
 )
 
 // HandleNodes returns all nodes (alias for members for now)
-func HandleNodes(serfManager *serf.SerfManager, raftManager *raft.RaftManager) gin.HandlerFunc {
+func HandleNodes(serfManager *serf.SerfManager, raftManager *raft.RaftManager, clientPool *grpc.ClientPool) gin.HandlerFunc {
 	// For now, nodes and members are the same
-	return HandleMembers(serfManager, raftManager)
+	return HandleMembers(serfManager, raftManager, clientPool)
 }
 
 // HandleNodeByID returns a specific node by ID
-func HandleNodeByID(serfManager *serf.SerfManager, raftManager *raft.RaftManager) gin.HandlerFunc {
+func HandleNodeByID(serfManager *serf.SerfManager, raftManager *raft.RaftManager, clientPool *grpc.ClientPool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		nodeID := c.Param("id")
 
@@ -68,11 +69,14 @@ func HandleNodeByID(serfManager *serf.SerfManager, raftManager *raft.RaftManager
 		// Determine if this member is the current Raft leader
 		isLeader := (raftLeader != "" && (raftLeader == member.ID || raftLeader == member.Name))
 
+		// Query health status via gRPC - fallback to Serf status if health check fails
+		healthStatus := getNodeHealthStatus(clientPool, member.ID, serfStatus)
+
 		apiMember := ClusterMember{
 			ID:         member.ID,
 			Name:       member.Name,
 			Address:    fmt.Sprintf("%s:%d", member.Addr.String(), member.Port),
-			Status:     member.Status.String(),
+			Status:     healthStatus,
 			Tags:       member.Tags,
 			LastSeen:   member.LastSeen,
 			SerfStatus: serfStatus,

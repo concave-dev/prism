@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/concave-dev/prism/internal/grpc"
 	"github.com/concave-dev/prism/internal/raft"
 	"github.com/concave-dev/prism/internal/serf"
 	"github.com/concave-dev/prism/internal/utils"
@@ -167,8 +168,8 @@ func mapSerfStatus(raw string) string {
 	}
 }
 
-// HandleMembers returns all cluster members with connection status
-func HandleMembers(serfManager *serf.SerfManager, raftManager *raft.RaftManager) gin.HandlerFunc {
+// HandleMembers returns all cluster members with connection status and health information
+func HandleMembers(serfManager *serf.SerfManager, raftManager *raft.RaftManager, clientPool *grpc.ClientPool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		members := serfManager.GetMembers()
 
@@ -202,11 +203,14 @@ func HandleMembers(serfManager *serf.SerfManager, raftManager *raft.RaftManager)
 			// Determine if this member is the current Raft leader
 			isLeader := (raftLeader != "" && (raftLeader == member.ID || raftLeader == member.Name))
 
+			// Query health status via gRPC - fallback to Serf status if health check fails
+			healthStatus := getNodeHealthStatus(clientPool, member.ID, serfStatus)
+
 			apiMember := ClusterMember{
 				ID:         member.ID,
 				Name:       member.Name,
 				Address:    fmt.Sprintf("%s:%d", member.Addr.String(), member.Port),
-				Status:     member.Status.String(),
+				Status:     healthStatus,
 				Tags:       member.Tags,
 				LastSeen:   member.LastSeen,
 				SerfStatus: serfStatus,
@@ -230,7 +234,7 @@ func HandleMembers(serfManager *serf.SerfManager, raftManager *raft.RaftManager)
 }
 
 // HandleClusterInfo returns comprehensive cluster information
-func HandleClusterInfo(serfManager *serf.SerfManager, raftManager *raft.RaftManager, version string, startTime time.Time) gin.HandlerFunc {
+func HandleClusterInfo(serfManager *serf.SerfManager, raftManager *raft.RaftManager, clientPool *grpc.ClientPool, version string, startTime time.Time) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		members := serfManager.GetMembers()
 
@@ -266,11 +270,14 @@ func HandleClusterInfo(serfManager *serf.SerfManager, raftManager *raft.RaftMana
 			// Determine if this member is the current Raft leader
 			isLeader := (raftLeader != "" && (raftLeader == member.ID || raftLeader == member.Name))
 
+			// Query health status via gRPC - fallback to Serf status if health check fails
+			healthStatus := getNodeHealthStatus(clientPool, member.ID, serfStatus)
+
 			apiMember := ClusterMember{
 				ID:         member.ID,
 				Name:       member.Name,
 				Address:    fmt.Sprintf("%s:%d", member.Addr.String(), member.Port),
-				Status:     member.Status.String(),
+				Status:     healthStatus,
 				Tags:       member.Tags,
 				LastSeen:   member.LastSeen,
 				SerfStatus: serfStatus,
@@ -279,8 +286,8 @@ func HandleClusterInfo(serfManager *serf.SerfManager, raftManager *raft.RaftMana
 			}
 			apiMembers = append(apiMembers, apiMember)
 
-			// Count stats by Serf status
-			statusCount[serfStatus]++
+			// Count stats by health status instead of Serf status for better reporting
+			statusCount[healthStatus]++
 		}
 
 		// Sort members
@@ -354,6 +361,50 @@ func getRaftPeerStatus(member *serf.PrismNode, raftPeers []string) RaftStatus {
 	}
 
 	return RaftFailed // In config but unreachable (network partition)
+}
+
+// getNodeHealthStatus queries the health status of a node via gRPC and returns
+// a user-friendly health status string. Falls back to Serf-based status if
+// health checks are unavailable or fail.
+//
+// Returns one of: "healthy", "unhealthy", "degraded", "unknown", "dead", "failed"
+// Health status takes priority over Serf status for better operational visibility.
+func getNodeHealthStatus(clientPool *grpc.ClientPool, nodeID, serfStatus string) string {
+	// If node is not in Serf (dead/failed), skip health checks as node is unreachable
+	if serfStatus == "dead" || serfStatus == "failed" {
+		return serfStatus
+	}
+
+	// Query health via gRPC with a short timeout to avoid blocking the list operation
+	if clientPool != nil {
+		grpcRes, err := clientPool.GetHealthFromNode(nodeID)
+		if err != nil {
+			// Health check failed - return "unknown" rather than Serf status
+			// This indicates the node is reachable via Serf but health is unclear
+			return "unknown"
+		}
+
+		// Map gRPC health status to lowercase string for consistent display
+		switch grpcRes.GetStatus().String() {
+		case "HEALTHY":
+			return "healthy"
+		case "UNHEALTHY":
+			return "unhealthy"
+		case "DEGRADED":
+			return "degraded"
+		case "UNKNOWN":
+			return "unknown"
+		default:
+			return "unknown"
+		}
+	}
+
+	// No gRPC client pool available - fall back to Serf status
+	// Map "alive" to "unknown" since we can't determine actual health
+	if serfStatus == "alive" {
+		return "unknown"
+	}
+	return serfStatus
 }
 
 // isRaftNodeReachable performs a basic connectivity check to a Raft node
