@@ -64,6 +64,11 @@ const (
 	// This controls how long a client will wait for resource information from remote nodes.
 	// Can be shorter than health checks since resource queries are typically faster.
 	DefaultResourceCallTimeout = 3 * time.Second
+
+	// DefaultPlacementCallTimeout is the timeout for sandbox placement operations.
+	// This controls how long a client will wait for placement responses from nodes.
+	// Longer than resource calls to account for VM provisioning and initialization time.
+	DefaultPlacementCallTimeout = 10 * time.Second
 )
 
 // Config holds configuration for the gRPC server including timeout management
@@ -83,19 +88,20 @@ const (
 // TODO: Add authentication/authorization settings
 // TODO: Add rate limiting configuration
 type Config struct {
-	BindAddr            string        // IP address to bind gRPC server to (e.g., "0.0.0.0")
-	BindPort            int           // Port for gRPC communication
-	NodeID              string        // Unique identifier for this node
-	NodeName            string        // Human-readable name for this node
-	LogLevel            string        // Log level for gRPC: DEBUG, INFO, WARN, ERROR
-	MaxMsgSize          int           // Maximum message size in bytes
-	ShutdownTimeout     time.Duration // Timeout for graceful shutdown
-	HealthCheckTimeout  time.Duration // Timeout for server-side health checks
-	ClientCallTimeout   time.Duration // Timeout for client gRPC calls
-	ResourceCallTimeout time.Duration // Timeout for resource query calls
-	EnableTLS           bool          // Whether to enable TLS (future use)
-	CertFile            string        // Path to TLS certificate file (future use)
-	KeyFile             string        // Path to TLS private key file (future use)
+	BindAddr             string        // IP address to bind gRPC server to (e.g., "0.0.0.0")
+	BindPort             int           // Port for gRPC communication
+	NodeID               string        // Unique identifier for this node
+	NodeName             string        // Human-readable name for this node
+	LogLevel             string        // Log level for gRPC: DEBUG, INFO, WARN, ERROR
+	MaxMsgSize           int           // Maximum message size in bytes
+	ShutdownTimeout      time.Duration // Timeout for graceful shutdown
+	HealthCheckTimeout   time.Duration // Timeout for server-side health checks
+	ClientCallTimeout    time.Duration // Timeout for client gRPC calls
+	ResourceCallTimeout  time.Duration // Timeout for resource query calls
+	PlacementCallTimeout time.Duration // Timeout for sandbox placement calls
+	EnableTLS            bool          // Whether to enable TLS (future use)
+	CertFile             string        // Path to TLS certificate file (future use)
+	KeyFile              string        // Path to TLS private key file (future use)
 }
 
 // DefaultConfig returns a default gRPC configuration
@@ -103,15 +109,16 @@ type Config struct {
 // TODO: Add support for Unix domain sockets for local communication
 func DefaultConfig() *Config {
 	return &Config{
-		BindAddr:            config.DefaultBindAddr,
-		BindPort:            DefaultGRPCPort,
-		LogLevel:            config.DefaultLogLevel,
-		MaxMsgSize:          DefaultMaxMsgSize,
-		ShutdownTimeout:     DefaultShutdownTimeout,
-		HealthCheckTimeout:  DefaultHealthCheckTimeout,
-		ClientCallTimeout:   DefaultClientCallTimeout,
-		ResourceCallTimeout: DefaultResourceCallTimeout,
-		EnableTLS:           false,
+		BindAddr:             config.DefaultBindAddr,
+		BindPort:             DefaultGRPCPort,
+		LogLevel:             config.DefaultLogLevel,
+		MaxMsgSize:           DefaultMaxMsgSize,
+		ShutdownTimeout:      DefaultShutdownTimeout,
+		HealthCheckTimeout:   DefaultHealthCheckTimeout,
+		ClientCallTimeout:    DefaultClientCallTimeout,
+		ResourceCallTimeout:  DefaultResourceCallTimeout,
+		PlacementCallTimeout: DefaultPlacementCallTimeout,
+		EnableTLS:            false,
 	}
 }
 
@@ -138,6 +145,9 @@ func (c *Config) Validate() error {
 		return err
 	}
 	if err := validate.ValidatePositiveTimeout(c.ResourceCallTimeout, "resource call timeout"); err != nil {
+		return err
+	}
+	if err := validate.ValidatePositiveTimeout(c.PlacementCallTimeout, "placement call timeout"); err != nil {
 		return err
 	}
 

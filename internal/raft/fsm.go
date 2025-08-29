@@ -124,9 +124,14 @@ type Sandbox struct {
 	// Core identification and metadata
 	ID      string    `json:"id"`      // Unique sandbox identifier
 	Name    string    `json:"name"`    // Human-readable sandbox name
-	Status  string    `json:"status"`  // Current status: "created", "ready", "executing", "failed", "destroyed"
+	Status  string    `json:"status"`  // Current status: "created", "scheduled", "ready", "executing", "failed", "lost", "destroyed"
 	Created time.Time `json:"created"` // Sandbox creation timestamp
 	Updated time.Time `json:"updated"` // Last status update timestamp
+
+	// Scheduling information for placement decisions
+	ScheduledNodeID string    `json:"scheduled_node_id,omitempty"` // Node selected for sandbox placement
+	ScheduledAt     time.Time `json:"scheduled_at,omitempty"`      // When scheduling decision was made
+	PlacementScore  float64   `json:"placement_score,omitempty"`   // Resource score of selected node at placement time
 
 	// Execution state and history
 	LastCommand string `json:"last_command,omitempty"` // Most recent executed command
@@ -195,6 +200,32 @@ type SandboxCreateCommand struct {
 type SandboxExecCommand struct {
 	SandboxID string `json:"sandbox_id"` // Target sandbox identifier
 	Command   string `json:"command"`    // Command to execute
+}
+
+// SandboxScheduleCommand represents a scheduling decision for sandbox placement
+// on a specific node within the cluster. Contains the selected node information
+// and placement score for tracking scheduling decisions and performance analysis.
+//
+// Processed by the SandboxFSM to record scheduling decisions and transition
+// sandboxes from "created" to "scheduled" status. Enables tracking of placement
+// decisions for monitoring and debugging distributed scheduling operations.
+type SandboxScheduleCommand struct {
+	SandboxID      string  `json:"sandbox_id"`       // Target sandbox identifier
+	SelectedNodeID string  `json:"selected_node_id"` // Node selected for placement
+	PlacementScore float64 `json:"placement_score"`  // Resource score of selected node
+}
+
+// SandboxStatusUpdateCommand represents status updates from placement operations
+// performed by cluster nodes. Contains new status and optional message for
+// tracking sandbox lifecycle transitions and placement results.
+//
+// Processed by the SandboxFSM to update sandbox status based on placement
+// results from nodes. Enables tracking of placement success, failure, or
+// timeout scenarios for comprehensive sandbox lifecycle management.
+type SandboxStatusUpdateCommand struct {
+	SandboxID string `json:"sandbox_id"`        // Target sandbox identifier
+	Status    string `json:"status"`            // New status: "ready", "failed", "lost"
+	Message   string `json:"message,omitempty"` // Optional status details or error message
 }
 
 // ClusterIDCommand represents a request to set the cluster identifier.
@@ -436,6 +467,10 @@ func (s *SandboxFSM) processCommand(cmd Command) any {
 	switch cmd.Operation {
 	case "create":
 		return s.processCreateCommand(cmd)
+	case "schedule":
+		return s.processScheduleCommand(cmd)
+	case "status_update":
+		return s.processStatusUpdateCommand(cmd)
 	case "exec":
 		return s.processExecCommand(cmd)
 	case "delete":
@@ -601,6 +636,101 @@ func (s *SandboxFSM) processDeleteCommand(cmd Command) any {
 	return map[string]any{
 		"sandbox_id": deleteCmd.SandboxID,
 		"status":     "deleted",
+	}
+}
+
+// processScheduleCommand handles sandbox scheduling decisions by updating
+// sandbox state with selected node and placement information. Transitions
+// sandboxes from "created" to "scheduled" status for tracking placement decisions.
+//
+// Critical for distributed scheduling as it records placement decisions in
+// the cluster state for monitoring and debugging. Updates sandbox with
+// scheduling metadata for operational visibility and placement tracking.
+func (s *SandboxFSM) processScheduleCommand(cmd Command) any {
+	var schedCmd SandboxScheduleCommand
+	if err := json.Unmarshal(cmd.Data, &schedCmd); err != nil {
+		return fmt.Errorf("failed to unmarshal schedule command: %w", err)
+	}
+
+	// Find target sandbox
+	sandbox, exists := s.sandboxes[schedCmd.SandboxID]
+	if !exists {
+		return fmt.Errorf("sandbox not found: %s", schedCmd.SandboxID)
+	}
+
+	// Validate current state - only schedule sandboxes in "created" status
+	if sandbox.Status != "created" {
+		return fmt.Errorf("sandbox %s cannot be scheduled from status %s",
+			schedCmd.SandboxID, sandbox.Status)
+	}
+
+	// Update sandbox with scheduling information
+	sandbox.Status = "scheduled"
+	sandbox.ScheduledNodeID = schedCmd.SelectedNodeID
+	sandbox.ScheduledAt = time.Now()
+	sandbox.PlacementScore = schedCmd.PlacementScore
+	sandbox.Updated = time.Now()
+
+	logging.Info("SandboxFSM: Scheduled sandbox %s on node %s (score: %.1f)",
+		schedCmd.SandboxID, schedCmd.SelectedNodeID, schedCmd.PlacementScore)
+
+	return map[string]any{
+		"sandbox_id":      schedCmd.SandboxID,
+		"status":          "scheduled",
+		"scheduled_node":  schedCmd.SelectedNodeID,
+		"placement_score": schedCmd.PlacementScore,
+	}
+}
+
+// processStatusUpdateCommand handles placement result updates from nodes
+// after placement operations complete. Updates sandbox status based on
+// placement success, failure, or timeout scenarios.
+//
+// Essential for sandbox lifecycle tracking as it processes placement results
+// and transitions sandboxes to final states. Enables monitoring of placement
+// success rates and debugging of failed placement operations.
+func (s *SandboxFSM) processStatusUpdateCommand(cmd Command) any {
+	var statusCmd SandboxStatusUpdateCommand
+	if err := json.Unmarshal(cmd.Data, &statusCmd); err != nil {
+		return fmt.Errorf("failed to unmarshal status update command: %w", err)
+	}
+
+	// Find target sandbox
+	sandbox, exists := s.sandboxes[statusCmd.SandboxID]
+	if !exists {
+		return fmt.Errorf("sandbox not found: %s", statusCmd.SandboxID)
+	}
+
+	// Validate status transition - only update from "scheduled" status
+	if sandbox.Status != "scheduled" {
+		return fmt.Errorf("sandbox %s cannot update status from %s to %s",
+			statusCmd.SandboxID, sandbox.Status, statusCmd.Status)
+	}
+
+	// Validate target status
+	validStatuses := map[string]bool{
+		"ready":  true,
+		"failed": true,
+		"lost":   true,
+	}
+	if !validStatuses[statusCmd.Status] {
+		return fmt.Errorf("invalid status update: %s", statusCmd.Status)
+	}
+
+	// Update sandbox status
+	previousStatus := sandbox.Status
+	sandbox.Status = statusCmd.Status
+	sandbox.Updated = time.Now()
+
+	logging.Info("SandboxFSM: Updated sandbox %s status from %s to %s on node %s: %s",
+		statusCmd.SandboxID, previousStatus, statusCmd.Status,
+		sandbox.ScheduledNodeID, statusCmd.Message)
+
+	return map[string]any{
+		"sandbox_id":      statusCmd.SandboxID,
+		"previous_status": previousStatus,
+		"new_status":      statusCmd.Status,
+		"message":         statusCmd.Message,
 	}
 }
 

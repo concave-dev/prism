@@ -43,13 +43,14 @@ import (
 // TODO: Add circuit breaker pattern for failing nodes
 // TODO: Add connection pooling for high-throughput scenarios
 type ClientPool struct {
-	mu          sync.RWMutex
-	connections map[string]*grpcstd.ClientConn     // nodeID -> connection
-	clients     map[string]proto.NodeServiceClient // nodeID -> client
-	serfManager *serf.SerfManager                  // For discovering node addresses
-	grpcPort    int                                // Default gRPC port
-	dialGroup   singleflight.Group                 // Prevents duplicate dials to same node
-	config      *Config                            // gRPC configuration for timeout values
+	mu               sync.RWMutex
+	connections      map[string]*grpcstd.ClientConn          // nodeID -> connection
+	clients          map[string]proto.NodeServiceClient      // nodeID -> node service client
+	schedulerClients map[string]proto.SchedulerServiceClient // nodeID -> scheduler service client
+	serfManager      *serf.SerfManager                       // For discovering node addresses
+	grpcPort         int                                     // Default gRPC port
+	dialGroup        singleflight.Group                      // Prevents duplicate dials to same node
+	config           *Config                                 // gRPC configuration for timeout values
 }
 
 // NewClientPool creates a new gRPC client pool with lazy connection creation.
@@ -57,11 +58,12 @@ type ClientPool struct {
 // (nodes can override via "grpc_port" Serf tag).
 func NewClientPool(serfManager *serf.SerfManager, grpcPort int, config *Config) *ClientPool {
 	return &ClientPool{
-		connections: make(map[string]*grpcstd.ClientConn),
-		clients:     make(map[string]proto.NodeServiceClient),
-		serfManager: serfManager,
-		grpcPort:    grpcPort,
-		config:      config,
+		connections:      make(map[string]*grpcstd.ClientConn),
+		clients:          make(map[string]proto.NodeServiceClient),
+		schedulerClients: make(map[string]proto.SchedulerServiceClient),
+		serfManager:      serfManager,
+		grpcPort:         grpcPort,
+		config:           config,
 	}
 }
 
@@ -138,12 +140,14 @@ func (cp *ClientPool) GetClient(nodeID string) (proto.NodeServiceClient, error) 
 			return existingClient, nil
 		}
 
-		// Create client and store both connection and client
+		// Create both node service and scheduler service clients
 		client := proto.NewNodeServiceClient(conn)
+		schedulerClient := proto.NewSchedulerServiceClient(conn)
 		cp.connections[nodeID] = conn
 		cp.clients[nodeID] = client
+		cp.schedulerClients[nodeID] = schedulerClient
 
-		logging.Debug("Created gRPC client for node %s at %s", nodeID, addr)
+		logging.Debug("Created gRPC clients for node %s at %s", nodeID, addr)
 		return client, nil
 	})
 
@@ -194,6 +198,54 @@ func (cp *ClientPool) GetHealthFromNodeWithTypes(nodeID string, checkTypes []str
 	return client.GetHealth(ctx, req)
 }
 
+// GetSchedulerClient returns a scheduler gRPC client for the specified node,
+// creating a new connection if one doesn't exist. Uses the same connection
+// as the NodeService client for efficiency.
+func (cp *ClientPool) GetSchedulerClient(nodeID string) (proto.SchedulerServiceClient, error) {
+	// Ensure connection exists by getting the node client first
+	_, err := cp.GetClient(nodeID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Now get the scheduler client (should exist since GetClient creates it)
+	cp.mu.RLock()
+	defer cp.mu.RUnlock()
+
+	if schedulerClient, exists := cp.schedulerClients[nodeID]; exists {
+		return schedulerClient, nil
+	}
+
+	return nil, fmt.Errorf("scheduler client not found for node %s", nodeID)
+}
+
+// PlaceSandboxOnNode sends a sandbox placement request to a specific node
+// via the SchedulerService gRPC interface. Uses configured timeout to prevent
+// hanging on slow placement operations.
+//
+// Essential for distributed scheduling as it coordinates sandbox placement
+// between leader and worker nodes with proper timeout handling for
+// realistic VM provisioning scenarios.
+func (cp *ClientPool) PlaceSandboxOnNode(nodeID, sandboxID, sandboxName string, metadata map[string]string, leaderNodeID string) (*proto.PlaceSandboxResponse, error) {
+	client, err := cp.GetSchedulerClient(nodeID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get scheduler client for node %s: %w", nodeID, err)
+	}
+
+	// Use placement timeout (longer than resource timeout for VM provisioning)
+	ctx, cancel := context.WithTimeout(context.Background(), cp.config.PlacementCallTimeout)
+	defer cancel()
+
+	req := &proto.PlaceSandboxRequest{
+		SandboxId:    sandboxID,
+		SandboxName:  sandboxName,
+		Metadata:     metadata,
+		LeaderNodeId: leaderNodeID,
+	}
+
+	return client.PlaceSandbox(ctx, req)
+}
+
 // CloseConnection closes and removes a specific node connection from the pool.
 // Safe to call even if no connection exists for the nodeID.
 func (cp *ClientPool) CloseConnection(nodeID string) {
@@ -204,6 +256,7 @@ func (cp *ClientPool) CloseConnection(nodeID string) {
 		conn.Close()
 		delete(cp.connections, nodeID)
 		delete(cp.clients, nodeID)
+		delete(cp.schedulerClients, nodeID)
 		logging.Debug("Closed gRPC connection to node %s", nodeID)
 	}
 }
@@ -221,4 +274,5 @@ func (cp *ClientPool) Close() {
 
 	cp.connections = make(map[string]*grpcstd.ClientConn)
 	cp.clients = make(map[string]proto.NodeServiceClient)
+	cp.schedulerClients = make(map[string]proto.SchedulerServiceClient)
 }

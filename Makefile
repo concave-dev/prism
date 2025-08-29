@@ -10,7 +10,7 @@
 BIN_DIR := bin
 PRISMD := $(BIN_DIR)/prismd
 PRISMCTL := $(BIN_DIR)/prismctl
-PROTO := internal/grpc/proto/node_service.proto
+PROTO := internal/grpc/proto/node_service.proto internal/grpc/proto/scheduler_service.proto
 GO := go
 BOOTSTRAP := true
 
