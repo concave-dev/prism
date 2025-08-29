@@ -90,7 +90,7 @@ func NewSerfManager(config *Config) (*SerfManager, error) {
 		config = DefaultConfig()
 	}
 
-	if err := validateConfig(config); err != nil {
+	if err := config.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
 

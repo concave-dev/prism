@@ -96,7 +96,7 @@ func DefaultConfig() *Config {
 	}
 }
 
-// validateConfig validates SerfManager configuration fields to ensure reliable
+// Validate validates SerfManager configuration fields to ensure reliable
 // cluster operation and prevent common misconfigurations.
 //
 // Performs validation on:
@@ -106,34 +106,34 @@ func DefaultConfig() *Config {
 //   - User tags (cannot conflict with system-reserved tag names)
 //
 // Returns descriptive error for any validation failure to aid debugging.
-func validateConfig(config *Config) error {
-	if config.NodeName == "" {
+func (c *Config) Validate() error {
+	if c.NodeName == "" {
 		return fmt.Errorf("node name cannot be empty")
 	}
 
-	if err := validate.ValidateField(config.BindAddr, "required,ip"); err != nil {
+	if err := validate.ValidateField(c.BindAddr, "required,ip"); err != nil {
 		return fmt.Errorf("invalid bind address: %w", err)
 	}
 
 	// Port 0 means "OS chooses port", but distributed systems need predictable addresses
 	// for peer discovery and gossip protocol. Require explicit port selection.
-	if err := validate.ValidateField(config.BindPort, "min=1,max=65535"); err != nil {
+	if err := validate.ValidateField(c.BindPort, "min=1,max=65535"); err != nil {
 		return fmt.Errorf("invalid bind port: %w", err)
 	}
 
-	if config.EventBufferSize < 1 {
-		return fmt.Errorf("event buffer size must be positive, got: %d", config.EventBufferSize)
+	if c.EventBufferSize < 1 {
+		return fmt.Errorf("event buffer size must be positive, got: %d", c.EventBufferSize)
 	}
 
-	if err := validate.ValidatePositiveTimeout(config.JoinTimeout, "join timeout"); err != nil {
+	if err := validate.ValidatePositiveTimeout(c.JoinTimeout, "join timeout"); err != nil {
 		return err
 	}
 
-	if err := validate.ValidatePositiveTimeout(config.DeadNodeReclaimTime, "dead node reclaim time"); err != nil {
+	if err := validate.ValidatePositiveTimeout(c.DeadNodeReclaimTime, "dead node reclaim time"); err != nil {
 		return err
 	}
 
-	if err := validateTags(config.Tags); err != nil {
+	if err := validateTags(c.Tags); err != nil {
 		return fmt.Errorf("invalid tags: %w", err)
 	}
 

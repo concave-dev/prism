@@ -35,9 +35,9 @@ func TestValidateConfig_ValidConfigurations(t *testing.T) {
 
 	for i, config := range validConfigs {
 		t.Run("valid_config_"+string(rune(i+'0')), func(t *testing.T) {
-			err := validateConfig(config)
+			err := config.Validate()
 			if err != nil {
-				t.Errorf("validateConfig() = %v, want nil", err)
+				t.Errorf("Config.Validate() = %v, want nil", err)
 			}
 		})
 	}
@@ -124,14 +124,14 @@ func TestValidateConfig_InvalidConfigurations(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateConfig(tt.config)
+			err := tt.config.Validate()
 			if err == nil {
-				t.Error("validateConfig() = nil, want error")
+				t.Error("Config.Validate() = nil, want error")
 				return
 			}
 
 			if !strings.Contains(err.Error(), tt.expectedErr) {
-				t.Errorf("validateConfig() error = %q, want to contain %q", err.Error(), tt.expectedErr)
+				t.Errorf("Config.Validate() error = %q, want to contain %q", err.Error(), tt.expectedErr)
 			}
 		})
 	}
@@ -151,14 +151,14 @@ func TestValidateConfig_ReservedTags(t *testing.T) {
 		Tags:                map[string]string{"node_id": "test"}, // Reserved tag
 	}
 
-	err := validateConfig(config)
+	err := config.Validate()
 	if err == nil {
-		t.Error("validateConfig() with reserved tag should return error")
+		t.Error("Config.Validate() with reserved tag should return error")
 		return
 	}
 
 	expectedErr := "tag name 'node_id' is reserved and cannot be used"
 	if !strings.Contains(err.Error(), expectedErr) {
-		t.Errorf("validateConfig() error = %q, want to contain %q", err.Error(), expectedErr)
+		t.Errorf("Config.Validate() error = %q, want to contain %q", err.Error(), expectedErr)
 	}
 }
