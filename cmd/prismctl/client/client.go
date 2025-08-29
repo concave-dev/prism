@@ -134,11 +134,17 @@ type ClusterInfo struct {
 // Enables operators to track code execution environments, monitor sandbox health,
 // and manage the complete lifecycle of AI agent workload containers.
 type Sandbox struct {
-	ID          string            `json:"id"`
-	Name        string            `json:"name"`
-	Status      string            `json:"status"`
-	Created     time.Time         `json:"created"`
-	Updated     time.Time         `json:"updated"`
+	ID      string    `json:"id"`
+	Name    string    `json:"name"`
+	Status  string    `json:"status"`
+	Created time.Time `json:"created"`
+	Updated time.Time `json:"updated"`
+
+	// Scheduling information for placement tracking
+	ScheduledNodeID string    `json:"scheduled_node_id,omitempty"`
+	ScheduledAt     time.Time `json:"scheduled_at,omitempty"`
+	PlacementScore  float64   `json:"placement_score,omitempty"`
+
 	LastCommand string            `json:"last_command,omitempty"`
 	LastStdout  string            `json:"last_stdout,omitempty"`
 	LastStderr  string            `json:"last_stderr,omitempty"`

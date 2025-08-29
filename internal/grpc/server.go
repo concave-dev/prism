@@ -139,6 +139,10 @@ func (s *Server) Start() error {
 	nodeService.SetGRPCServer(s) // Set server reference after creation to avoid circular dependency
 	proto.RegisterNodeServiceServer(s.grpcServer, nodeService)
 
+	// Register SchedulerService for sandbox placement operations
+	schedulerService := NewSchedulerServiceImpl(s.serfManager, s.raftManager)
+	proto.RegisterSchedulerServiceServer(s.grpcServer, schedulerService)
+
 	// Start serving in a goroutine
 	go func() {
 		logging.Info("gRPC server listening on %s", s.listener.Addr().String())

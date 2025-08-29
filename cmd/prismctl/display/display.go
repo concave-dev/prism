@@ -537,6 +537,19 @@ func DisplaySandboxInfo(sandbox *client.Sandbox) {
 	fmt.Printf("  Created: %s\n", sandbox.Created.Format("2006-01-02 15:04:05 MST"))
 	fmt.Printf("  Updated: %s\n", sandbox.Updated.Format("2006-01-02 15:04:05 MST"))
 
+	// Show scheduling information if available
+	if sandbox.ScheduledNodeID != "" {
+		fmt.Println()
+		fmt.Printf("Scheduling:\n")
+		fmt.Printf("  Scheduled Node: %s\n", internalutils.TruncateIDSafe(sandbox.ScheduledNodeID))
+		if !sandbox.ScheduledAt.IsZero() {
+			fmt.Printf("  Scheduled At:   %s\n", sandbox.ScheduledAt.Format("2006-01-02 15:04:05 MST"))
+		}
+		if sandbox.PlacementScore > 0 {
+			fmt.Printf("  Placement Score: %.1f\n", sandbox.PlacementScore)
+		}
+	}
+
 	if sandbox.LastCommand != "" {
 		// Truncate long commands for readability
 		displayCommand := sandbox.LastCommand

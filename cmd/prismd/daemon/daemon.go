@@ -61,6 +61,7 @@ import (
 	"github.com/concave-dev/prism/internal/names"
 	"github.com/concave-dev/prism/internal/netutil"
 	"github.com/concave-dev/prism/internal/raft"
+	"github.com/concave-dev/prism/internal/scheduler"
 	"github.com/concave-dev/prism/internal/serf"
 	"github.com/concave-dev/prism/internal/version"
 )
@@ -446,6 +447,13 @@ func Run() error {
 	// Create gRPC client pool for inter-node communication
 	grpcClientPool := grpc.NewClientPool(serfManager, config.Global.GRPCPort, grpcConfig)
 
+	// Initialize scheduler for automatic sandbox placement
+	logging.Info("Initializing sandbox scheduler")
+	scheduler := scheduler.NewNaiveScheduler(raftManager, grpcClientPool, serfManager)
+
+	// Wire scheduler into FSM for automatic scheduling triggers
+	raftManager.GetFSM().SetScheduler(scheduler)
+
 	logging.Info("Starting HTTP API server with pre-bound listener on %s", apiListener.Addr().String())
 
 	// Warn about localhost binding breaking leader forwarding in multi-node clusters
@@ -531,6 +539,7 @@ func Run() error {
 	logging.Info("  - Raft consensus: %s:%d (Leader: %v)", config.Global.RaftAddr, config.Global.RaftPort, raftManager.IsLeader())
 	logging.Info("  - gRPC server: %s:%d", config.Global.GRPCAddr, config.Global.GRPCPort)
 	logging.Info("  - HTTP API: %s:%d", config.Global.APIAddr, config.Global.APIPort)
+	logging.Info("  - Sandbox scheduler: %s (Leader: %v)", serfManager.NodeID, scheduler.IsLeader())
 
 	// Wait for shutdown signal
 	select {
