@@ -432,14 +432,11 @@ func (api *PrismAPIClient) GetMembers() ([]ClusterMember, error) {
 		Get("/cluster/members")
 
 	if err != nil {
-		logging.Error("Failed to connect to API server: %v", err)
-		logging.Error("Make sure a Prism daemon with API server is running at %s", api.baseURL)
-		return nil, fmt.Errorf("connection failed")
+		return nil, fmt.Errorf("failed to connect to API server at %s: %w", api.baseURL, err)
 	}
 
 	if resp.StatusCode() != 200 {
-		logging.Error("API request failed with status %d: %s", resp.StatusCode(), resp.String())
-		return nil, fmt.Errorf("API request failed")
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode(), resp.String())
 	}
 
 	// Parse members from the response data
@@ -484,14 +481,11 @@ func (api *PrismAPIClient) GetClusterInfo() (*ClusterInfo, error) {
 		Get("/cluster/info")
 
 	if err != nil {
-		logging.Error("Failed to connect to API server: %v", err)
-		logging.Error("Make sure a Prism daemon with API server is running at %s", api.baseURL)
-		return nil, fmt.Errorf("connection failed")
+		return nil, fmt.Errorf("failed to connect to API server at %s: %w", api.baseURL, err)
 	}
 
 	if resp.StatusCode() != 200 {
-		logging.Error("API request failed with status %d: %s", resp.StatusCode(), resp.String())
-		return nil, fmt.Errorf("API request failed")
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode(), resp.String())
 	}
 
 	// Parse cluster info from the response data
@@ -563,14 +557,11 @@ func (api *PrismAPIClient) GetRaftPeers() (*RaftPeersResponse, error) {
 		Get("/cluster/peers")
 
 	if err != nil {
-		logging.Error("Failed to connect to API server: %v", err)
-		logging.Error("Make sure a Prism daemon with API server is running at %s", api.baseURL)
-		return nil, fmt.Errorf("connection failed")
+		return nil, fmt.Errorf("failed to connect to API server at %s: %w", api.baseURL, err)
 	}
 
 	if resp.StatusCode() != 200 {
-		logging.Error("API request failed with status %d: %s", resp.StatusCode(), resp.String())
-		return nil, fmt.Errorf("API request failed")
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode(), resp.String())
 	}
 
 	if data, ok := response.Data.(map[string]any); ok {
@@ -618,14 +609,11 @@ func (api *PrismAPIClient) GetClusterResources(sortBy string) ([]NodeResources, 
 	resp, err := req.Get("/cluster/resources")
 
 	if err != nil {
-		logging.Error("Failed to connect to API server: %v", err)
-		logging.Error("Make sure a Prism daemon with API server is running at %s", api.baseURL)
-		return nil, fmt.Errorf("connection failed")
+		return nil, fmt.Errorf("failed to connect to API server at %s: %w", api.baseURL, err)
 	}
 
 	if resp.StatusCode() != 200 {
-		logging.Error("API request failed with status %d: %s", resp.StatusCode(), resp.String())
-		return nil, fmt.Errorf("API request failed")
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode(), resp.String())
 	}
 
 	// Parse resources from the response data
@@ -694,19 +682,15 @@ func (api *PrismAPIClient) GetNodeResources(nodeID string) (*NodeResources, erro
 		Get(fmt.Sprintf("/nodes/%s/resources", nodeID))
 
 	if err != nil {
-		logging.Error("Failed to connect to API server: %v", err)
-		logging.Error("Make sure a Prism daemon with API server is running at %s", api.baseURL)
-		return nil, fmt.Errorf("connection failed")
+		return nil, fmt.Errorf("failed to connect to API server at %s: %w", api.baseURL, err)
 	}
 
 	if resp.StatusCode() == 404 {
-		logging.Error("Node '%s' not found in cluster", nodeID)
-		return nil, fmt.Errorf("node not found")
+		return nil, fmt.Errorf("node '%s' not found in cluster", nodeID)
 	}
 
 	if resp.StatusCode() != 200 {
-		logging.Error("API request failed with status %d: %s", resp.StatusCode(), resp.String())
-		return nil, fmt.Errorf("API request failed")
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode(), resp.String())
 	}
 
 	// Parse resource from the response data
@@ -767,19 +751,15 @@ func (api *PrismAPIClient) GetNodeHealth(nodeID string) (*NodeHealth, error) {
 		Get(fmt.Sprintf("/nodes/%s/health", nodeID))
 
 	if err != nil {
-		logging.Error("Failed to connect to API server: %v", err)
-		logging.Error("Make sure a Prism daemon with API server is running at %s", api.baseURL)
-		return nil, fmt.Errorf("connection failed")
+		return nil, fmt.Errorf("failed to connect to API server at %s: %w", api.baseURL, err)
 	}
 
 	if resp.StatusCode() == 404 {
-		logging.Error("Node '%s' not found in cluster", nodeID)
-		return nil, fmt.Errorf("node not found")
+		return nil, fmt.Errorf("node '%s' not found in cluster", nodeID)
 	}
 
 	if resp.StatusCode() != 200 {
-		logging.Error("API request failed with status %d: %s", resp.StatusCode(), resp.String())
-		return nil, fmt.Errorf("API request failed")
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode(), resp.String())
 	}
 
 	if m, ok := response.Data.(map[string]any); ok {
@@ -823,14 +803,11 @@ func (api *PrismAPIClient) GetSandboxes() ([]Sandbox, error) {
 		Get("/sandboxes")
 
 	if err != nil {
-		logging.Error("Failed to connect to API server: %v", err)
-		logging.Error("Make sure a Prism daemon with API server is running at %s", api.baseURL)
-		return nil, fmt.Errorf("connection failed")
+		return nil, fmt.Errorf("failed to connect to API server at %s: %w", api.baseURL, err)
 	}
 
 	if resp.StatusCode() != 200 {
-		logging.Error("API request failed with status %d: %s", resp.StatusCode(), resp.String())
-		return nil, fmt.Errorf("API request failed")
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode(), resp.String())
 	}
 
 	return response.Sandboxes, nil
@@ -844,6 +821,8 @@ func (api *PrismAPIClient) GetSandboxes() ([]Sandbox, error) {
 // code execution environments. Provides comprehensive sandbox details for
 // lifecycle management, debugging operations, and execution environment
 // analysis with proper error handling for missing sandboxes.
+//
+// TODO: Currently unused - may be needed for future sandbox info command
 func (api *PrismAPIClient) GetSandbox(sandboxID string) (*Sandbox, error) {
 	var sandbox Sandbox
 
@@ -852,19 +831,15 @@ func (api *PrismAPIClient) GetSandbox(sandboxID string) (*Sandbox, error) {
 		Get(fmt.Sprintf("/sandboxes/%s", sandboxID))
 
 	if err != nil {
-		logging.Error("Failed to connect to API server: %v", err)
-		logging.Error("Make sure a Prism daemon with API server is running at %s", api.baseURL)
-		return nil, fmt.Errorf("connection failed")
+		return nil, fmt.Errorf("failed to connect to API server at %s: %w", api.baseURL, err)
 	}
 
 	if resp.StatusCode() == 404 {
-		logging.Error("Sandbox '%s' not found in cluster", sandboxID)
-		return nil, fmt.Errorf("sandbox not found")
+		return nil, fmt.Errorf("sandbox '%s' not found in cluster", sandboxID)
 	}
 
 	if resp.StatusCode() != 200 {
-		logging.Error("API request failed with status %d: %s", resp.StatusCode(), resp.String())
-		return nil, fmt.Errorf("API request failed")
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode(), resp.String())
 	}
 
 	return &sandbox, nil
@@ -895,24 +870,19 @@ func (api *PrismAPIClient) CreateSandbox(name string, metadata map[string]string
 		Post("/sandboxes")
 
 	if err != nil {
-		logging.Error("Failed to connect to API server: %v", err)
-		logging.Error("Make sure a Prism daemon with API server is running at %s", api.baseURL)
-		return nil, fmt.Errorf("connection failed")
+		return nil, fmt.Errorf("failed to connect to API server at %s: %w", api.baseURL, err)
 	}
 
 	if resp.StatusCode() == 400 {
-		logging.Error("Invalid request: %s", resp.String())
-		return nil, fmt.Errorf("invalid request")
+		return nil, fmt.Errorf("invalid request: %s", resp.String())
 	}
 
 	if resp.StatusCode() == 307 {
-		logging.Error("Not cluster leader, request redirected")
-		return nil, fmt.Errorf("not cluster leader - retry request")
+		return nil, fmt.Errorf("not cluster leader - request redirected")
 	}
 
 	if resp.StatusCode() != 202 {
-		logging.Error("API request failed with status %d: %s", resp.StatusCode(), resp.String())
-		return nil, fmt.Errorf("API request failed")
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode(), resp.String())
 	}
 
 	return &response, nil
@@ -940,29 +910,23 @@ func (api *PrismAPIClient) ExecInSandbox(sandboxID, command string) (*SandboxExe
 		Post(fmt.Sprintf("/sandboxes/%s/exec", sandboxID))
 
 	if err != nil {
-		logging.Error("Failed to connect to API server: %v", err)
-		logging.Error("Make sure a Prism daemon with API server is running at %s", api.baseURL)
-		return nil, fmt.Errorf("connection failed")
+		return nil, fmt.Errorf("failed to connect to API server at %s: %w", api.baseURL, err)
 	}
 
 	if resp.StatusCode() == 404 {
-		logging.Error("Sandbox '%s' not found", sandboxID)
-		return nil, fmt.Errorf("sandbox not found")
+		return nil, fmt.Errorf("sandbox '%s' not found", sandboxID)
 	}
 
 	if resp.StatusCode() == 400 {
-		logging.Error("Invalid request: %s", resp.String())
-		return nil, fmt.Errorf("invalid request")
+		return nil, fmt.Errorf("invalid request: %s", resp.String())
 	}
 
 	if resp.StatusCode() == 307 {
-		logging.Error("Not cluster leader, request redirected")
-		return nil, fmt.Errorf("not cluster leader - retry request")
+		return nil, fmt.Errorf("not cluster leader - request redirected")
 	}
 
 	if resp.StatusCode() != 200 {
-		logging.Error("API request failed with status %d: %s", resp.StatusCode(), resp.String())
-		return nil, fmt.Errorf("API request failed")
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode(), resp.String())
 	}
 
 	return &response, nil
@@ -986,19 +950,15 @@ func (api *PrismAPIClient) GetSandboxLogs(sandboxID string) ([]string, error) {
 		Get(fmt.Sprintf("/sandboxes/%s/logs", sandboxID))
 
 	if err != nil {
-		logging.Error("Failed to connect to API server: %v", err)
-		logging.Error("Make sure a Prism daemon with API server is running at %s", api.baseURL)
-		return nil, fmt.Errorf("connection failed")
+		return nil, fmt.Errorf("failed to connect to API server at %s: %w", api.baseURL, err)
 	}
 
 	if resp.StatusCode() == 404 {
-		logging.Error("Sandbox '%s' not found", sandboxID)
-		return nil, fmt.Errorf("sandbox not found")
+		return nil, fmt.Errorf("sandbox '%s' not found", sandboxID)
 	}
 
 	if resp.StatusCode() != 200 {
-		logging.Error("API request failed with status %d: %s", resp.StatusCode(), resp.String())
-		return nil, fmt.Errorf("API request failed")
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode(), resp.String())
 	}
 
 	return response.Logs, nil
