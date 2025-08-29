@@ -1,6 +1,7 @@
 package api
 
 import (
+	"net"
 	"testing"
 
 	"github.com/concave-dev/prism/internal/grpc"
@@ -21,9 +22,16 @@ func TestSetupRoutes(t *testing.T) {
 		GRPCClientPool: &grpc.ClientPool{},
 	}
 
-	server, err := NewServer(config)
+	// Create a mock listener
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		t.Fatalf("NewServer() error = %v", err)
+		t.Fatalf("Failed to create test listener: %v", err)
+	}
+	defer listener.Close()
+
+	server, err := NewServerWithListener(config, listener)
+	if err != nil {
+		t.Fatalf("NewServerWithListener() error = %v", err)
 	}
 	router := gin.New()
 

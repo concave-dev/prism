@@ -1,6 +1,7 @@
 package api
 
 import (
+	"net"
 	"testing"
 
 	"github.com/concave-dev/prism/internal/grpc"
@@ -8,8 +9,8 @@ import (
 	"github.com/concave-dev/prism/internal/serf"
 )
 
-// TestNewServer tests NewServer creation with valid config
-func TestNewServer(t *testing.T) {
+// TestNewServerWithListener tests NewServerWithListener creation with valid config
+func TestNewServerWithListener(t *testing.T) {
 	config := &Config{
 		BindAddr:       "127.0.0.1",
 		BindPort:       8080,
@@ -18,12 +19,19 @@ func TestNewServer(t *testing.T) {
 		GRPCClientPool: &grpc.ClientPool{},
 	}
 
-	server, err := NewServer(config)
+	// Create a mock listener
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		t.Errorf("NewServer() error = %v, want nil", err)
+		t.Fatalf("Failed to create test listener: %v", err)
+	}
+	defer listener.Close()
+
+	server, err := NewServerWithListener(config, listener)
+	if err != nil {
+		t.Errorf("NewServerWithListener() error = %v, want nil", err)
 	}
 
 	if server == nil {
-		t.Error("NewServer() returned nil")
+		t.Error("NewServerWithListener() returned nil")
 	}
 }

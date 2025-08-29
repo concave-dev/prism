@@ -50,31 +50,6 @@ type Server struct {
 	bindPort       int               // Network port for HTTP server binding
 }
 
-// NewServer creates a new Server instance from the provided configuration.
-//
-// Initializes the HTTP API server with all required distributed system components
-// and configures Gin mode based on DEBUG environment variable for optimal development experience.
-func NewServer(config *Config) (*Server, error) {
-	if err := config.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid config: %w", err)
-	}
-
-	// Set Gin mode based on DEBUG environment variable
-	if os.Getenv("DEBUG") == "true" {
-		gin.SetMode(gin.DebugMode)
-	} else {
-		gin.SetMode(gin.ReleaseMode)
-	}
-
-	return &Server{
-		serfManager:    config.SerfManager,
-		raftManager:    config.RaftManager,
-		grpcClientPool: config.GRPCClientPool,
-		bindAddr:       config.BindAddr,
-		bindPort:       config.BindPort,
-	}, nil
-}
-
 // NewServerWithListener creates a new HTTP API server with a pre-bound listener.
 // This eliminates port binding race conditions by using a listener that was
 // bound earlier during startup, ensuring the port is reserved for this service.
