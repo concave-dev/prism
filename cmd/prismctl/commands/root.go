@@ -69,7 +69,7 @@ func SetupCommands() {
 func SetupGlobalFlags(rootCmd *cobra.Command, apiAddrPtr *string, logLevelPtr *string,
 	timeoutPtr *int, verbosePtr *bool, outputPtr *string, defaultAPIAddr string) {
 	rootCmd.PersistentFlags().StringVar(apiAddrPtr, "api", defaultAPIAddr,
-		"Address of Prism API server to connect to (default: 127.0.0.1:8008, works with any cluster node due to leader forwarding)")
+		"API server address (any cluster node address works)")
 	rootCmd.PersistentFlags().StringVar(logLevelPtr, "log-level", "ERROR",
 		"Log level: DEBUG, INFO, WARN, ERROR")
 	rootCmd.PersistentFlags().IntVar(timeoutPtr, "timeout", 8,
