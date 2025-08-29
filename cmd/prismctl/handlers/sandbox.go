@@ -451,17 +451,38 @@ func HandleSandboxInfo(cmd *cobra.Command, args []string) error {
 // any error. Used for destructive operations where partial matching could lead
 // to unintended consequences.
 //
-// SECURITY: Only supports exact ID or exact name matches for safety - no partial
-// ID matching for destructive operations to prevent accidental sandbox destruction.
+// SECURITY: Supports exact ID matches (both 12-char display IDs and 64-char full IDs)
+// and exact name matches for safety. The 12-char ID is considered "exact" since it's
+// what users see in displays and is expected to work for mutation operations.
 func resolveSandboxIdentifierExact(sandboxes []client.Sandbox, identifier string) (string, string, error) {
-	// First try exact ID match
+	// First try exact full ID match (64 characters)
 	for _, sandbox := range sandboxes {
 		if sandbox.ID == identifier {
 			return sandbox.ID, sandbox.Name, nil
 		}
 	}
 
-	// Then try exact name match
+	// Then try 12-character "exact" ID match (what users see in displays)
+	// This is considered exact because it's the standard display format
+	if len(identifier) == 12 && utils.IsHexString(identifier) {
+		var matches []client.Sandbox
+		for _, sandbox := range sandboxes {
+			if strings.HasPrefix(sandbox.ID, identifier) {
+				matches = append(matches, sandbox)
+			}
+		}
+
+		if len(matches) == 1 {
+			logging.Info("Resolved 12-char ID '%s' to full ID '%s' (sandbox: %s)",
+				identifier, matches[0].ID, matches[0].Name)
+			return matches[0].ID, matches[0].Name, nil
+		} else if len(matches) > 1 {
+			logging.Error("12-char ID '%s' matches multiple sandboxes - not unique", identifier)
+			return "", "", fmt.Errorf("12-char ID '%s' is not unique", identifier)
+		}
+	}
+
+	// Finally try exact name match
 	for _, sandbox := range sandboxes {
 		if sandbox.Name == identifier {
 			return sandbox.ID, sandbox.Name, nil
