@@ -55,30 +55,3 @@ func ValidatePositiveTimeout(timeout time.Duration, name string) error {
 	}
 	return nil
 }
-
-// ValidateBindAddress validates both host and port components of a bind address.
-// Combines IP address validation with port range validation using the validator
-// library for comprehensive network address checking.
-//
-// Ensures network services can bind to valid, reachable addresses for cluster
-// communication. Validates both IPv4 format and port range in a single call
-// to reduce validation code duplication across config packages.
-func ValidateBindAddress(addr string, port int) error {
-	// Parse and validate the address format
-	netAddr, err := ParseBindAddress(addr)
-	if err != nil {
-		return err
-	}
-
-	// Validate the port is in valid range
-	if err := ValidatePortRange(netAddr.Port); err != nil {
-		return fmt.Errorf("port validation failed: %w", err)
-	}
-
-	// Ensure consistent port values
-	if netAddr.Port != port {
-		return fmt.Errorf("port mismatch: address contains %d, but %d was provided", netAddr.Port, port)
-	}
-
-	return nil
-}
