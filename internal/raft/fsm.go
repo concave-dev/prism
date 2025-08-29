@@ -355,25 +355,17 @@ func (f *PrismFSM) GetClusterID() string {
 // consistency across all nodes through leadership changes and restarts.
 func (f *PrismFSM) applyClusterIDCommand(cmd Command) interface{} {
 	if cmd.Operation != "set" {
-		err := fmt.Errorf("unsupported cluster_id operation: %s", cmd.Operation)
-		logging.Error("FSM: %v", err)
-		return err
+		return fmt.Errorf("unsupported cluster_id operation: %s", cmd.Operation)
 	}
 
 	var clusterIDCmd ClusterIDCommand
 	if err := json.Unmarshal(cmd.Data, &clusterIDCmd); err != nil {
-		logging.Error("FSM: Failed to unmarshal cluster ID command: %v", err)
 		return fmt.Errorf("failed to unmarshal cluster ID command: %w", err)
 	}
 
 	// Reject empty input
 	if clusterIDCmd.ClusterID == "" {
-		err := fmt.Errorf("cluster ID cannot be empty")
-		logging.Error(
-			"FSM: %v (provided=%q existing=%q)",
-			err, clusterIDCmd.ClusterID, f.clusterID,
-		)
-		return err
+		return fmt.Errorf("cluster ID cannot be empty")
 	}
 
 	// Idempotency and overwrite protection
@@ -386,13 +378,11 @@ func (f *PrismFSM) applyClusterIDCommand(cmd Command) interface{} {
 			)
 			return nil
 		}
-		err := fmt.Errorf(
+		return fmt.Errorf(
 			"cluster ID already set; refusing to change (provided=%s "+
 				"existing=%s)",
 			clusterIDCmd.ClusterID, f.clusterID,
 		)
-		logging.Error("FSM: %v", err)
-		return err
 	}
 
 	// Establish cluster ID
@@ -451,9 +441,7 @@ func (s *SandboxFSM) processCommand(cmd Command) any {
 	case "delete":
 		return s.processDeleteCommand(cmd)
 	default:
-		err := fmt.Errorf("unknown sandbox operation: %s", cmd.Operation)
-		logging.Error("SandboxFSM: %v", err)
-		return err
+		return fmt.Errorf("unknown sandbox operation: %s", cmd.Operation)
 	}
 }
 
@@ -467,22 +455,18 @@ func (s *SandboxFSM) processCommand(cmd Command) any {
 func (s *SandboxFSM) processCreateCommand(cmd Command) any {
 	var createCmd SandboxCreateCommand
 	if err := json.Unmarshal(cmd.Data, &createCmd); err != nil {
-		logging.Error("SandboxFSM: Failed to unmarshal create command: %v", err)
 		return fmt.Errorf("failed to unmarshal create command: %w", err)
 	}
 
 	// Use pre-generated sandbox ID from the command
 	sandboxID := createCmd.ID
 	if sandboxID == "" {
-		logging.Error("SandboxFSM: Sandbox ID is required in create command")
 		return fmt.Errorf("sandbox ID is required in create command")
 	}
 
 	// Check for duplicate sandbox names - names must be unique
 	for _, existingSandbox := range s.sandboxes {
 		if existingSandbox.Name == createCmd.Name {
-			logging.Error("SandboxFSM: Sandbox name '%s' already exists (ID: %s)",
-				createCmd.Name, existingSandbox.ID)
 			return fmt.Errorf("sandbox name '%s' already exists", createCmd.Name)
 		}
 	}
@@ -526,16 +510,13 @@ func (s *SandboxFSM) processCreateCommand(cmd Command) any {
 func (s *SandboxFSM) processExecCommand(cmd Command) any {
 	var execCmd SandboxExecCommand
 	if err := json.Unmarshal(cmd.Data, &execCmd); err != nil {
-		logging.Error("SandboxFSM: Failed to unmarshal exec command: %v", err)
 		return fmt.Errorf("failed to unmarshal exec command: %w", err)
 	}
 
 	// Find target sandbox
 	sandbox, exists := s.sandboxes[execCmd.SandboxID]
 	if !exists {
-		err := fmt.Errorf("sandbox not found: %s", execCmd.SandboxID)
-		logging.Error("SandboxFSM: %v", err)
-		return err
+		return fmt.Errorf("sandbox not found: %s", execCmd.SandboxID)
 	}
 
 	// Update sandbox state with execution info
@@ -598,16 +579,13 @@ func (s *SandboxFSM) processDeleteCommand(cmd Command) any {
 		SandboxID string `json:"sandbox_id"`
 	}
 	if err := json.Unmarshal(cmd.Data, &deleteCmd); err != nil {
-		logging.Error("SandboxFSM: Failed to unmarshal delete command: %v", err)
 		return fmt.Errorf("failed to unmarshal delete command: %w", err)
 	}
 
 	// Find target sandbox
 	_, exists := s.sandboxes[deleteCmd.SandboxID]
 	if !exists {
-		err := fmt.Errorf("sandbox not found: %s", deleteCmd.SandboxID)
-		logging.Error("SandboxFSM: %v", err)
-		return err
+		return fmt.Errorf("sandbox not found: %s", deleteCmd.SandboxID)
 	}
 
 	// Remove sandbox from state
@@ -715,6 +693,9 @@ type SandboxFSMState struct {
 // Handles serialization errors gracefully to prevent snapshot corruption.
 func (s *PrismFSMSnapshot) Persist(sink raft.SnapshotSink) error {
 	defer sink.Close()
+
+	// TODO: Call sink.Cancel() on errors to ensure Raft discards corrupted snapshots
+	// TODO: Snapshot errors don't bubble up to application - users won't see failures
 
 	// Serialize snapshot to JSON
 	data, err := json.Marshal(s)
