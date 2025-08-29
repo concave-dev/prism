@@ -3,6 +3,7 @@ package api
 import (
 	"testing"
 
+	"github.com/concave-dev/prism/internal/grpc"
 	"github.com/concave-dev/prism/internal/raft"
 	"github.com/concave-dev/prism/internal/serf"
 	"github.com/gin-gonic/gin"
@@ -13,13 +14,17 @@ func TestSetupRoutes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	config := &Config{
-		BindAddr:    "127.0.0.1",
-		BindPort:    8080,
-		SerfManager: &serf.SerfManager{},
-		RaftManager: &raft.RaftManager{},
+		BindAddr:       "127.0.0.1",
+		BindPort:       8080,
+		SerfManager:    &serf.SerfManager{},
+		RaftManager:    &raft.RaftManager{},
+		GRPCClientPool: &grpc.ClientPool{},
 	}
 
-	server := NewServer(config)
+	server, err := NewServer(config)
+	if err != nil {
+		t.Fatalf("NewServer() error = %v", err)
+	}
 	router := gin.New()
 
 	// Setup routes

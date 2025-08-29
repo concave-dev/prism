@@ -54,7 +54,11 @@ type Server struct {
 //
 // Initializes the HTTP API server with all required distributed system components
 // and configures Gin mode based on DEBUG environment variable for optimal development experience.
-func NewServer(config *Config) *Server {
+func NewServer(config *Config) (*Server, error) {
+	if err := config.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
+	}
+
 	// Set Gin mode based on DEBUG environment variable
 	if os.Getenv("DEBUG") == "true" {
 		gin.SetMode(gin.DebugMode)
@@ -68,7 +72,7 @@ func NewServer(config *Config) *Server {
 		grpcClientPool: config.GRPCClientPool,
 		bindAddr:       config.BindAddr,
 		bindPort:       config.BindPort,
-	}
+	}, nil
 }
 
 // NewServerWithListener creates a new HTTP API server with a pre-bound listener.
@@ -78,7 +82,15 @@ func NewServer(config *Config) *Server {
 // The pre-bound listener approach is essential for production deployments where
 // multiple services start concurrently and port conflicts must be prevented.
 // This method should be preferred over NewServer for reliable port management.
-func NewServerWithListener(config *Config, listener net.Listener) *Server {
+func NewServerWithListener(config *Config, listener net.Listener) (*Server, error) {
+	if err := config.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
+	}
+
+	if listener == nil {
+		return nil, fmt.Errorf("listener cannot be nil")
+	}
+
 	// Set Gin mode based on DEBUG environment variable
 	if os.Getenv("DEBUG") == "true" {
 		gin.SetMode(gin.DebugMode)
@@ -93,7 +105,7 @@ func NewServerWithListener(config *Config, listener net.Listener) *Server {
 		listener:       listener, // Use pre-bound listener
 		bindAddr:       config.BindAddr,
 		bindPort:       config.BindPort,
-	}
+	}, nil
 }
 
 // Start initializes and starts the HTTP API server with middleware and routing.

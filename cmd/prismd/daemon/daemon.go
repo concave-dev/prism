@@ -458,7 +458,12 @@ func Run() error {
 	var apiServer *api.Server
 
 	apiConfig := buildAPIConfig(serfManager, raftManager, grpcClientPool)
-	apiServer = api.NewServerWithListener(apiConfig, apiListener)
+	apiServer, err = api.NewServerWithListener(apiConfig, apiListener)
+	if err != nil {
+		logging.Error("Failed to create API server: %v", err)
+		apiListener.Close() // Clean up pre-bound listener on error
+		return fmt.Errorf("failed to create API server: %w", err)
+	}
 	if err := apiServer.Start(); err != nil {
 		logging.Error("Failed to start API server: %v", err)
 		// Note: apiServer now owns the listener, so it will handle cleanup
