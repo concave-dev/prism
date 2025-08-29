@@ -1468,6 +1468,7 @@ func (m *RaftManager) GetHealthStatus() *RaftHealthStatus {
 	// Get peer information
 	peers, err := m.GetPeers()
 	if err != nil {
+		logging.Error("Failed to get Raft peers for health check: %v", err)
 		status.IsHealthy = false
 		status.Message = fmt.Sprintf("Failed to get Raft peers: %v", err)
 		return status
