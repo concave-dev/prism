@@ -14,6 +14,7 @@ import (
 	"net/http"
 
 	"github.com/concave-dev/prism/internal/grpc"
+	"github.com/concave-dev/prism/internal/logging"
 	"github.com/concave-dev/prism/internal/raft"
 	"github.com/concave-dev/prism/internal/serf"
 	"github.com/gin-gonic/gin"
@@ -34,6 +35,7 @@ func HandleNodeByID(serfManager *serf.SerfManager, raftManager *raft.RaftManager
 		member, exists := members[nodeID]
 
 		if !exists {
+			logging.Warn("Node %s not found in Serf cluster", nodeID)
 			c.JSON(http.StatusNotFound, gin.H{
 				"status":  "error",
 				"message": "Node not found",
@@ -49,6 +51,7 @@ func HandleNodeByID(serfManager *serf.SerfManager, raftManager *raft.RaftManager
 			var err error
 			raftPeers, err = raftManager.GetPeers()
 			if err != nil {
+				logging.Warn("Failed to get Raft peers for node '%s': %v", nodeID, err)
 				// If we can't get Raft peers, log but continue (show all as disconnected)
 				raftPeers = []string{}
 			}
@@ -56,6 +59,7 @@ func HandleNodeByID(serfManager *serf.SerfManager, raftManager *raft.RaftManager
 			// Get Raft leader
 			raftLeader = raftManager.Leader()
 		} else {
+			logging.Warn("Raft manager is not running - showing all nodes as disconnected")
 			// Raft manager is nil (not running), show all as disconnected
 			raftPeers = []string{}
 		}

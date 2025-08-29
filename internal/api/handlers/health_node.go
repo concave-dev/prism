@@ -49,6 +49,7 @@ func HandleNodeHealth(clientPool *grpc.ClientPool, serfManager *serf.SerfManager
 	return func(c *gin.Context) {
 		nodeID := c.Param("id")
 		if nodeID == "" {
+			logging.Warn("Node ID is required for health check")
 			c.JSON(http.StatusBadRequest, gin.H{
 				"status":  "error",
 				"message": "Node ID is required",
@@ -58,6 +59,7 @@ func HandleNodeHealth(clientPool *grpc.ClientPool, serfManager *serf.SerfManager
 
 		// Check if node exists by exact ID only (name resolution handled by CLI)
 		if _, exists := serfManager.GetMember(nodeID); !exists {
+			logging.Warn("Node %s not found in Serf cluster", nodeID)
 			c.JSON(http.StatusNotFound, gin.H{
 				"status":  "error",
 				"message": "Node not found",
