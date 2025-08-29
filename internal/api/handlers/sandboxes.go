@@ -611,3 +611,135 @@ func GetSandboxLogs(sandboxMgr SandboxManager) gin.HandlerFunc {
 		})
 	}
 }
+
+// StopSandbox handles HTTP requests for stopping running sandboxes in the cluster.
+// Submits sandbox stop commands to Raft consensus and returns stop operation
+// status information for pause/resume functionality.
+//
+// POST /api/v1/sandboxes/{id}/stop
+//
+// Essential for resource management as it provides the interface for pausing
+// sandbox execution while preserving state for future resume operations.
+// Enables efficient resource utilization by stopping unused sandboxes.
+func StopSandbox(sandboxMgr SandboxManager, nodeID string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		sandboxID := c.Param("id")
+		if sandboxID == "" {
+			logging.Warn("Sandbox stop: Missing sandbox ID")
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "Missing sandbox ID",
+				"details": "Sandbox ID is required in URL path",
+			})
+			return
+		}
+
+		// Parse optional request body for stop options
+		var stopOptions struct {
+			Graceful bool `json:"graceful"`
+		}
+		stopOptions.Graceful = true // Default to graceful stop
+
+		// Parse request body if provided (optional)
+		if err := c.ShouldBindJSON(&stopOptions); err != nil {
+			// Ignore JSON binding errors - stop options are optional
+			logging.Debug("Sandbox stop: Using default stop options for %s", sandboxID)
+		}
+
+		logging.Info("Sandbox stop request: id=%s graceful=%v",
+			sandboxID, stopOptions.Graceful)
+
+		// Leadership check is handled by leader forwarding middleware
+		// This handler only executes if we're the leader or forwarding succeeded
+
+		// Check if sandbox exists and is in valid state for stopping
+		fsm := sandboxMgr.GetFSM()
+		if fsm == nil {
+			logging.Warn("Sandbox stop: FSM not available")
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"error":   "Cluster state not available",
+				"details": "FSM not initialized",
+			})
+			return
+		}
+
+		sandbox := fsm.GetSandbox(sandboxID)
+		if sandbox == nil {
+			logging.Warn("Sandbox stop: Sandbox not found: %s", sandboxID)
+			c.JSON(http.StatusNotFound, gin.H{
+				"error":   "Sandbox not found",
+				"details": fmt.Sprintf("No sandbox found with ID: %s", sandboxID),
+			})
+			return
+		}
+
+		// Validate sandbox can be stopped
+		validStopStates := map[string]bool{
+			"ready":     true,
+			"executing": true,
+		}
+		if !validStopStates[sandbox.Status] {
+			logging.Warn("Sandbox stop: Invalid state %s for sandbox %s", sandbox.Status, sandboxID)
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "Invalid sandbox state",
+				"details": fmt.Sprintf("Sandbox in status '%s' cannot be stopped", sandbox.Status),
+			})
+			return
+		}
+
+		// Create Raft command for sandbox stop
+		stopCmd := raft.SandboxStopCommand{
+			SandboxID: sandboxID,
+			Graceful:  stopOptions.Graceful,
+		}
+
+		// Marshal command data
+		cmdData, err := json.Marshal(stopCmd)
+		if err != nil {
+			logging.Warn("Sandbox stop: Failed to marshal command: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "Failed to process request",
+				"details": "Internal command serialization error",
+			})
+			return
+		}
+
+		// Create Raft command wrapper
+		command := raft.Command{
+			Type:      "sandbox",
+			Operation: "stop",
+			Data:      json.RawMessage(cmdData),
+			Timestamp: time.Now(),
+			NodeID:    nodeID,
+		}
+
+		// Marshal complete command
+		commandJSON, err := json.Marshal(command)
+		if err != nil {
+			logging.Warn("Sandbox stop: Failed to marshal Raft command: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "Failed to process request",
+				"details": "Internal command serialization error",
+			})
+			return
+		}
+
+		// Submit to Raft for consensus
+		if err := sandboxMgr.SubmitCommand(string(commandJSON)); err != nil {
+			logging.Warn("Sandbox stop: Failed to submit Raft command: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "Failed to stop sandbox",
+				"details": fmt.Sprintf("Consensus error: %v", err),
+			})
+			return
+		}
+
+		logging.Success("Sandbox stop command submitted to Raft consensus")
+
+		c.JSON(http.StatusOK, gin.H{
+			"sandbox_id": sandboxID,
+			"status":     "stopped",
+			"message":    "Sandbox stop submitted to cluster",
+			"graceful":   stopOptions.Graceful,
+		})
+	}
+}

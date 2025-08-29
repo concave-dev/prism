@@ -1001,6 +1001,46 @@ func (api *PrismAPIClient) DeleteSandbox(sandboxID string) error {
 	return nil
 }
 
+// StopSandbox stops a code execution sandbox via the daemon API performing
+// graceful or forceful shutdown of sandbox execution. Handles sandbox identification,
+// stop coordination, and various API response scenarios for pause/resume functionality.
+//
+// Enables resource management by pausing sandbox execution while preserving state
+// for future resume operations. Handles stop validation, leader redirection,
+// and stop confirmation with proper error handling for sandbox lifecycle management.
+func (api *PrismAPIClient) StopSandbox(sandboxID string, graceful bool) error {
+	// Prepare request payload
+	payload := map[string]any{
+		"graceful": graceful,
+	}
+
+	resp, err := api.client.R().
+		SetBody(payload).
+		Post(fmt.Sprintf("/sandboxes/%s/stop", sandboxID))
+
+	if err != nil {
+		return fmt.Errorf("failed to connect to API server at %s: %w", api.baseURL, err)
+	}
+
+	if resp.StatusCode() == 404 {
+		return fmt.Errorf("sandbox '%s' not found", sandboxID)
+	}
+
+	if resp.StatusCode() == 400 {
+		return fmt.Errorf("invalid request: %s", resp.String())
+	}
+
+	if resp.StatusCode() == 307 {
+		return fmt.Errorf("not cluster leader - request redirected")
+	}
+
+	if resp.StatusCode() != 200 {
+		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode(), resp.String())
+	}
+
+	return nil
+}
+
 // CreateAPIClient creates a new Prism API client using current global CLI configuration
 // including API address and timeout settings. Provides convenient client instantiation
 // for CLI commands without manual configuration management.

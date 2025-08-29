@@ -512,3 +512,55 @@ func filterSandboxes(sandboxes []client.Sandbox) []client.Sandbox {
 	}
 	return filtered
 }
+
+// HandleSandboxStop handles the sandbox stop subcommand for stopping running
+// sandbox environments in the cluster. Transitions sandboxes to stopped state
+// for pause/resume functionality and resource management operations.
+//
+// Essential for resource management as it enables pausing unused sandboxes
+// to free cluster resources while maintaining the ability to resume execution
+// later. Supports both graceful and forceful stop modes for different scenarios.
+func HandleSandboxStop(cmd *cobra.Command, args []string) error {
+	utils.SetupLogging()
+
+	// args[0] is safe - argument validation handled by Cobra command definition
+	sandboxIdentifier := args[0]
+
+	// Create API client
+	apiClient := client.CreateAPIClient()
+
+	// Get all sandboxes to resolve name to ID if needed
+	sandboxes, err := apiClient.GetSandboxes()
+	if err != nil {
+		logging.Error("Failed to get sandboxes: %v", err)
+		return err
+	}
+
+	// Resolve sandbox identifier (could be ID or name)
+	resolvedSandboxID, sandboxName, err := resolveSandboxIdentifierExact(sandboxes, sandboxIdentifier)
+	if err != nil {
+		logging.Error("Failed to resolve sandbox identifier '%s': %v", sandboxIdentifier, err)
+		return err
+	}
+
+	// Determine graceful vs force stop based on --force flag
+	graceful := !config.Sandbox.Force
+
+	logging.Info("Stopping sandbox '%s' (%s) on API server: %s (graceful: %v)",
+		sandboxName, resolvedSandboxID, config.Global.APIAddr, graceful)
+
+	// Stop sandbox using resolved ID
+	if err := apiClient.StopSandbox(resolvedSandboxID, graceful); err != nil {
+		logging.Error("Failed to stop sandbox '%s': %v", sandboxName, err)
+		return fmt.Errorf("failed to stop sandbox '%s': %w", sandboxName, err)
+	}
+
+	stopMode := "gracefully"
+	if !graceful {
+		stopMode = "forcefully"
+	}
+
+	fmt.Printf("Sandbox '%s' (%s) stopped %s\n", sandboxName, internalutils.TruncateIDSafe(resolvedSandboxID), stopMode)
+	logging.Success("Successfully stopped sandbox '%s' (%s)", sandboxName, resolvedSandboxID)
+	return nil
+}

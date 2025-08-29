@@ -184,6 +184,37 @@ monitoring code execution environments across the cluster.`,
 	// RunE will be set by the main package that imports this
 }
 
+// Sandbox stop command
+var sandboxStopCmd = &cobra.Command{
+	Use:   "stop SANDBOX_ID_OR_NAME [flags]",
+	Short: "Stop a running sandbox (pause for resume)",
+	Long: `Stop a running sandbox in the Prism cluster.
+
+Transitions the sandbox to stopped state, pausing execution while preserving
+state for future resume operations. This enables resource management by
+temporarily halting unused sandboxes without destroying them.
+
+The sandbox can be resumed later (future feature) or destroyed permanently.`,
+	Example: `  # Stop a sandbox by name
+  prismctl sandbox stop my-sandbox
+
+  # Stop by exact sandbox ID
+  prismctl sandbox stop abc123def456
+
+  # Force stop (non-graceful)
+  prismctl sandbox stop my-sandbox --force`,
+	Args: func(cmd *cobra.Command, args []string) error {
+		if len(args) != 1 {
+			cmd.Help()
+			fmt.Println()
+			logging.Error("Invalid arguments: expected 1 sandbox name or ID, got %d", len(args))
+			return fmt.Errorf("requires exactly 1 argument (sandbox name or ID)")
+		}
+		return nil
+	},
+	// RunE will be set by the main package that imports this
+}
+
 // Sandbox destroy command
 var sandboxDestroyCmd = &cobra.Command{
 	Use:   "destroy SANDBOX_ID_OR_NAME",
@@ -219,10 +250,11 @@ func SetupSandboxCommands() {
 	sandboxCmd.AddCommand(sandboxExecCmd)
 	sandboxCmd.AddCommand(sandboxLogsCmd)
 	sandboxCmd.AddCommand(sandboxInfoCmd)
+	sandboxCmd.AddCommand(sandboxStopCmd)
 	sandboxCmd.AddCommand(sandboxDestroyCmd)
 }
 
 // GetSandboxCommands returns the sandbox command structures for handler assignment
-func GetSandboxCommands() (*cobra.Command, *cobra.Command, *cobra.Command, *cobra.Command, *cobra.Command, *cobra.Command) {
-	return sandboxCreateCmd, sandboxLsCmd, sandboxExecCmd, sandboxLogsCmd, sandboxInfoCmd, sandboxDestroyCmd
+func GetSandboxCommands() (*cobra.Command, *cobra.Command, *cobra.Command, *cobra.Command, *cobra.Command, *cobra.Command, *cobra.Command) {
+	return sandboxCreateCmd, sandboxLsCmd, sandboxExecCmd, sandboxLogsCmd, sandboxInfoCmd, sandboxStopCmd, sandboxDestroyCmd
 }

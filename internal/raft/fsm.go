@@ -137,7 +137,7 @@ type Sandbox struct {
 	// Core identification and metadata
 	ID      string    `json:"id"`      // Unique sandbox identifier
 	Name    string    `json:"name"`    // Human-readable sandbox name
-	Status  string    `json:"status"`  // Current status: "created", "scheduled", "ready", "executing", "failed", "lost", "destroyed"
+	Status  string    `json:"status"`  // Current status: "created", "scheduled", "ready", "executing", "stopped", "failed", "lost", "destroyed"
 	Created time.Time `json:"created"` // Sandbox creation timestamp
 	Updated time.Time `json:"updated"` // Last status update timestamp
 
@@ -239,6 +239,18 @@ type SandboxStatusUpdateCommand struct {
 	SandboxID string `json:"sandbox_id"`        // Target sandbox identifier
 	Status    string `json:"status"`            // New status: "ready", "failed", "lost"
 	Message   string `json:"message,omitempty"` // Optional status details or error message
+}
+
+// SandboxStopCommand represents a request to stop a running sandbox
+// and transition it to stopped state for pause/resume functionality.
+// Contains stop options for graceful vs forceful shutdown behavior.
+//
+// Processed by the SandboxFSM to coordinate sandbox stopping with
+// the runtime system. Enables pause/resume workflows and resource
+// management for temporarily unused sandbox environments.
+type SandboxStopCommand struct {
+	SandboxID string `json:"sandbox_id"`         // Target sandbox identifier
+	Graceful  bool   `json:"graceful,omitempty"` // Whether to stop gracefully (default: true)
 }
 
 // ClusterIDCommand represents a request to set the cluster identifier.
@@ -536,6 +548,8 @@ func (s *SandboxFSM) processCommand(cmd Command) any {
 		return s.processScheduleCommand(cmd)
 	case "status_update":
 		return s.processStatusUpdateCommand(cmd)
+	case "stop":
+		return s.processStopCommand(cmd)
 	case "exec":
 		return s.processExecCommand(cmd)
 	case "delete":
@@ -617,6 +631,12 @@ func (s *SandboxFSM) processExecCommand(cmd Command) any {
 	sandbox, exists := s.sandboxes[execCmd.SandboxID]
 	if !exists {
 		return fmt.Errorf("sandbox not found: %s", execCmd.SandboxID)
+	}
+
+	// Validate sandbox state - only execute in ready sandboxes
+	if sandbox.Status != "ready" {
+		return fmt.Errorf("sandbox %s cannot execute commands from status %s (must be ready)",
+			execCmd.SandboxID, sandbox.Status)
 	}
 
 	// Update sandbox state with execution info
@@ -796,6 +816,55 @@ func (s *SandboxFSM) processStatusUpdateCommand(cmd Command) any {
 		"previous_status": previousStatus,
 		"new_status":      statusCmd.Status,
 		"message":         statusCmd.Message,
+	}
+}
+
+// processStopCommand handles sandbox stop requests by transitioning running
+// sandboxes to stopped state for pause/resume functionality. Coordinates
+// with runtime system to gracefully halt VM execution while preserving state.
+//
+// Essential for resource management as it enables pausing unused sandboxes
+// to free resources while maintaining the ability to resume execution later.
+// Validates that only running or executing sandboxes can be stopped.
+func (s *SandboxFSM) processStopCommand(cmd Command) any {
+	var stopCmd SandboxStopCommand
+	if err := json.Unmarshal(cmd.Data, &stopCmd); err != nil {
+		return fmt.Errorf("failed to unmarshal stop command: %w", err)
+	}
+
+	// Find target sandbox
+	sandbox, exists := s.sandboxes[stopCmd.SandboxID]
+	if !exists {
+		return fmt.Errorf("sandbox not found: %s", stopCmd.SandboxID)
+	}
+
+	// Validate current state - only stop running or executing sandboxes
+	validStopStates := map[string]bool{
+		"ready":     true, // Ready sandboxes can be stopped
+		"executing": true, // Executing sandboxes can be stopped
+	}
+	if !validStopStates[sandbox.Status] {
+		return fmt.Errorf("sandbox %s cannot be stopped from status %s",
+			stopCmd.SandboxID, sandbox.Status)
+	}
+
+	// Update sandbox status to stopped
+	previousStatus := sandbox.Status
+	sandbox.Status = "stopped"
+	sandbox.Updated = time.Now()
+
+	// TODO: Coordinate with runtime system for actual VM pause/stop operation
+	// This will integrate with Firecracker runtime to pause VM execution
+	// while preserving memory state for fast resume operations
+
+	logging.Info("SandboxFSM: Stopped sandbox %s from %s (graceful: %v)",
+		stopCmd.SandboxID, previousStatus, stopCmd.Graceful)
+
+	return map[string]any{
+		"sandbox_id":      stopCmd.SandboxID,
+		"previous_status": previousStatus,
+		"new_status":      "stopped",
+		"graceful":        stopCmd.Graceful,
 	}
 }
 
