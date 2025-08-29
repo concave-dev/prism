@@ -251,7 +251,6 @@ func (f *PrismFSM) Apply(log *raft.Log) any {
 		// Parse the command from log data
 		var cmd Command
 		if err := json.Unmarshal(log.Data, &cmd); err != nil {
-			logging.Error("FSM: Failed to unmarshal command: %v", err)
 			return fmt.Errorf("failed to unmarshal command: %w", err)
 		}
 
@@ -265,9 +264,7 @@ func (f *PrismFSM) Apply(log *raft.Log) any {
 		case "cluster_id":
 			return f.applyClusterIDCommand(cmd)
 		default:
-			err := fmt.Errorf("unknown command type: %s", cmd.Type)
-			logging.Error("FSM: %v", err)
-			return err
+			return fmt.Errorf("unknown command type: %s", cmd.Type)
 		}
 
 	default:
