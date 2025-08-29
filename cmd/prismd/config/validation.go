@@ -28,6 +28,30 @@ import (
 	"github.com/concave-dev/prism/internal/validate"
 )
 
+// InitializeConfig initializes configuration from environment variables and defaults.
+// This function sets up the Global config with proper defaults and environment variable
+// overrides before validation runs, ensuring consistent configuration state.
+func InitializeConfig() {
+	// Initialize DEBUG environment variable override
+	if os.Getenv("DEBUG") == "true" {
+		Global.LogLevel = "DEBUG"
+		logging.Info("DEBUG environment variable detected, setting log level to DEBUG")
+	}
+
+	// Initialize MaxPorts: default + environment variable override
+	if Global.MaxPorts == 0 {
+		Global.MaxPorts = 100
+	}
+	if maxPortsEnv := os.Getenv("MAX_PORTS"); maxPortsEnv != "" {
+		if maxPorts, err := strconv.Atoi(maxPortsEnv); err == nil {
+			Global.MaxPorts = maxPorts
+			logging.Info("MAX_PORTS environment variable detected, setting max ports to %d", maxPorts)
+		} else {
+			logging.Warn("Invalid MAX_PORTS environment variable '%s', using default: %d", maxPortsEnv, Global.MaxPorts)
+		}
+	}
+}
+
 // ValidateConfig performs comprehensive validation and normalization of all daemon
 // configuration parameters before service startup.
 //
@@ -46,24 +70,6 @@ import (
 //
 // Returns error for any validation failure with descriptive context to aid debugging.
 func ValidateConfig() error {
-	// Handle DEBUG environment variable override for development workflows.
-	if os.Getenv("DEBUG") == "true" {
-		Global.LogLevel = "DEBUG"
-		logging.Info("DEBUG environment variable detected, setting log level to DEBUG")
-	}
-
-	// Handle MAX_PORTS environment variable to control port discovery range.
-	// This allows scaling to large cluster sizes (e.g., 150+ nodes) by expanding
-	// the search range beyond the default 100 ports for service auto-discovery.
-	if maxPortsEnv := os.Getenv("MAX_PORTS"); maxPortsEnv != "" {
-		if maxPorts, err := strconv.Atoi(maxPortsEnv); err == nil {
-			Global.MaxPorts = maxPorts
-			logging.Info("MAX_PORTS environment variable detected, setting max ports to %d", maxPorts)
-		} else {
-			logging.Warn("Invalid MAX_PORTS environment variable '%s', using default: %d", maxPortsEnv, Global.MaxPorts)
-		}
-	}
-
 	// Validate MaxPorts range
 	if Global.MaxPorts < 1 || Global.MaxPorts > 10000 {
 		return fmt.Errorf("max-ports must be between 1 and 10000, got: %d", Global.MaxPorts)

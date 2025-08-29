@@ -17,7 +17,7 @@ import (
 // Increments port numbers until an available one is found.
 // Returns the available port or error if none found within reasonable range.
 func FindAvailablePort(address string, startPort int) (int, error) {
-	maxAttempts := GetMaxPorts() // Try up to configured max ports to avoid infinite loops
+	maxAttempts := config.Global.MaxPorts // Try up to configured max ports to avoid infinite loops
 
 	for port := startPort; port < startPort+maxAttempts && port <= 65535; port++ {
 		addr := fmt.Sprintf("%s:%d", address, port)
@@ -78,7 +78,7 @@ func PreBindServiceListener(serviceName string, portBinder *netutil.PortBinder, 
 		// Use fallback binding for auto-discovered ports
 		logging.Info("Pre-binding %s listener starting from port %d", serviceName, originalPort)
 
-		listener, actualPort, err := portBinder.BindTCPWithFallbackAndLimit(addr, port, GetMaxPorts())
+		listener, actualPort, err := portBinder.BindTCPWithFallbackAndLimit(addr, port, config.Global.MaxPorts)
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to pre-bind %s listener: %w", serviceName, err)
 		}
@@ -101,14 +101,4 @@ func PreBindServiceListener(serviceName string, portBinder *netutil.PortBinder, 
 
 		return listener, port, nil
 	}
-}
-
-// GetMaxPorts returns the configured maximum number of ports to try during port discovery.
-// This allows the port allocation logic to respect the user's MAX_PORTS configuration
-// for scaling to large cluster sizes (e.g., 150+ nodes).
-func GetMaxPorts() int {
-	if config.Global.MaxPorts <= 0 {
-		return 100 // Default fallback if somehow not set
-	}
-	return config.Global.MaxPorts
 }

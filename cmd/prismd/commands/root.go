@@ -59,6 +59,8 @@ Auto-configures network addresses and data directory when not explicitly specifi
 	PreRunE: func(cmd *cobra.Command, args []string) error {
 		// Check which flags were explicitly set by user
 		CheckExplicitFlags(cmd)
+		// Initialize configuration from environment variables and defaults
+		config.InitializeConfig()
 		// Validate configuration
 		return config.ValidateConfig()
 	},
