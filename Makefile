@@ -1,4 +1,4 @@
-.PHONY: build prismd prismctl clean clean-bin stop delete-dir generate-grpc test test-coverage run run-cluster bootstrap-expect
+.PHONY: build prismd prismctl clean clean-bin stop delete-dir proto test test-coverage run run-cluster bootstrap-expect
 
 # Environment Variables:
 # NODES: Number of cluster nodes to start (default: 3)
@@ -56,7 +56,7 @@ delete-dir:
 
 clean: stop delete-dir
 
-generate-grpc:
+proto:
 	@echo "=== Generating gRPC code ==="
 	@export PATH="$$PATH:$$($(GO) env GOPATH)/bin"; \
 		if ! command -v protoc >/dev/null 2>&1; then \
