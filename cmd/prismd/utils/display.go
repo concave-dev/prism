@@ -5,16 +5,18 @@ import (
 	"fmt"
 )
 
-// DisplayLogo prints the Prism ASCII logo with version information
+// DisplayLogo prints the Prism Sandbox ASCII logo with version information
 // in a bordered box format for professional presentation
 func DisplayLogo(version string) {
 	fmt.Printf("\n"+
-		"░░░░░░░░░░░░░░░░░░░░░░░░░\n"+
-		"░░█▀█░█▀▄░▀█▀░█▀▀░█▀█▀█░░\n"+
-		"░░█▀▀░█▀▄░░█░░▀▀█░█░█░█░░\n"+
-		"░░▀░░░▀░▀░▀▀▀░▀▀▀░▀░▀░▀░░\n"+
-		"░░░░░░░░░░░░░░░░░░░░░░░░░\n\n"+
-		"Prism (v%s)\n"+
+		"┌─────────────────────────────────────────────────────────┐\n"+
+		"│ ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ │\n"+
+		"│ ░░█▀█░█▀▄░▀█▀░█▀▀░█▀█▀█░░░█▀▀░█▀█░█▀█░█▀▄░█▀▄░█▀█░█░█░░ │\n"+
+		"│ ░░█▀▀░█▀▄░░█░░▀▀█░█░█░█░░░▀▀█░█▀█░█░█░█░█░█▀▄░█░█░▄▀▄░░ │\n"+
+		"│ ░░▀░░░▀░▀░▀▀▀░▀▀▀░▀░▀░▀░░░▀▀▀░▀░▀░▀░▀░▀▀░░▀▀░░▀▀▀░▀░▀░░ │\n"+
+		"│ ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ │\n"+
+		"└─────────────────────────────────────────────────────────┘\n\n"+
+		"Prism Sandbox (v%s)\n"+
 		"Open-Source distributed sandbox runtime for running AI-generated code\n\n",
 		version)
 }
