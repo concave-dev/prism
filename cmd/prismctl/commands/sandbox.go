@@ -26,6 +26,7 @@ package commands
 import (
 	"fmt"
 
+	"github.com/concave-dev/prism/internal/logging"
 	"github.com/spf13/cobra"
 )
 
@@ -110,6 +111,8 @@ with controlled resource access and network isolation.`,
 	Args: func(cmd *cobra.Command, args []string) error {
 		if len(args) != 1 {
 			cmd.Help()
+			fmt.Println()
+			logging.Error("Invalid arguments: expected 1 sandbox name or ID, got %d", len(args))
 			return fmt.Errorf("requires exactly 1 argument (sandbox name or ID)")
 		}
 		return nil
@@ -137,6 +140,7 @@ sandbox activity.`,
 	Args: func(cmd *cobra.Command, args []string) error {
 		if len(args) != 1 {
 			cmd.Help()
+			logging.Error("Invalid arguments: expected 1 sandbox name or ID, got %d", len(args))
 			return fmt.Errorf("requires exactly 1 argument (sandbox name or ID)")
 		}
 		return nil
@@ -170,6 +174,7 @@ monitoring code execution environments across the cluster.`,
 	Args: func(cmd *cobra.Command, args []string) error {
 		if len(args) != 1 {
 			cmd.Help()
+			logging.Error("Invalid arguments: expected 1 sandbox name or ID, got %d", len(args))
 			return fmt.Errorf("requires exactly 1 argument (sandbox name or ID)")
 		}
 		return nil
@@ -196,6 +201,7 @@ Partial ID matching is disabled for destructive operations.`,
 	Args: func(cmd *cobra.Command, args []string) error {
 		if len(args) != 1 {
 			cmd.Help()
+			logging.Error("Invalid arguments: expected 1 sandbox name or ID, got %d", len(args))
 			return fmt.Errorf("requires exactly 1 argument (sandbox name or ID)")
 		}
 		return nil

@@ -23,6 +23,7 @@ package commands
 import (
 	"fmt"
 
+	"github.com/concave-dev/prism/internal/logging"
 	"github.com/spf13/cobra"
 )
 
@@ -85,6 +86,8 @@ or the peer name for identification.`,
 	Args: func(cmd *cobra.Command, args []string) error {
 		if len(args) != 1 {
 			cmd.Help()
+			fmt.Println()
+			logging.Error("Invalid arguments: expected 1 peer ID or name, got %d", len(args))
 			return fmt.Errorf("requires exactly 1 argument (peer ID or name)")
 		}
 		return nil

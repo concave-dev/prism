@@ -16,6 +16,7 @@ package commands
 import (
 	"fmt"
 
+	"github.com/concave-dev/prism/internal/logging"
 	"github.com/spf13/cobra"
 )
 
@@ -117,6 +118,8 @@ for a single node specified by name or ID.`,
 	Args: func(cmd *cobra.Command, args []string) error {
 		if len(args) != 1 {
 			cmd.Help()
+			fmt.Println()
+			logging.Error("Invalid arguments: expected 1 node name or ID, got %d", len(args))
 			return fmt.Errorf("requires exactly 1 argument (node name or ID)")
 		}
 		return nil

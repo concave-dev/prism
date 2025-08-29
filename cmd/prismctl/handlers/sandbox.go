@@ -61,6 +61,7 @@ func HandleSandboxCreate(cmd *cobra.Command, args []string) error {
 	for _, item := range config.Sandbox.Metadata {
 		parts := strings.SplitN(item, "=", 2)
 		if len(parts) != 2 {
+			logging.Error("Invalid metadata format '%s' - expected key=value", item)
 			return fmt.Errorf("invalid metadata format '%s', expected key=value", item)
 		}
 
@@ -70,6 +71,7 @@ func HandleSandboxCreate(cmd *cobra.Command, args []string) error {
 
 		// Validate that both key and value are non-empty
 		if key == "" || value == "" {
+			logging.Error("Invalid metadata '%s' - key and value must be non-empty", item)
 			return fmt.Errorf("invalid metadata '%s', key and value must be non-empty", item)
 		}
 
@@ -157,6 +159,7 @@ func HandleSandboxExec(cmd *cobra.Command, args []string) error {
 	command := config.Sandbox.Command
 
 	if command == "" {
+		logging.Error("Command is required for sandbox execution - use --command flag")
 		return fmt.Errorf("command is required for sandbox execution")
 	}
 
@@ -302,6 +305,7 @@ func HandleSandboxLogs(cmd *cobra.Command, args []string) error {
 			"logs":         logs,
 		}
 		if err := encoder.Encode(logResponse); err != nil {
+			logging.Error("Failed to encode JSON: %v", err)
 			return fmt.Errorf("failed to encode JSON: %w", err)
 		}
 	} else {

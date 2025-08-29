@@ -206,13 +206,16 @@ func Run() error {
 		// Check UDP availability first (Serf gossip)
 		udpAddr, err := net.ResolveUDPAddr("udp", testAddr)
 		if err != nil {
+			logging.Error("Failed to resolve UDP address %s: %v", testAddr, err)
 			return fmt.Errorf("failed to resolve UDP address %s: %w", testAddr, err)
 		}
 		udpConn, udpErr := net.ListenUDP("udp", udpAddr)
 		if udpErr != nil {
 			if netutil.IsAddressInUseError(udpErr) {
+				logging.Error("Port %d is already in use - cannot start Serf on %s", config.Global.SerfPort, config.Global.SerfAddr)
 				return fmt.Errorf("cannot bind Serf (UDP) to %s: port %d is already in use", config.Global.SerfAddr, config.Global.SerfPort)
 			}
+			logging.Error("Failed to bind Serf (UDP) to %s: %v", testAddr, udpErr)
 			return fmt.Errorf("failed to bind Serf (UDP) to %s: %w", testAddr, udpErr)
 		}
 		udpConn.Close()
@@ -224,8 +227,10 @@ func Run() error {
 		tcpListener, tcpErr := net.Listen("tcp4", testAddr)
 		if tcpErr != nil {
 			if netutil.IsAddressInUseError(tcpErr) {
+				logging.Error("Port %d is already in use - cannot start Serf TCP on %s", config.Global.SerfPort, config.Global.SerfAddr)
 				return fmt.Errorf("cannot bind Serf (TCP) to %s: port %d is already in use", config.Global.SerfAddr, config.Global.SerfPort)
 			}
+			logging.Error("Failed to bind Serf (TCP) to %s: %v", testAddr, tcpErr)
 			return fmt.Errorf("failed to bind Serf (TCP) to %s: %w", testAddr, tcpErr)
 		}
 		tcpListener.Close()
@@ -303,6 +308,7 @@ func Run() error {
 	if !config.Global.IsExplicitlySet(config.SerfField) {
 		availableSerfPort, err := utils.FindAvailablePort(config.Global.SerfAddr, config.Global.SerfPort)
 		if err != nil {
+			logging.Error("Failed to find available Serf port starting from %d: %v", config.Global.SerfPort, err)
 			return fmt.Errorf("failed to find available Serf port: %w", err)
 		}
 
@@ -379,11 +385,13 @@ func Run() error {
 	serfConfig := buildSerfConfig()
 	serfManager, err := serf.NewSerfManager(serfConfig)
 	if err != nil {
+		logging.Error("Failed to create Serf manager: %v", err)
 		return fmt.Errorf("failed to create serf manager: %w", err)
 	}
 
 	// Start SerfManager
 	if err := serfManager.Start(); err != nil {
+		logging.Error("Failed to start Serf manager: %v", err)
 		return fmt.Errorf("failed to start serf manager: %w", err)
 	}
 
@@ -395,11 +403,13 @@ func Run() error {
 	raftConfig.NodeID = serfManager.NodeID
 	raftManager, err = raft.NewRaftManagerWithListener(raftConfig, raftListener)
 	if err != nil {
+		logging.Error("Failed to create Raft manager: %v", err)
 		raftListener.Close() // Clean up pre-bound listener on error
 		return fmt.Errorf("failed to create raft manager: %w", err)
 	}
 
 	if err := raftManager.Start(); err != nil {
+		logging.Error("Failed to start Raft manager: %v", err)
 		// Note: raftManager now owns the listener, so it will handle cleanup
 		return fmt.Errorf("failed to start raft manager: %w", err)
 	}
@@ -419,11 +429,13 @@ func Run() error {
 	grpcConfig := buildGRPCConfig()
 	grpcServer, err = grpc.NewServerWithListener(grpcConfig, grpcListener, serfManager, raftManager)
 	if err != nil {
+		logging.Error("Failed to create gRPC server: %v", err)
 		grpcListener.Close() // Clean up pre-bound listener on error
 		return fmt.Errorf("failed to create gRPC server: %w", err)
 	}
 
 	if err := grpcServer.Start(); err != nil {
+		logging.Error("Failed to start gRPC server: %v", err)
 		// Note: grpcServer now owns the listener, so it will handle cleanup
 		return fmt.Errorf("failed to start gRPC server: %w", err)
 	}
@@ -448,6 +460,7 @@ func Run() error {
 	apiConfig := buildAPIConfig(serfManager, raftManager, grpcClientPool)
 	apiServer = api.NewServerWithListener(apiConfig, apiListener)
 	if err := apiServer.Start(); err != nil {
+		logging.Error("Failed to start API server: %v", err)
 		// Note: apiServer now owns the listener, so it will handle cleanup
 		return fmt.Errorf("failed to start API server: %w", err)
 	}
@@ -457,6 +470,7 @@ func Run() error {
 	logging.Info("Starting cluster ID coordinator")
 	clusterIDCoordinator = raft.NewClusterIDCoordinator(raftManager)
 	if err := clusterIDCoordinator.Start(); err != nil {
+		logging.Error("Failed to start cluster ID coordinator: %v", err)
 		return fmt.Errorf("failed to start cluster ID coordinator: %w", err)
 	}
 
