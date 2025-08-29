@@ -1017,24 +1017,19 @@ func (api *PrismAPIClient) DeleteSandbox(sandboxID string) error {
 		Delete(fmt.Sprintf("/sandboxes/%s", sandboxID))
 
 	if err != nil {
-		logging.Error("Failed to connect to API server: %v", err)
-		logging.Error("Make sure a Prism daemon with API server is running at %s", api.baseURL)
-		return fmt.Errorf("connection failed")
+		return fmt.Errorf("failed to connect to API server at %s: %w", api.baseURL, err)
 	}
 
 	if resp.StatusCode() == 404 {
-		logging.Error("Sandbox '%s' not found", sandboxID)
-		return fmt.Errorf("sandbox not found")
+		return fmt.Errorf("sandbox '%s' not found", sandboxID)
 	}
 
 	if resp.StatusCode() == 307 {
-		logging.Error("Not cluster leader, request redirected")
-		return fmt.Errorf("not cluster leader - retry request")
+		return fmt.Errorf("not cluster leader - request redirected")
 	}
 
 	if resp.StatusCode() != 200 {
-		logging.Error("API request failed with status %d: %s", resp.StatusCode(), resp.String())
-		return fmt.Errorf("API request failed")
+		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode(), resp.String())
 	}
 
 	return nil

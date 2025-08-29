@@ -361,7 +361,7 @@ func HandleSandboxDestroy(cmd *cobra.Command, args []string) error {
 	// Delete sandbox using resolved ID
 	if err := apiClient.DeleteSandbox(resolvedSandboxID); err != nil {
 		logging.Error("Failed to delete sandbox '%s': %v", sandboxName, err)
-		return err
+		return fmt.Errorf("failed to delete sandbox '%s': %w", sandboxName, err)
 	}
 
 	fmt.Printf("Sandbox '%s' (%s) destroyed successfully\n", sandboxName, resolvedSandboxID)
