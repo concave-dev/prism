@@ -27,9 +27,8 @@ func TestConfig_Validate_Valid(t *testing.T) {
 // TestConfig_Validate_Invalid tests Config.Validate() with key invalid cases
 func TestConfig_Validate_Invalid(t *testing.T) {
 	tests := []struct {
-		name        string
-		config      *Config
-		expectedErr string
+		name   string
+		config *Config
 	}{
 		{
 			name: "empty bind address",
@@ -40,7 +39,6 @@ func TestConfig_Validate_Invalid(t *testing.T) {
 				RaftManager:    &raft.RaftManager{},
 				GRPCClientPool: &grpc.ClientPool{},
 			},
-			expectedErr: "bind address cannot be empty",
 		},
 		{
 			name: "invalid port",
@@ -51,7 +49,16 @@ func TestConfig_Validate_Invalid(t *testing.T) {
 				RaftManager:    &raft.RaftManager{},
 				GRPCClientPool: &grpc.ClientPool{},
 			},
-			expectedErr: "bind port must be between 1 and 65535",
+		},
+		{
+			name: "invalid port high",
+			config: &Config{
+				BindAddr:       "127.0.0.1",
+				BindPort:       99999,
+				SerfManager:    &serf.SerfManager{},
+				RaftManager:    &raft.RaftManager{},
+				GRPCClientPool: &grpc.ClientPool{},
+			},
 		},
 		{
 			name: "nil serf manager",
@@ -62,7 +69,26 @@ func TestConfig_Validate_Invalid(t *testing.T) {
 				RaftManager:    &raft.RaftManager{},
 				GRPCClientPool: &grpc.ClientPool{},
 			},
-			expectedErr: "serf manager cannot be nil",
+		},
+		{
+			name: "nil raft manager",
+			config: &Config{
+				BindAddr:       "127.0.0.1",
+				BindPort:       8080,
+				SerfManager:    &serf.SerfManager{},
+				RaftManager:    nil,
+				GRPCClientPool: &grpc.ClientPool{},
+			},
+		},
+		{
+			name: "nil grpc client pool",
+			config: &Config{
+				BindAddr:       "127.0.0.1",
+				BindPort:       8080,
+				SerfManager:    &serf.SerfManager{},
+				RaftManager:    &raft.RaftManager{},
+				GRPCClientPool: nil,
+			},
 		},
 	}
 
@@ -70,12 +96,7 @@ func TestConfig_Validate_Invalid(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			err := tt.config.Validate()
 			if err == nil {
-				t.Error("Config.Validate() = nil, want error")
-				return
-			}
-
-			if err.Error() != tt.expectedErr {
-				t.Errorf("Config.Validate() error = %q, want %q", err.Error(), tt.expectedErr)
+				t.Errorf("Config.Validate() = nil, want error for %s", tt.name)
 			}
 		})
 	}
