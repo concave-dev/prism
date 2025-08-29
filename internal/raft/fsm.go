@@ -1032,6 +1032,14 @@ func (e *ExecFSM) processCreateCommand(cmd Command, sandboxes map[string]*Sandbo
 	// Store execution record
 	e.executions[createCmd.ID] = execution
 
+	// Increment sandbox execution count for any execution request
+	if sandbox, exists := sandboxes[createCmd.SandboxID]; exists {
+		sandbox.ExecCount++
+		sandbox.Updated = time.Now()
+		logging.Debug("ExecFSM: Incremented ExecCount for sandbox %s to %d",
+			createCmd.SandboxID, sandbox.ExecCount)
+	}
+
 	logging.Info("ExecFSM: Created execution %s for sandbox %s: %s",
 		createCmd.ID, createCmd.SandboxID, createCmd.Command)
 

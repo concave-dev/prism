@@ -531,11 +531,12 @@ func DisplaySandboxes(sandboxes []client.Sandbox) {
 // resource utilization patterns across the cluster infrastructure.
 func DisplaySandboxInfo(sandbox *client.Sandbox) {
 	fmt.Printf("Sandbox Information:\n")
-	fmt.Printf("  ID:      %s\n", sandbox.ID)
-	fmt.Printf("  Name:    %s\n", sandbox.Name)
-	fmt.Printf("  Status:  %s\n", sandbox.Status)
-	fmt.Printf("  Created: %s\n", sandbox.Created.Format("2006-01-02 15:04:05 MST"))
-	fmt.Printf("  Updated: %s\n", sandbox.Updated.Format("2006-01-02 15:04:05 MST"))
+	fmt.Printf("  ID:            %s\n", sandbox.ID)
+	fmt.Printf("  Name:          %s\n", sandbox.Name)
+	fmt.Printf("  Status:        %s\n", sandbox.Status)
+	fmt.Printf("  Created:       %s\n", sandbox.Created.Format("2006-01-02 15:04:05 MST"))
+	fmt.Printf("  Updated:       %s\n", sandbox.Updated.Format("2006-01-02 15:04:05 MST"))
+	fmt.Printf("  Exec Count:    %d\n", sandbox.ExecCount)
 
 	// Show scheduling information if available
 	if sandbox.ScheduledNodeID != "" {

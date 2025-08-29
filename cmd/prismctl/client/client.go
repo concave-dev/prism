@@ -145,6 +145,9 @@ type Sandbox struct {
 	ScheduledAt     time.Time `json:"scheduled_at,omitempty"`
 	PlacementScore  float64   `json:"placement_score,omitempty"`
 
+	// Execution count for summary information
+	ExecCount int `json:"exec_count"` // Total number of commands executed
+
 	LastCommand string            `json:"last_command,omitempty"`
 	LastStdout  string            `json:"last_stdout,omitempty"`
 	LastStderr  string            `json:"last_stderr,omitempty"`
