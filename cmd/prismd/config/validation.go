@@ -109,6 +109,7 @@ func ValidateConfig() error {
 	}
 
 	if err := logging.ValidateLogLevel(Global.LogLevel); err != nil {
+		logging.Error("Invalid log level '%s': %v", Global.LogLevel, err)
 		return err
 	}
 
