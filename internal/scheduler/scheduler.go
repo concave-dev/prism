@@ -50,6 +50,10 @@ import (
 //
 // Implementations must handle leader verification, resource collection,
 // node selection, and status tracking for comprehensive scheduling support.
+//
+// TODO: This interface is duplicated in internal/raft/fsm.go
+// Consider moving to a shared interfaces package to eliminate duplication
+// and avoid circular dependencies between raft and scheduler packages.
 type Scheduler interface {
 	// ScheduleSandbox initiates scheduling for a sandbox by collecting
 	// cluster resources, selecting optimal node, and coordinating placement

@@ -76,12 +76,13 @@ func truncateOutput(output string) string {
 	return truncated + truncationIndicator
 }
 
-// Scheduler defines the interface for sandbox scheduling operations that can
-// be triggered by the FSM after sandbox creation. Enables clean separation
-// between FSM state management and scheduling logic.
+// Scheduler defines the interface for sandbox scheduling operations in the
+// distributed cluster. Provides methods for triggering placement decisions
+// and managing sandbox lifecycle coordination.
 //
-// This interface allows the FSM to trigger scheduling without depending on
-// the concrete scheduler implementation, maintaining clean architecture boundaries.
+// TODO: This interface is duplicated in internal/scheduler/scheduler.go
+// Consider moving to a shared interfaces package to eliminate duplication
+// and avoid circular dependencies between raft and scheduler packages.
 type Scheduler interface {
 	ScheduleSandbox(sandboxID string) error
 	IsLeader() bool
