@@ -59,9 +59,9 @@ func SetupFlags(cmd *cobra.Command) {
 
 	// Bootstrap expect flag for production-safe cluster formation
 	cmd.Flags().IntVar(&config.Global.BootstrapExpect, "bootstrap-expect", 0,
-		"Expected number of nodes for cluster formation (e.g., --bootstrap-expect=3)\n"+
+		"Expected number of nodes for cluster formation (>=2, e.g., --bootstrap-expect=3)\n"+
 			"All nodes wait until this many peers are discovered before starting Raft consensus\n"+
-			"Can be used with --join for peer discovery. Use 1 for single-node clusters")
+			"Can be used with --join for peer discovery. For single-node, use --bootstrap")
 
 	// gRPC flags
 	cmd.Flags().StringVar(&config.Global.GRPCAddr, "grpc", config.DefaultGRPC,

@@ -58,6 +58,7 @@ import (
 	"github.com/concave-dev/prism/internal/api"
 	"github.com/concave-dev/prism/internal/grpc"
 	"github.com/concave-dev/prism/internal/logging"
+	"github.com/concave-dev/prism/internal/names"
 	"github.com/concave-dev/prism/internal/netutil"
 	"github.com/concave-dev/prism/internal/raft"
 	"github.com/concave-dev/prism/internal/serf"
@@ -174,6 +175,12 @@ func Run() error {
 	// This ensures --log-level=ERROR suppresses early Info logs
 	logging.SetLevel(config.Global.LogLevel)
 	logging.Info("Starting Prism daemon v%s", version.PrismdVersion)
+
+	// Generate node name only after validation has passed
+	if config.Global.NodeName == "" {
+		config.Global.NodeName = names.Generate()
+		logging.Info("Generated node name: %s", config.Global.NodeName)
+	}
 	logging.Info("Node: %s", config.Global.NodeName)
 
 	// Handle Serf port binding

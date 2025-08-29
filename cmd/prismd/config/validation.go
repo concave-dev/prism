@@ -23,7 +23,6 @@ import (
 
 	"github.com/concave-dev/prism/internal/grpc"
 	"github.com/concave-dev/prism/internal/logging"
-	"github.com/concave-dev/prism/internal/names"
 	"github.com/concave-dev/prism/internal/raft"
 	"github.com/concave-dev/prism/internal/validate"
 )
@@ -92,11 +91,8 @@ func ValidateConfig() error {
 	Global.SerfAddr = netAddr.Host
 	Global.SerfPort = netAddr.Port
 
-	// Node names serve as unique identifiers in the gossip protocol
-	if Global.NodeName == "" {
-		Global.NodeName = names.Generate()
-		logging.Info("Generated node name: %s", Global.NodeName)
-	} else {
+	// Node names are validated if provided; generation happens after validation
+	if Global.NodeName != "" {
 		originalName := Global.NodeName
 		Global.NodeName = strings.ToLower(Global.NodeName)
 		if originalName != Global.NodeName {
@@ -205,6 +201,11 @@ func ValidateConfig() error {
 
 	if Global.Bootstrap && len(Global.JoinAddrs) > 0 {
 		return fmt.Errorf("cannot use --bootstrap and --join together: bootstrap creates a new cluster, join connects to existing cluster")
+	}
+
+	// Disallow bootstrap-expect=1; single-node should use --bootstrap
+	if Global.BootstrapExpect == 1 {
+		return fmt.Errorf("--bootstrap-expect=1 is not supported; use --bootstrap for single-node clusters")
 	}
 
 	// For bootstrap-expect > 1, require --join for peer discovery
