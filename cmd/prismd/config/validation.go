@@ -216,6 +216,17 @@ func ValidateConfig() error {
 		return fmt.Errorf("cannot use --bootstrap and --join together: bootstrap creates a new cluster, join connects to existing cluster")
 	}
 
+	// Disallow invalid bootstrap-expect values (negative, zero when no bootstrap/join flags)
+	if Global.BootstrapExpect < 0 {
+		logging.Error("bootstrap-expect cannot be negative: got %d", Global.BootstrapExpect)
+		return fmt.Errorf("--bootstrap-expect cannot be negative, got: %d", Global.BootstrapExpect)
+	}
+
+	if Global.BootstrapExpect == 0 && !Global.Bootstrap && len(Global.JoinAddrs) == 0 {
+		logging.Error("bootstrap-expect=0 is invalid; use --bootstrap for single-node or --join for multi-node clusters")
+		return fmt.Errorf("--bootstrap-expect=0 is not supported; use --bootstrap for single-node or --join for multi-node clusters")
+	}
+
 	// Disallow bootstrap-expect=1; single-node should use --bootstrap
 	if Global.BootstrapExpect == 1 {
 		logging.Error("bootstrap-expect=1 is invalid; use --bootstrap for single-node clusters")
