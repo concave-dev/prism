@@ -328,6 +328,7 @@ func Run() error {
 		"Raft", portBinder, config.Global.IsExplicitlySet(config.RaftAddrField),
 		config.Global.RaftAddr, config.Global.RaftPort, originalRaftPort)
 	if err != nil {
+		logging.Error("Failed to bind Raft listener: %v", err)
 		return err
 	}
 	config.Global.RaftPort = actualRaftPort
@@ -338,6 +339,7 @@ func Run() error {
 		"gRPC", portBinder, config.Global.IsExplicitlySet(config.GRPCAddrField),
 		config.Global.GRPCAddr, config.Global.GRPCPort, originalGRPCPort)
 	if err != nil {
+		logging.Error("Failed to bind gRPC listener: %v", err)
 		return err
 	}
 	config.Global.GRPCPort = actualGRPCPort
@@ -348,6 +350,7 @@ func Run() error {
 		"API", portBinder, config.Global.IsExplicitlySet(config.APIAddrField),
 		config.Global.APIAddr, config.Global.APIPort, originalAPIPort)
 	if err != nil {
+		logging.Error("Failed to bind API listener: %v", err)
 		return err
 	}
 	config.Global.APIPort = actualAPIPort
