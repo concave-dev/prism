@@ -40,6 +40,12 @@
 // Health checks run concurrently to minimize latency, with configurable timeouts
 // to prevent slow checks from blocking cluster operations. Resource gathering
 // uses efficient system calls and caching where appropriate.
+//
+// FILE ORGANIZATION:
+// The health check implementations are currently colocated in this file for
+// simplicity. As the system evolves, we will split them into focused files,
+// e.g., service health (raft/serf/grpc/api) and resource health (cpu/memory/
+// disk). This keeps each unit small and focused and simplifies testing.
 package grpc
 
 import (
@@ -787,6 +793,18 @@ func (n *NodeServiceImpl) checkGRPCServiceHealth(ctx context.Context, now time.T
 // - HEALTHY: CPU usage < 80% and load average reasonable for core count
 // - DEGRADED: CPU usage 80-95% or elevated load but still functional
 // - UNHEALTHY: CPU usage > 95% or extremely high load indicating overload
+//
+// Future implementation:
+//   - Sampling & smoothing: 1s samples with EWMA rollups (≈60s, ≈5m) to avoid
+//     flapping while staying responsive to change.
+//   - CPU pressure: prefer run-queue per core (rq/cores) and cgroup throttling
+//     rate over raw usage for saturation detection.
+//   - Robustness: rolling median/MAD for outlier-resistant spikes; optional p95
+//     for tail behavior.
+//   - Hysteresis: distinct enter/exit thresholds and debounce windows to avoid
+//     rapid state transitions under bursty load.
+//   - Scoring: contribute a CPU subscore to a node health score that drives
+//     scheduling, rather than binary pass/fail alone.
 func (n *NodeServiceImpl) checkCPUResourceHealth(ctx context.Context, now time.Time) *proto.HealthCheck {
 	// Check context before starting
 	if ctx.Err() != nil {
@@ -870,6 +888,16 @@ func (n *NodeServiceImpl) checkCPUResourceHealth(ctx context.Context, now time.T
 // - HEALTHY: Memory usage < 80%
 // - DEGRADED: Memory usage 80-95% (monitor closely, may impact performance)
 // - UNHEALTHY: Memory usage > 95% (high risk of OOM, avoid new sandboxes)
+//
+// Future implementation:
+//   - Headroom-first: compute working set headroom and treat <10–15% as risky.
+//   - Pressure/PSI: include memory pressure (e.g., psi mem.avg10) and page fault
+//     rates to detect reclaim before OOM.
+//   - Trend & TTE: estimate burn rate via short-window regression and compute
+//     time-to-exhaustion (TTE) for proactive degradation/drain decisions.
+//   - Events: weight recent OOM kills or cgroup evictions heavily for state.
+//   - Hysteresis: debounce enter/exit to prevent flapping; expose both instant
+//     and smoothed values for visibility.
 func (n *NodeServiceImpl) checkMemoryResourceHealth(ctx context.Context, now time.Time) *proto.HealthCheck {
 	// Check context before starting
 	if ctx.Err() != nil {
@@ -942,6 +970,16 @@ func (n *NodeServiceImpl) checkMemoryResourceHealth(ctx context.Context, now tim
 // - HEALTHY: Disk usage < 85%
 // - DEGRADED: Disk usage 85-95% (monitor closely, may need cleanup)
 // - UNHEALTHY: Disk usage > 95% (high risk of disk full, avoid new sandboxes)
+//
+// Future implementation:
+//   - IO pressure: incorporate device busy%, queue depth vs queue size, and p95
+//     latency relative to a rolling baseline to capture saturation early.
+//   - Trend & TTE: compute disk fill rate and TTE to trigger proactive cleanup
+//     or draining before exhaustion.
+//   - Robustness: use rolling median/MAD for baseline latency; guard against
+//     outliers. Apply hysteresis to avoid oscillation under bursty IO.
+//   - Placement signal: contribute an IO subscore to the node health score that
+//     reduces scheduling weight before reaching hard thresholds.
 func (n *NodeServiceImpl) checkDiskResourceHealth(ctx context.Context, now time.Time) *proto.HealthCheck {
 	// Check context before starting
 	if ctx.Err() != nil {
