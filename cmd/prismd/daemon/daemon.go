@@ -539,7 +539,9 @@ func Run() error {
 	logging.Info("  - Raft consensus: %s:%d (Leader: %v)", config.Global.RaftAddr, config.Global.RaftPort, raftManager.IsLeader())
 	logging.Info("  - gRPC server: %s:%d", config.Global.GRPCAddr, config.Global.GRPCPort)
 	logging.Info("  - HTTP API: %s:%d", config.Global.APIAddr, config.Global.APIPort)
-	logging.Info("  - Sandbox scheduler: %s (Leader: %v)", serfManager.NodeID, scheduler.IsLeader())
+
+	// Display scheduler status separately (internal component, not network service)
+	logging.Info("Scheduler status: %s (Leader: %v)", "active", scheduler.IsLeader())
 
 	// Wait for shutdown signal
 	select {
