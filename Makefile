@@ -14,7 +14,7 @@ PROTO := internal/grpc/proto/node_service.proto
 GO := go
 BOOTSTRAP := true
 
-build: clean-bin $(PRISMD) $(PRISMCTL)
+build: clean-bin test $(PRISMD) $(PRISMCTL)
 
 prismd: clean-bin $(PRISMD)
 
