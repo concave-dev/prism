@@ -71,6 +71,7 @@ func InitializeConfig() {
 func ValidateConfig() error {
 	// Validate MaxPorts range
 	if Global.MaxPorts < 1 || Global.MaxPorts > 10000 {
+		logging.Error("Invalid max-ports value: %d (must be between 1 and 10000)", Global.MaxPorts)
 		return fmt.Errorf("max-ports must be between 1 and 10000, got: %d", Global.MaxPorts)
 	}
 
@@ -79,12 +80,14 @@ func ValidateConfig() error {
 	// The address format supports both "host:port" and "port" (defaulting to 0.0.0.0).
 	netAddr, err := validate.ParseBindAddress(Global.SerfAddr)
 	if err != nil {
+		logging.Error("Invalid serf address '%s': %v", Global.SerfAddr, err)
 		return fmt.Errorf("invalid serf address: %w", err)
 	}
 
 	// Enforce explicit port assignment for Serf communication.
 	// Port 0 (OS-assigned) is incompatible with distributed systems that need
 	if err := validate.ValidateField(netAddr.Port, "required,min=1,max=65535"); err != nil {
+		logging.Error("Serf port cannot be 0 (auto-assigned) - distributed systems need explicit ports")
 		return fmt.Errorf("daemon requires specific port (not 0): %w", err)
 	}
 
@@ -100,6 +103,7 @@ func ValidateConfig() error {
 		}
 
 		if err := validate.NodeNameFormat(Global.NodeName); err != nil {
+			logging.Error("Invalid node name '%s': %v", Global.NodeName, err)
 			return fmt.Errorf("invalid node name: %w", err)
 		}
 	}
@@ -117,6 +121,7 @@ func ValidateConfig() error {
 		}
 
 		if err := validate.ValidateField(apiNetAddr.Port, "required,min=1,max=65535"); err != nil {
+			logging.Error("API port cannot be 0 (auto-assigned) - distributed systems need explicit ports")
 			return fmt.Errorf("API address requires specific port (not 0): %w", err)
 		}
 
@@ -128,6 +133,7 @@ func ValidateConfig() error {
 		// unintended external access while allowing local CLI tool connectivity.
 		apiNetAddr, err := validate.ParseBindAddress(Global.APIAddr)
 		if err != nil {
+			logging.Error("Invalid default API address '%s': %v", Global.APIAddr, err)
 			return fmt.Errorf("invalid default API address: %w", err)
 		}
 		Global.APIAddr = apiNetAddr.Host
@@ -138,10 +144,12 @@ func ValidateConfig() error {
 	if Global.raftAddrExplicitlySet {
 		raftNetAddr, err := validate.ParseBindAddress(Global.RaftAddr)
 		if err != nil {
+			logging.Error("Invalid Raft address '%s': %v", Global.RaftAddr, err)
 			return fmt.Errorf("invalid Raft address: %w", err)
 		}
 
 		if err := validate.ValidateField(raftNetAddr.Port, "required,min=1,max=65535"); err != nil {
+			logging.Error("Raft port cannot be 0 (auto-assigned) - distributed systems need explicit ports")
 			return fmt.Errorf("raft address requires specific port (not 0): %w", err)
 		}
 
@@ -159,10 +167,12 @@ func ValidateConfig() error {
 	if Global.grpcAddrExplicitlySet {
 		grpcNetAddr, err := validate.ParseBindAddress(Global.GRPCAddr)
 		if err != nil {
+			logging.Error("Invalid gRPC address '%s': %v", Global.GRPCAddr, err)
 			return fmt.Errorf("invalid gRPC address: %w", err)
 		}
 
 		if err := validate.ValidateField(grpcNetAddr.Port, "required,min=1,max=65535"); err != nil {
+			logging.Error("gRPC port cannot be 0 (auto-assigned) - distributed systems need explicit ports")
 			return fmt.Errorf("gRPC address requires specific port (not 0): %w", err)
 		}
 
@@ -179,6 +189,7 @@ func ValidateConfig() error {
 	// of failure during cluster expansion and handles network partitions gracefully.
 	if len(Global.JoinAddrs) > 0 {
 		if err := validate.ValidateAddressList(Global.JoinAddrs); err != nil {
+			logging.Error("Invalid join addresses: %v", err)
 			return fmt.Errorf("invalid join addresses: %w", err)
 		}
 	}
@@ -196,20 +207,24 @@ func ValidateConfig() error {
 	// JOIN-ONLY MODE (--join without bootstrap flags):
 	// Connects to existing cluster. Standard operation for most nodes.
 	if Global.Bootstrap && Global.BootstrapExpect > 0 {
+		logging.Error("Cannot use both --bootstrap and --bootstrap-expect flags together")
 		return fmt.Errorf("cannot use both --bootstrap and --bootstrap-expect: choose one bootstrap mode")
 	}
 
 	if Global.Bootstrap && len(Global.JoinAddrs) > 0 {
+		logging.Error("Cannot use --bootstrap with --join flags together")
 		return fmt.Errorf("cannot use --bootstrap and --join together: bootstrap creates a new cluster, join connects to existing cluster")
 	}
 
 	// Disallow bootstrap-expect=1; single-node should use --bootstrap
 	if Global.BootstrapExpect == 1 {
+		logging.Error("bootstrap-expect=1 is invalid; use --bootstrap for single-node clusters")
 		return fmt.Errorf("--bootstrap-expect=1 is not supported; use --bootstrap for single-node clusters")
 	}
 
 	// For bootstrap-expect > 1, require --join for peer discovery
 	if Global.BootstrapExpect > 1 && len(Global.JoinAddrs) == 0 {
+		logging.Error("bootstrap-expect=%d requires --join addresses for peer discovery", Global.BootstrapExpect)
 		return fmt.Errorf("--bootstrap-expect=%d requires --join addresses for peer discovery. All nodes should use the same join addresses to find each other", Global.BootstrapExpect)
 	}
 
@@ -225,6 +240,7 @@ func ValidateConfig() error {
 	}
 
 	if Global.DataDir == "" {
+		logging.Error("Data directory cannot be empty")
 		return fmt.Errorf("data directory cannot be empty")
 	}
 
