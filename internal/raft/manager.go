@@ -622,11 +622,18 @@ func (m *RaftManager) AddPeer(nodeID, address string) error {
 
 // RemovePeer removes a peer from the Raft cluster for cluster downsizing or
 // failed node cleanup. Only the current leader can remove peers to maintain
-// consensus safety and prevent cluster membership conflicts.
+// safety and prevent cluster membership conflicts.
 //
-// Critical for cluster maintenance and autopilot operations when nodes
-// permanently leave or fail. Ensures proper quorum management and prevents
-// dead peers from affecting leader election and consensus operations.
+// This is needed for operational maintenance when nodes permanently leave
+// or fail. It preserves quorum and prevents dead peers from influencing
+// elections and log replication.
+//
+// TODO:
+// - Unify all peer removals to call this helper for consistency.
+// - Expose via admin APIs and CLI once membership workflows are added.
+// - Integrate with future autopilot-style remediation when a peer is stale.
+// - Add metrics and structured events for observability.
+// - Add retries/backoff around RemoveServer on transient errors.
 func (m *RaftManager) RemovePeer(nodeID string) error {
 	if m.raft == nil {
 		return fmt.Errorf("raft not initialized")
