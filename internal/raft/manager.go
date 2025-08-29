@@ -106,29 +106,6 @@ type SerfInterface interface {
 	GetMembers() map[string]*serfpkg.PrismNode
 }
 
-// NewRaftManager creates a new Raft manager with comprehensive configuration
-// validation and initialization. Sets up the foundation for distributed consensus
-// operations but does not start the Raft instance until Start() is called.
-//
-// Essential for establishing Raft consensus capabilities in the cluster while
-// maintaining separation between configuration and runtime initialization.
-// Validates all configuration parameters to prevent runtime errors.
-func NewRaftManager(config *Config) (*RaftManager, error) {
-	if err := config.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid config: %w", err)
-	}
-
-	manager := &RaftManager{
-		config:                config,
-		shutdown:              make(chan struct{}),
-		autopilotSuspectSince: make(map[string]time.Time),
-		lastReconfigTime:      time.Now(),
-	}
-
-	logging.Info("Raft manager created successfully with config for %s:%d", config.BindAddr, config.BindPort)
-	return manager, nil
-}
-
 // NewRaftManagerWithListener creates a new Raft manager with a pre-bound listener.
 // This eliminates port binding race conditions by using a listener that was
 // bound earlier during startup, ensuring the port is reserved for this service.

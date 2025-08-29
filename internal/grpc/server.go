@@ -64,26 +64,6 @@ type Server struct {
 	connMu      sync.Mutex                    // Mutex for connection tracking
 }
 
-// NewServer creates a new gRPC server with the given configuration
-// TODO: Add support for TLS configuration
-// TODO: Implement custom interceptors for logging and metrics
-func NewServer(config *Config, serfManager *serf.SerfManager, raftManager *raft.RaftManager) (*Server, error) {
-	if err := config.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid config: %w", err)
-	}
-
-	server := &Server{
-		config:      config,
-		shutdown:    make(chan struct{}),
-		serfManager: serfManager,
-		raftManager: raftManager,
-		activeConns: make(map[string]context.CancelFunc),
-	}
-
-	logging.Info("gRPC server created successfully with config for %s:%d", config.BindAddr, config.BindPort)
-	return server, nil
-}
-
 // NewServerWithListener creates a new gRPC server with a pre-bound listener.
 // This eliminates port binding race conditions by using a listener that was
 // bound earlier during startup, ensuring the port is reserved for this service.
