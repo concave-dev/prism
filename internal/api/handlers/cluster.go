@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/concave-dev/prism/internal/grpc"
+	"github.com/concave-dev/prism/internal/logging"
 	"github.com/concave-dev/prism/internal/raft"
 	"github.com/concave-dev/prism/internal/serf"
 	"github.com/gin-gonic/gin"
@@ -107,6 +108,7 @@ func HandleRaftPeers(serfManager *serf.SerfManager, raftManager *raft.RaftManage
 		// Get configured peers from Raft
 		peers, err := raftManager.GetPeers()
 		if err != nil {
+			logging.Error("Failed to get raft peers: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"status":  "error",
 				"message": fmt.Sprintf("failed to get raft peers: %v", err),
@@ -183,6 +185,7 @@ func HandleMembers(serfManager *serf.SerfManager, raftManager *raft.RaftManager,
 			var err error
 			raftPeers, err = raftManager.GetPeers()
 			if err != nil {
+				logging.Warn("Failed to get Raft peers for member listing: %v", err)
 				// If we can't get Raft peers, log but continue (show all as disconnected)
 				raftPeers = []string{}
 			}
@@ -250,6 +253,7 @@ func HandleClusterInfo(serfManager *serf.SerfManager, raftManager *raft.RaftMana
 			var err error
 			raftPeers, err = raftManager.GetPeers()
 			if err != nil {
+				logging.Warn("Failed to get Raft peers for cluster info: %v", err)
 				// If we can't get Raft peers, log but continue (show all as disconnected)
 				raftPeers = []string{}
 			}
@@ -344,6 +348,7 @@ func getRaftPeerStatus(member *serf.PrismNode, raftPeers []string) RaftStatus {
 
 	raftPort, err := strconv.Atoi(raftPortStr)
 	if err != nil {
+		logging.Warn("Failed to parse Raft port '%s' for member '%s': %v", raftPortStr, member.Name, err)
 		return RaftFailed // Invalid raft_port => failed
 	}
 
@@ -361,6 +366,7 @@ func getRaftPeerStatus(member *serf.PrismNode, raftPeers []string) RaftStatus {
 	}
 
 	if !isInConfig {
+		logging.Warn("Raft node '%s' is not in config: %v", member.Name, expectedRaftAddr)
 		return RaftDead // Not in Raft configuration
 	}
 
@@ -369,6 +375,8 @@ func getRaftPeerStatus(member *serf.PrismNode, raftPeers []string) RaftStatus {
 	if isRaftNodeReachable(member.Addr.String(), raftPort) {
 		return RaftAlive // In config and responding
 	}
+
+	logging.Warn("Raft node '%s' is in config but unreachable: %v", member.Name, expectedRaftAddr)
 
 	return RaftFailed // In config but unreachable (network partition)
 }
@@ -399,6 +407,7 @@ func getNodeHealthStatusDetails(clientPool *grpc.ClientPool, nodeID, serfStatus 
 	if clientPool != nil {
 		grpcRes, err := clientPool.GetHealthFromNode(nodeID)
 		if err != nil {
+			logging.Error("Failed to get health from node '%s': %v", nodeID, err)
 			// Health check failed - return "unknown" rather than Serf status
 			// This indicates the node is reachable via Serf but health is unclear
 			return HealthStatusDetails{
@@ -460,6 +469,7 @@ func isRaftNodeReachable(address string, port int) bool {
 	// Force IPv4 for consistent behavior with service binding
 	conn, err := net.DialTimeout("tcp4", fmt.Sprintf("%s:%d", address, port), 2*time.Second)
 	if err != nil {
+		logging.Error("Failed to dial Raft node '%s:%d': %v", address, port, err)
 		return false // Connection failed - node unreachable
 	}
 	defer conn.Close()
@@ -474,6 +484,7 @@ func isTCPReachable(address string) bool {
 	// Force IPv4 for consistent behavior with service binding
 	conn, err := net.DialTimeout("tcp4", address, 2*time.Second)
 	if err != nil {
+		logging.Error("Failed to dial Raft node '%s': %v", address, err)
 		return false
 	}
 	_ = conn.Close()
