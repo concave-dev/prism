@@ -110,7 +110,7 @@ func GatherSystemResources(nodeID, nodeName string, startTime time.Time) *NodeRe
 	// Preferred over Go runtime stats for system-wide memory visibility and orchestration decisions
 	virtualMem, err := mem.VirtualMemory()
 	if err != nil {
-		logging.Error("Failed to get system memory stats: %v", err)
+		logging.Warn("Failed to get system memory stats, using runtime fallback: %v", err)
 		// Graceful degradation: fallback to Go runtime stats when system monitoring fails
 		// Ensures resource reporting continues even if gopsutil encounters issues
 		virtualMem = &mem.VirtualMemoryStat{
@@ -125,7 +125,7 @@ func GatherSystemResources(nodeID, nodeName string, startTime time.Time) *NodeRe
 	cpuPercent, err := cpu.Percent(100*time.Millisecond, false)
 	var cpuUsage float64
 	if err != nil || len(cpuPercent) == 0 {
-		logging.Warn("Failed to get CPU usage stats: %v", err)
+		logging.Warn("Failed to get CPU usage stats, using 0%% fallback: %v", err)
 		cpuUsage = 0.0 // Fallback to unknown CPU usage
 	} else {
 		cpuUsage = cpuPercent[0] // Overall CPU usage across all cores
@@ -135,7 +135,7 @@ func GatherSystemResources(nodeID, nodeName string, startTime time.Time) *NodeRe
 	// Essential for capacity planning and preventing disk space exhaustion during scheduling
 	diskUsage, err := disk.Usage("/")
 	if err != nil {
-		logging.Error("Failed to get disk usage stats: %v", err)
+		logging.Warn("Failed to get disk usage stats, using sentinel values: %v", err)
 		// Graceful degradation: use sentinel values to indicate disk monitoring failure
 		// Zero values would incorrectly suggest no disk space available
 		diskUsage = &disk.UsageStat{
@@ -150,7 +150,7 @@ func GatherSystemResources(nodeID, nodeName string, startTime time.Time) *NodeRe
 	loadAvg, err := load.Avg()
 	var load1, load5, load15 float64
 	if err != nil {
-		logging.Warn("Failed to get load average stats: %v", err)
+		logging.Warn("Failed to get load average stats, using zero fallback: %v", err)
 		load1, load5, load15 = 0.0, 0.0, 0.0 // Fallback to zero when unavailable
 	} else {
 		load1, load5, load15 = loadAvg.Load1, loadAvg.Load5, loadAvg.Load15
