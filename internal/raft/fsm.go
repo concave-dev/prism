@@ -417,10 +417,10 @@ func NewExecFSM() *ExecFSM {
 //
 // Handles all execution operations including creation, state transitions, and
 // result recording for comprehensive execution tracking and monitoring.
-func (e *ExecFSM) processCommand(cmd Command) any {
+func (e *ExecFSM) processCommand(cmd Command, sandboxes map[string]*Sandbox) any {
 	switch cmd.Operation {
 	case "create":
-		return e.processCreateCommand(cmd)
+		return e.processCreateCommand(cmd, sandboxes)
 	case "start":
 		return e.processStartCommand(cmd)
 	case "complete":
@@ -461,7 +461,7 @@ func (f *PrismFSM) Apply(log *raft.Log) any {
 			f.triggerSchedulingIfNeeded(cmd, result)
 			return result
 		case "exec":
-			return f.sandboxFSM.execFSM.processCommand(cmd)
+			return f.sandboxFSM.execFSM.processCommand(cmd, f.sandboxFSM.sandboxes)
 		case "cluster_id":
 			return f.applyClusterIDCommand(cmd)
 		default:
@@ -1000,10 +1000,22 @@ func (f *PrismFSM) LogCurrentState(nodeID string) {
 //
 // Establishes execution tracking separate from sandbox lifecycle to enable
 // multiple concurrent executions per sandbox and precise execution monitoring.
-func (e *ExecFSM) processCreateCommand(cmd Command) any {
+func (e *ExecFSM) processCreateCommand(cmd Command, sandboxes map[string]*Sandbox) any {
 	var createCmd ExecCreateCommand
 	if err := json.Unmarshal(cmd.Data, &createCmd); err != nil {
 		return fmt.Errorf("failed to unmarshal exec create command: %w", err)
+	}
+
+	// Validate target sandbox exists
+	sandbox, exists := sandboxes[createCmd.SandboxID]
+	if !exists {
+		return fmt.Errorf("sandbox not found: %s", createCmd.SandboxID)
+	}
+
+	// Validate sandbox state - only execute in ready sandboxes
+	if sandbox.Status != "ready" {
+		return fmt.Errorf("sandbox %s cannot execute commands from status %s (must be ready)",
+			createCmd.SandboxID, sandbox.Status)
 	}
 
 	// Create new execution record
