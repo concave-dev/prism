@@ -125,6 +125,14 @@ func validateConfig(config *Config) error {
 		return fmt.Errorf("event buffer size must be positive, got: %d", config.EventBufferSize)
 	}
 
+	if err := validate.ValidatePositiveTimeout(config.JoinTimeout, "join timeout"); err != nil {
+		return err
+	}
+
+	if err := validate.ValidatePositiveTimeout(config.DeadNodeReclaimTime, "dead node reclaim time"); err != nil {
+		return err
+	}
+
 	if err := validateTags(config.Tags); err != nil {
 		return fmt.Errorf("invalid tags: %w", err)
 	}

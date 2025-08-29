@@ -92,6 +92,34 @@ func TestValidateConfig_InvalidConfigurations(t *testing.T) {
 			},
 			expectedErr: "event buffer size must be positive, got: 0",
 		},
+		{
+			name: "invalid join timeout",
+			config: &Config{
+				NodeName:            "test-node",
+				BindAddr:            "0.0.0.0",
+				BindPort:            4200,
+				EventBufferSize:     1024,
+				JoinRetries:         3,
+				JoinTimeout:         0,
+				LogLevel:            "INFO",
+				DeadNodeReclaimTime: 10 * time.Minute,
+			},
+			expectedErr: "join timeout must be positive",
+		},
+		{
+			name: "invalid dead node reclaim time",
+			config: &Config{
+				NodeName:            "test-node",
+				BindAddr:            "0.0.0.0",
+				BindPort:            4200,
+				EventBufferSize:     1024,
+				JoinRetries:         3,
+				JoinTimeout:         30 * time.Second,
+				LogLevel:            "INFO",
+				DeadNodeReclaimTime: -1 * time.Minute,
+			},
+			expectedErr: "dead node reclaim time must be positive",
+		},
 	}
 
 	for _, tt := range tests {
