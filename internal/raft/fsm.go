@@ -278,6 +278,42 @@ func (f *PrismFSM) SetScheduler(scheduler Scheduler) {
 	f.scheduler = scheduler
 }
 
+// triggerSchedulingIfNeeded checks if automatic scheduling should be triggered
+// for sandbox creation commands and initiates scheduling asynchronously.
+// Handles the complexity of result parsing and scheduling coordination.
+//
+// Keeps the main Apply method clean while providing comprehensive scheduling
+// trigger logic with proper error handling and leader verification.
+func (f *PrismFSM) triggerSchedulingIfNeeded(cmd Command, result any) {
+	// Only trigger scheduling for sandbox creation commands
+	if cmd.Operation != "create" {
+		return
+	}
+
+	// Check if scheduler is available and we're the leader
+	if f.scheduler == nil || !f.scheduler.IsLeader() {
+		return
+	}
+
+	// Extract sandbox ID from command result
+	resultMap, ok := result.(map[string]any)
+	if !ok {
+		return
+	}
+
+	sandboxID, exists := resultMap["sandbox_id"].(string)
+	if !exists {
+		return
+	}
+
+	// Trigger scheduling asynchronously to avoid blocking Raft apply
+	go func() {
+		if err := f.scheduler.ScheduleSandbox(sandboxID); err != nil {
+			logging.Error("FSM: Failed to trigger scheduling for sandbox %s: %v", sandboxID, err)
+		}
+	}()
+}
+
 // NewSandboxFSM creates a new SandboxFSM with initialized state tracking structures
 // for sandbox lifecycle management and execution monitoring. Sets up the data
 // structures needed for secure code execution orchestration and debugging.
@@ -318,22 +354,7 @@ func (f *PrismFSM) Apply(log *raft.Log) any {
 		switch cmd.Type {
 		case "sandbox":
 			result := f.sandboxFSM.processCommand(cmd)
-
-			// Trigger automatic scheduling for newly created sandboxes
-			if cmd.Operation == "create" && f.scheduler != nil && f.scheduler.IsLeader() {
-				// Extract sandbox ID from result for scheduling trigger
-				if resultMap, ok := result.(map[string]any); ok {
-					if sandboxID, exists := resultMap["sandbox_id"].(string); exists {
-						// Trigger scheduling asynchronously to avoid blocking Raft apply
-						go func() {
-							if err := f.scheduler.ScheduleSandbox(sandboxID); err != nil {
-								logging.Error("FSM: Failed to trigger scheduling for sandbox %s: %v", sandboxID, err)
-							}
-						}()
-					}
-				}
-			}
-
+			f.triggerSchedulingIfNeeded(cmd, result)
 			return result
 		case "cluster_id":
 			return f.applyClusterIDCommand(cmd)
