@@ -49,6 +49,7 @@ func HandlePeerList(cmd *cobra.Command, args []string) error {
 		apiClient := client.CreateAPIClient()
 		resp, err := apiClient.GetRaftPeers()
 		if err != nil {
+			logging.Error("Failed to fetch Raft peers: %v", err)
 			return err
 		}
 
@@ -93,6 +94,7 @@ func HandlePeerInfo(cmd *cobra.Command, args []string) error {
 	// Get peers first (we need this for both ID resolution and peer data)
 	resp, err := apiClient.GetRaftPeers()
 	if err != nil {
+		logging.Error("Failed to fetch Raft peers for peer info: %v", err)
 		return err
 	}
 
@@ -105,6 +107,7 @@ func HandlePeerInfo(cmd *cobra.Command, args []string) error {
 	// Resolve partial ID using the peers we already have
 	resolvedPeerID, err := utils.ResolvePeerIdentifierFromPeers(peerLikes, peerIdentifier)
 	if err != nil {
+		logging.Error("Failed to resolve peer identifier '%s': %v", peerIdentifier, err)
 		return err
 	}
 

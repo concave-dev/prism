@@ -48,6 +48,7 @@ func HandleMembers(cmd *cobra.Command, args []string) error {
 		apiClient := client.CreateAPIClient()
 		members, err := apiClient.GetMembers()
 		if err != nil {
+			logging.Error("Failed to fetch cluster members: %v", err)
 			return err
 		}
 
@@ -81,6 +82,7 @@ func HandleClusterInfo(cmd *cobra.Command, args []string) error {
 	apiClient := client.CreateAPIClient()
 	info, err := apiClient.GetClusterInfo()
 	if err != nil {
+		logging.Error("Failed to fetch cluster information: %v", err)
 		return err
 	}
 
@@ -107,12 +109,14 @@ func HandleNodeTop(cmd *cobra.Command, args []string) error {
 		apiClient := client.CreateAPIClient()
 		resources, err := apiClient.GetClusterResources(config.Node.Sort)
 		if err != nil {
+			logging.Error("Failed to fetch cluster resources: %v", err)
 			return err
 		}
 
 		// Get members for filtering
 		members, err := apiClient.GetMembers()
 		if err != nil {
+			logging.Error("Failed to fetch cluster members for filtering: %v", err)
 			return err
 		}
 
@@ -150,6 +154,7 @@ func HandleNodeInfo(cmd *cobra.Command, args []string) error {
 	// Get cluster members first (we need this for both ID resolution and leader status)
 	members, err := apiClient.GetMembers()
 	if err != nil {
+		logging.Error("Failed to fetch cluster members for node info: %v", err)
 		return err
 	}
 
@@ -162,6 +167,7 @@ func HandleNodeInfo(cmd *cobra.Command, args []string) error {
 	// Resolve partial ID using the members we already have
 	resolvedNodeID, err := utils.ResolveNodeIdentifierFromMembers(memberLikes, nodeIdentifier)
 	if err != nil {
+		logging.Error("Failed to resolve node identifier '%s': %v", nodeIdentifier, err)
 		return err
 	}
 
@@ -194,6 +200,7 @@ func HandleNodeInfo(cmd *cobra.Command, args []string) error {
 	// Get node resources using resolved ID
 	resource, err := apiClient.GetNodeResources(resolvedNodeID)
 	if err != nil {
+		logging.Error("Failed to fetch node resources for '%s': %v", nodeIdentifier, err)
 		return err
 	}
 
