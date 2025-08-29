@@ -82,6 +82,7 @@ func HandleSandboxCreate(cmd *cobra.Command, args []string) error {
 	apiClient := client.CreateAPIClient()
 	response, err := apiClient.CreateSandbox(sandboxName, metadata)
 	if err != nil {
+		logging.Error("Failed to create sandbox: %v", err)
 		return err
 	}
 
@@ -123,6 +124,7 @@ func HandleSandboxList(cmd *cobra.Command, args []string) error {
 		apiClient := client.CreateAPIClient()
 		sandboxes, err := apiClient.GetSandboxes()
 		if err != nil {
+			logging.Error("Failed to fetch sandboxes: %v", err)
 			return err
 		}
 
@@ -169,12 +171,14 @@ func HandleSandboxExec(cmd *cobra.Command, args []string) error {
 	// Get all sandboxes to resolve name to ID if needed
 	sandboxes, err := apiClient.GetSandboxes()
 	if err != nil {
+		logging.Error("Failed to get sandboxes: %v", err)
 		return err
 	}
 
 	// Resolve sandbox identifier (could be ID or name)
 	resolvedSandboxID, sandboxName, err := resolveSandboxIdentifierExact(sandboxes, sandboxIdentifier)
 	if err != nil {
+		logging.Error("Failed to resolve sandbox identifier '%s': %v", sandboxIdentifier, err)
 		return err
 	}
 
@@ -184,6 +188,7 @@ func HandleSandboxExec(cmd *cobra.Command, args []string) error {
 	// Execute command in sandbox using resolved ID
 	response, err := apiClient.ExecInSandbox(resolvedSandboxID, command)
 	if err != nil {
+		logging.Error("Failed to execute command in sandbox '%s': %v", sandboxName, err)
 		return err
 	}
 
@@ -240,6 +245,7 @@ func HandleSandboxLogs(cmd *cobra.Command, args []string) error {
 	// Get all sandboxes first for ID resolution
 	sandboxes, err := apiClient.GetSandboxes()
 	if err != nil {
+		logging.Error("Failed to fetch sandboxes for logs resolution: %v", err)
 		return err
 	}
 
@@ -257,6 +263,7 @@ func HandleSandboxLogs(cmd *cobra.Command, args []string) error {
 	// Resolve partial ID using the sandboxes we already have
 	resolvedSandboxID, err := utils.ResolveSandboxIdentifierFromSandboxes(sandboxLikes, sandboxIdentifier)
 	if err != nil {
+		logging.Error("Failed to resolve sandbox identifier '%s' for logs: %v", sandboxIdentifier, err)
 		return err
 	}
 
@@ -292,6 +299,7 @@ func HandleSandboxLogs(cmd *cobra.Command, args []string) error {
 	// Get logs using resolved ID
 	logs, err := apiClient.GetSandboxLogs(resolvedSandboxID)
 	if err != nil {
+		logging.Error("Failed to fetch logs for sandbox '%s': %v", sandboxName, err)
 		return err
 	}
 
@@ -337,12 +345,14 @@ func HandleSandboxDestroy(cmd *cobra.Command, args []string) error {
 	// Get all sandboxes to resolve name to ID if needed
 	sandboxes, err := apiClient.GetSandboxes()
 	if err != nil {
+		logging.Error("Failed to fetch sandboxes for exec resolution: %v", err)
 		return err
 	}
 
 	// Resolve sandbox identifier (could be ID or name)
 	resolvedSandboxID, sandboxName, err := resolveSandboxIdentifierExact(sandboxes, sandboxIdentifier)
 	if err != nil {
+		logging.Error("Failed to resolve sandbox identifier '%s': %v", sandboxIdentifier, err)
 		return err
 	}
 
@@ -350,6 +360,7 @@ func HandleSandboxDestroy(cmd *cobra.Command, args []string) error {
 
 	// Delete sandbox using resolved ID
 	if err := apiClient.DeleteSandbox(resolvedSandboxID); err != nil {
+		logging.Error("Failed to delete sandbox '%s': %v", sandboxName, err)
 		return err
 	}
 
@@ -379,6 +390,7 @@ func HandleSandboxInfo(cmd *cobra.Command, args []string) error {
 	// Get all sandboxes first (we need this for both ID resolution and sandbox data)
 	sandboxes, err := apiClient.GetSandboxes()
 	if err != nil {
+		logging.Error("Failed to fetch sandboxes for info resolution: %v", err)
 		return err
 	}
 
@@ -391,6 +403,7 @@ func HandleSandboxInfo(cmd *cobra.Command, args []string) error {
 	// Resolve partial ID using the sandboxes we already have
 	resolvedSandboxID, err := utils.ResolveSandboxIdentifierFromSandboxes(sandboxLikes, sandboxIdentifier)
 	if err != nil {
+		logging.Error("Failed to resolve sandbox identifier '%s' for info: %v", sandboxIdentifier, err)
 		return err
 	}
 
