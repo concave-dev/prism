@@ -209,6 +209,7 @@ func HandleSandboxExec(cmd *cobra.Command, args []string) error {
 			displayCommand = displayCommand[:77] + "..."
 		}
 
+		fmt.Printf("  Exec ID: %s\n", internalutils.TruncateIDSafe(response.ExecID))
 		fmt.Printf("  Command: %s\n", displayCommand)
 		fmt.Printf("  Status:  %s\n", response.Status)
 		fmt.Printf("  Message: %s\n", response.Message)

@@ -121,6 +121,7 @@ type SandboxExecRequest struct {
 // Provides comprehensive execution feedback including command output, execution
 // status, and operational messages for debugging and monitoring workflows.
 type SandboxExecResponse struct {
+	ExecID    string `json:"exec_id"`    // Unique execution identifier
 	SandboxID string `json:"sandbox_id"` // Target sandbox identifier
 	Command   string `json:"command"`    // Executed command
 	Status    string `json:"status"`     // Execution status
@@ -488,10 +489,23 @@ func ExecSandbox(sandboxMgr SandboxManager, nodeID string) gin.HandlerFunc {
 			return
 		}
 
-		// Create Raft command for sandbox execution
-		execCmd := raft.SandboxExecCommand{
+		// Generate unique execution ID
+		execID, err := utils.GenerateID()
+		if err != nil {
+			logging.Warn("Sandbox exec: Failed to generate execution ID: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "Failed to process request",
+				"details": "Internal ID generation error",
+			})
+			return
+		}
+
+		// Create Raft command for execution creation
+		execCmd := raft.ExecCreateCommand{
+			ID:        execID,
 			SandboxID: sandboxID,
 			Command:   req.Command,
+			Metadata:  make(map[string]string), // TODO: Add metadata from request if needed
 		}
 
 		// Marshal command data
@@ -507,8 +521,8 @@ func ExecSandbox(sandboxMgr SandboxManager, nodeID string) gin.HandlerFunc {
 
 		// Create Raft command wrapper
 		command := raft.Command{
-			Type:      "sandbox",
-			Operation: "exec",
+			Type:      "exec",
+			Operation: "create",
 			Data:      json.RawMessage(cmdData),
 			Timestamp: time.Now(),
 			NodeID:    nodeID,
@@ -538,10 +552,11 @@ func ExecSandbox(sandboxMgr SandboxManager, nodeID string) gin.HandlerFunc {
 		logging.Success("Sandbox exec command submitted to Raft consensus")
 
 		response := SandboxExecResponse{
+			ExecID:    execID,
 			SandboxID: sandboxID,
 			Command:   req.Command,
-			Status:    "submitted",
-			Message:   "Command execution submitted to cluster",
+			Status:    "pending",
+			Message:   "Execution created and submitted to cluster",
 			Stdout:    "", // TODO: Will be populated by runtime execution
 			Stderr:    "", // TODO: Will be populated by runtime execution
 		}
@@ -674,8 +689,7 @@ func StopSandbox(sandboxMgr SandboxManager, nodeID string) gin.HandlerFunc {
 
 		// Validate sandbox can be stopped
 		validStopStates := map[string]bool{
-			"ready":     true,
-			"executing": true,
+			"ready": true,
 		}
 		if !validStopStates[sandbox.Status] {
 			logging.Warn("Sandbox stop: Invalid state %s for sandbox %s", sandbox.Status, sandboxID)

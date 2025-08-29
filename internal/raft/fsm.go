@@ -123,6 +123,9 @@ type SandboxFSM struct {
 
 	// Execution tracking for monitoring and debugging
 	executionHistory map[string][]ExecutionRecord // sandboxID -> execution history
+
+	// Execution FSM for managing command execution lifecycle
+	execFSM *ExecFSM
 }
 
 // Sandbox represents the complete state of a code execution sandbox in the
@@ -137,7 +140,7 @@ type Sandbox struct {
 	// Core identification and metadata
 	ID      string    `json:"id"`      // Unique sandbox identifier
 	Name    string    `json:"name"`    // Human-readable sandbox name
-	Status  string    `json:"status"`  // Current status: "created", "scheduled", "ready", "executing", "stopped", "failed", "lost", "destroyed"
+	Status  string    `json:"status"`  // Current status: "pending", "assigned", "ready", "stopped", "failed", "lost", "terminated"
 	Created time.Time `json:"created"` // Sandbox creation timestamp
 	Updated time.Time `json:"updated"` // Last status update timestamp
 
@@ -175,6 +178,47 @@ type ExecutionRecord struct {
 	Duration   int64     `json:"duration_ms"` // Execution duration in milliseconds
 	Stdout     string    `json:"stdout"`      // Command stdout (truncated to MaxCommandOutputSize) - TODO: replace with stdout_id
 	Stderr     string    `json:"stderr"`      // Command stderr (truncated to MaxCommandOutputSize) - TODO: replace with stderr_id
+}
+
+// ExecFSM manages the complete lifecycle of command executions within sandbox
+// environments. Tracks individual execution requests from creation through
+// completion, providing detailed execution status and result tracking.
+//
+// Maintains separate execution state from sandbox lifecycle to enable multiple
+// concurrent executions within a single sandbox and precise execution monitoring.
+// Provides the foundation for execution history, debugging, and audit trails.
+type ExecFSM struct {
+	executions map[string]*Execution // execID -> Execution state for all executions
+}
+
+// Execution represents a single command execution within a sandbox environment.
+// Tracks execution lifecycle from creation through completion with detailed
+// status information, timing data, and output capture for monitoring and debugging.
+//
+// Provides granular execution tracking separate from sandbox lifecycle state,
+// enabling multiple concurrent executions per sandbox and precise execution
+// monitoring across the distributed cluster infrastructure.
+type Execution struct {
+	// Core identification and metadata
+	ID        string    `json:"id"`         // Unique execution identifier
+	SandboxID string    `json:"sandbox_id"` // Parent sandbox identifier
+	Command   string    `json:"command"`    // Command to execute
+	Status    string    `json:"status"`     // Current status: "pending", "running", "completed", "failed"
+	Created   time.Time `json:"created"`    // Execution creation timestamp
+	Updated   time.Time `json:"updated"`    // Last status update timestamp
+
+	// Execution timing and results
+	StartedAt   *time.Time `json:"started_at,omitempty"`   // When execution started (if running/completed/failed)
+	CompletedAt *time.Time `json:"completed_at,omitempty"` // When execution finished (if completed/failed)
+	Duration    int64      `json:"duration_ms"`            // Execution duration in milliseconds
+	ExitCode    int        `json:"exit_code"`              // Process exit code (if completed/failed)
+
+	// Output and error capture
+	Stdout string `json:"stdout,omitempty"` // Command standard output (truncated)
+	Stderr string `json:"stderr,omitempty"` // Command standard error (truncated)
+
+	// Additional execution metadata
+	Metadata map[string]string `json:"metadata,omitempty"` // Additional execution metadata
 }
 
 // Command represents a distributed operation that should be applied consistently
@@ -220,7 +264,7 @@ type SandboxExecCommand struct {
 // and placement score for tracking scheduling decisions and performance analysis.
 //
 // Processed by the SandboxFSM to record scheduling decisions and transition
-// sandboxes from "created" to "scheduled" status. Enables tracking of placement
+// sandboxes from "pending" to "assigned" status. Enables tracking of placement
 // decisions for monitoring and debugging distributed scheduling operations.
 type SandboxScheduleCommand struct {
 	SandboxID      string  `json:"sandbox_id"`       // Target sandbox identifier
@@ -251,6 +295,46 @@ type SandboxStatusUpdateCommand struct {
 type SandboxStopCommand struct {
 	SandboxID string `json:"sandbox_id"`         // Target sandbox identifier
 	Graceful  bool   `json:"graceful,omitempty"` // Whether to stop gracefully (default: true)
+}
+
+// ExecCreateCommand represents a request to create a new execution within
+// a sandbox environment. Contains the command to execute and target sandbox.
+//
+// Processed by the ExecFSM to create new execution records in "pending" status
+// and prepare for runtime execution coordination with sandbox environments.
+type ExecCreateCommand struct {
+	ID        string            `json:"id"`                 // Pre-generated execution ID
+	SandboxID string            `json:"sandbox_id"`         // Target sandbox identifier
+	Command   string            `json:"command"`            // Command to execute
+	Metadata  map[string]string `json:"metadata,omitempty"` // Additional execution metadata
+}
+
+// ExecStartCommand represents a request to start a pending execution.
+// Transitions execution from "pending" to "running" status and coordinates
+// with runtime system for actual command execution.
+type ExecStartCommand struct {
+	ExecID string `json:"exec_id"` // Target execution identifier
+}
+
+// ExecCompleteCommand represents completion of a running execution.
+// Transitions execution from "running" to "completed" status with results.
+type ExecCompleteCommand struct {
+	ExecID   string `json:"exec_id"`   // Target execution identifier
+	ExitCode int    `json:"exit_code"` // Process exit code
+	Stdout   string `json:"stdout"`    // Command standard output (truncated)
+	Stderr   string `json:"stderr"`    // Command standard error (truncated)
+	Duration int64  `json:"duration"`  // Execution duration in milliseconds
+}
+
+// ExecFailCommand represents failure of a pending or running execution.
+// Transitions execution to "failed" status with error information.
+type ExecFailCommand struct {
+	ExecID   string `json:"exec_id"`            // Target execution identifier
+	Reason   string `json:"reason"`             // Failure reason
+	ExitCode int    `json:"exit_code"`          // Process exit code (if available)
+	Stdout   string `json:"stdout,omitempty"`   // Command standard output (if any)
+	Stderr   string `json:"stderr,omitempty"`   // Command standard error (if any)
+	Duration int64  `json:"duration,omitempty"` // Execution duration in milliseconds (if available)
 }
 
 // ClusterIDCommand represents a request to set the cluster identifier.
@@ -338,6 +422,41 @@ func NewSandboxFSM() *SandboxFSM {
 	return &SandboxFSM{
 		sandboxes:        make(map[string]*Sandbox),
 		executionHistory: make(map[string][]ExecutionRecord),
+		execFSM:          NewExecFSM(),
+	}
+}
+
+// NewExecFSM creates a new ExecFSM with initialized execution tracking structures
+// for command execution lifecycle management. Sets up the data structures needed
+// for execution monitoring, status tracking, and result collection.
+//
+// Initializes execution tracking for granular command execution monitoring
+// separate from sandbox lifecycle state, enabling multiple concurrent executions
+// per sandbox and precise execution audit trails.
+func NewExecFSM() *ExecFSM {
+	return &ExecFSM{
+		executions: make(map[string]*Execution),
+	}
+}
+
+// processCommand routes execution commands to appropriate handler methods based
+// on the operation type. Maintains execution lifecycle state consistency across
+// all cluster nodes through Raft consensus.
+//
+// Handles all execution operations including creation, state transitions, and
+// result recording for comprehensive execution tracking and monitoring.
+func (e *ExecFSM) processCommand(cmd Command) any {
+	switch cmd.Operation {
+	case "create":
+		return e.processCreateCommand(cmd)
+	case "start":
+		return e.processStartCommand(cmd)
+	case "complete":
+		return e.processCompleteCommand(cmd)
+	case "fail":
+		return e.processFailCommand(cmd)
+	default:
+		return fmt.Errorf("unknown execution operation: %s", cmd.Operation)
 	}
 }
 
@@ -369,6 +488,8 @@ func (f *PrismFSM) Apply(log *raft.Log) any {
 			result := f.sandboxFSM.processCommand(cmd)
 			f.triggerSchedulingIfNeeded(cmd, result)
 			return result
+		case "exec":
+			return f.sandboxFSM.execFSM.processCommand(cmd)
 		case "cluster_id":
 			return f.applyClusterIDCommand(cmd)
 		default:
@@ -564,7 +685,7 @@ func (s *SandboxFSM) processCommand(cmd Command) any {
 // system based on current cluster resource availability and security policies.
 //
 // Establishes the initial sandbox record in the distributed state and prepares
-// for runtime provisioning. Creates sandboxes in "created" status to allow for
+// for runtime provisioning. Creates sandboxes in "pending" status to allow for
 // asynchronous provisioning and initialization of secure execution environments.
 func (s *SandboxFSM) processCreateCommand(cmd Command) any {
 	var createCmd SandboxCreateCommand
@@ -589,7 +710,7 @@ func (s *SandboxFSM) processCreateCommand(cmd Command) any {
 	sandbox := &Sandbox{
 		ID:       sandboxID,
 		Name:     createCmd.Name,
-		Status:   "created",
+		Status:   "pending",
 		Created:  time.Now(),
 		Updated:  time.Now(),
 		Metadata: createCmd.Metadata,
@@ -606,7 +727,7 @@ func (s *SandboxFSM) processCreateCommand(cmd Command) any {
 
 	return map[string]any{
 		"sandbox_id": sandboxID,
-		"status":     "created",
+		"status":     "pending",
 	}
 }
 
@@ -644,7 +765,6 @@ func (s *SandboxFSM) processExecCommand(cmd Command) any {
 	sandbox.LastStdout = "" // TODO: Will be populated by runtime execution
 	sandbox.LastStderr = "" // TODO: Will be populated by runtime execution
 	sandbox.ExecCount++
-	sandbox.Status = "executing"
 	sandbox.Updated = time.Now()
 
 	// Create execution record for history tracking
@@ -683,7 +803,7 @@ func (s *SandboxFSM) processExecCommand(cmd Command) any {
 	return map[string]any{
 		"sandbox_id": execCmd.SandboxID,
 		"command":    execCmd.Command,
-		"status":     "executing",
+		"status":     "ready",
 	}
 }
 
@@ -726,7 +846,7 @@ func (s *SandboxFSM) processDeleteCommand(cmd Command) any {
 
 // processScheduleCommand handles sandbox scheduling decisions by updating
 // sandbox state with selected node and placement information. Transitions
-// sandboxes from "created" to "scheduled" status for tracking placement decisions.
+// sandboxes from "pending" to "assigned" status for tracking placement decisions.
 //
 // Critical for distributed scheduling as it records placement decisions in
 // the cluster state for monitoring and debugging. Updates sandbox with
@@ -743,14 +863,14 @@ func (s *SandboxFSM) processScheduleCommand(cmd Command) any {
 		return fmt.Errorf("sandbox not found: %s", schedCmd.SandboxID)
 	}
 
-	// Validate current state - only schedule sandboxes in "created" status
-	if sandbox.Status != "created" {
+	// Validate current state - only schedule sandboxes in "pending" status
+	if sandbox.Status != "pending" {
 		return fmt.Errorf("sandbox %s cannot be scheduled from status %s",
 			schedCmd.SandboxID, sandbox.Status)
 	}
 
 	// Update sandbox with scheduling information
-	sandbox.Status = "scheduled"
+	sandbox.Status = "assigned"
 	sandbox.ScheduledNodeID = schedCmd.SelectedNodeID
 	sandbox.ScheduledAt = time.Now()
 	sandbox.PlacementScore = schedCmd.PlacementScore
@@ -761,7 +881,7 @@ func (s *SandboxFSM) processScheduleCommand(cmd Command) any {
 
 	return map[string]any{
 		"sandbox_id":      schedCmd.SandboxID,
-		"status":          "scheduled",
+		"status":          "assigned",
 		"scheduled_node":  schedCmd.SelectedNodeID,
 		"placement_score": schedCmd.PlacementScore,
 	}
@@ -786,8 +906,8 @@ func (s *SandboxFSM) processStatusUpdateCommand(cmd Command) any {
 		return fmt.Errorf("sandbox not found: %s", statusCmd.SandboxID)
 	}
 
-	// Validate status transition - only update from "scheduled" status
-	if sandbox.Status != "scheduled" {
+	// Validate status transition - only update from "assigned" status
+	if sandbox.Status != "assigned" {
 		return fmt.Errorf("sandbox %s cannot update status from %s to %s",
 			statusCmd.SandboxID, sandbox.Status, statusCmd.Status)
 	}
@@ -825,7 +945,7 @@ func (s *SandboxFSM) processStatusUpdateCommand(cmd Command) any {
 //
 // Essential for resource management as it enables pausing unused sandboxes
 // to free resources while maintaining the ability to resume execution later.
-// Validates that only running or executing sandboxes can be stopped.
+// Validates that only ready sandboxes can be stopped.
 func (s *SandboxFSM) processStopCommand(cmd Command) any {
 	var stopCmd SandboxStopCommand
 	if err := json.Unmarshal(cmd.Data, &stopCmd); err != nil {
@@ -838,10 +958,9 @@ func (s *SandboxFSM) processStopCommand(cmd Command) any {
 		return fmt.Errorf("sandbox not found: %s", stopCmd.SandboxID)
 	}
 
-	// Validate current state - only stop running or executing sandboxes
+	// Validate current state - only stop ready sandboxes
 	validStopStates := map[string]bool{
-		"ready":     true, // Ready sandboxes can be stopped
-		"executing": true, // Executing sandboxes can be stopped
+		"ready": true, // Ready sandboxes can be stopped
 	}
 	if !validStopStates[sandbox.Status] {
 		return fmt.Errorf("sandbox %s cannot be stopped from status %s",
@@ -898,6 +1017,55 @@ func (f *PrismFSM) GetSandbox(sandboxID string) *Sandbox {
 	return nil
 }
 
+// GetExecutions returns a copy of all executions in the cluster for monitoring
+// and query operations. Provides read-only access to execution state without
+// affecting FSM consistency or requiring distributed operations.
+//
+// Enables monitoring systems and administrative tools to query current
+// execution state across the cluster. Returns consistent point-in-time
+// snapshots of execution information for operational visibility.
+func (f *PrismFSM) GetExecutions() map[string]*Execution {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	return copyExecutionMap(f.sandboxFSM.execFSM.executions)
+}
+
+// GetExecution returns information for a specific execution by ID. Provides
+// read-only access to individual execution state for monitoring and
+// administrative operations.
+//
+// Enables targeted execution queries for detailed status information
+// and operational monitoring. Returns nil if execution is not found.
+func (f *PrismFSM) GetExecution(execID string) *Execution {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	if execution, exists := f.sandboxFSM.execFSM.executions[execID]; exists {
+		return copyExecution(execution)
+	}
+	return nil
+}
+
+// GetExecutionsBySandbox returns all executions for a specific sandbox.
+// Provides read-only access to execution state filtered by sandbox ID
+// for monitoring and administrative operations.
+//
+// Enables targeted queries for all executions within a specific sandbox
+// environment for debugging and execution history analysis.
+func (f *PrismFSM) GetExecutionsBySandbox(sandboxID string) []*Execution {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	var executions []*Execution
+	for _, execution := range f.sandboxFSM.execFSM.executions {
+		if execution.SandboxID == sandboxID {
+			executions = append(executions, copyExecution(execution))
+		}
+	}
+	return executions
+}
+
 // LogCurrentState logs FSM state information for debugging and development
 // monitoring. Provides visibility into sandbox state across cluster nodes
 // for troubleshooting and development purposes.
@@ -925,6 +1093,174 @@ func (f *PrismFSM) LogCurrentState(nodeID string) {
 
 	logging.Debug("FSM State on %s: %d sandboxes, status: %v, executions: %v",
 		nodeID, sandboxCount, sandboxStatusCounts, sandboxExecCounts)
+}
+
+// ============================================================================
+// EXECUTION FSM COMMAND HANDLERS - Command execution lifecycle management
+// ============================================================================
+
+// processCreateCommand handles execution creation requests by creating new
+// execution records in "pending" status. Validates target sandbox exists
+// and is in "ready" state before creating execution tracking.
+//
+// Establishes execution tracking separate from sandbox lifecycle to enable
+// multiple concurrent executions per sandbox and precise execution monitoring.
+func (e *ExecFSM) processCreateCommand(cmd Command) any {
+	var createCmd ExecCreateCommand
+	if err := json.Unmarshal(cmd.Data, &createCmd); err != nil {
+		return fmt.Errorf("failed to unmarshal exec create command: %w", err)
+	}
+
+	// Create new execution record
+	execution := &Execution{
+		ID:        createCmd.ID,
+		SandboxID: createCmd.SandboxID,
+		Command:   createCmd.Command,
+		Status:    "pending",
+		Created:   time.Now(),
+		Updated:   time.Now(),
+		Metadata:  createCmd.Metadata,
+	}
+
+	// Store execution record
+	e.executions[createCmd.ID] = execution
+
+	logging.Info("ExecFSM: Created execution %s for sandbox %s: %s",
+		createCmd.ID, createCmd.SandboxID, createCmd.Command)
+
+	return map[string]any{
+		"exec_id":    createCmd.ID,
+		"sandbox_id": createCmd.SandboxID,
+		"status":     "pending",
+	}
+}
+
+// processStartCommand handles execution start requests by transitioning
+// executions from "pending" to "running" status. Records start timestamp
+// and coordinates with runtime system for actual command execution.
+func (e *ExecFSM) processStartCommand(cmd Command) any {
+	var startCmd ExecStartCommand
+	if err := json.Unmarshal(cmd.Data, &startCmd); err != nil {
+		return fmt.Errorf("failed to unmarshal exec start command: %w", err)
+	}
+
+	// Find target execution
+	execution, exists := e.executions[startCmd.ExecID]
+	if !exists {
+		return fmt.Errorf("execution not found: %s", startCmd.ExecID)
+	}
+
+	// Validate current state - only start pending executions
+	if execution.Status != "pending" {
+		return fmt.Errorf("execution %s cannot be started from status %s",
+			startCmd.ExecID, execution.Status)
+	}
+
+	// Update execution status to running
+	now := time.Now()
+	execution.Status = "running"
+	execution.StartedAt = &now
+	execution.Updated = now
+
+	logging.Info("ExecFSM: Started execution %s", startCmd.ExecID)
+
+	return map[string]any{
+		"exec_id": startCmd.ExecID,
+		"status":  "running",
+	}
+}
+
+// processCompleteCommand handles execution completion by transitioning
+// executions from "running" to "completed" status with results.
+// Records completion timestamp, exit code, and output data.
+func (e *ExecFSM) processCompleteCommand(cmd Command) any {
+	var completeCmd ExecCompleteCommand
+	if err := json.Unmarshal(cmd.Data, &completeCmd); err != nil {
+		return fmt.Errorf("failed to unmarshal exec complete command: %w", err)
+	}
+
+	// Find target execution
+	execution, exists := e.executions[completeCmd.ExecID]
+	if !exists {
+		return fmt.Errorf("execution not found: %s", completeCmd.ExecID)
+	}
+
+	// Validate current state - only complete running executions
+	if execution.Status != "running" {
+		return fmt.Errorf("execution %s cannot be completed from status %s",
+			completeCmd.ExecID, execution.Status)
+	}
+
+	// Update execution with completion data
+	now := time.Now()
+	execution.Status = "completed"
+	execution.CompletedAt = &now
+	execution.Updated = now
+	execution.ExitCode = completeCmd.ExitCode
+	execution.Duration = completeCmd.Duration
+	execution.Stdout = completeCmd.Stdout
+	execution.Stderr = completeCmd.Stderr
+
+	logging.Info("ExecFSM: Completed execution %s with exit code %d",
+		completeCmd.ExecID, completeCmd.ExitCode)
+
+	return map[string]any{
+		"exec_id":   completeCmd.ExecID,
+		"status":    "completed",
+		"exit_code": completeCmd.ExitCode,
+		"duration":  completeCmd.Duration,
+	}
+}
+
+// processFailCommand handles execution failure by transitioning executions
+// from "pending" or "running" to "failed" status with error information.
+// Records failure reason and any available output data.
+func (e *ExecFSM) processFailCommand(cmd Command) any {
+	var failCmd ExecFailCommand
+	if err := json.Unmarshal(cmd.Data, &failCmd); err != nil {
+		return fmt.Errorf("failed to unmarshal exec fail command: %w", err)
+	}
+
+	// Find target execution
+	execution, exists := e.executions[failCmd.ExecID]
+	if !exists {
+		return fmt.Errorf("execution not found: %s", failCmd.ExecID)
+	}
+
+	// Validate current state - only fail pending or running executions
+	validFailStates := map[string]bool{
+		"pending": true,
+		"running": true,
+	}
+	if !validFailStates[execution.Status] {
+		return fmt.Errorf("execution %s cannot be failed from status %s",
+			failCmd.ExecID, execution.Status)
+	}
+
+	// Update execution with failure data
+	now := time.Now()
+	execution.Status = "failed"
+	execution.CompletedAt = &now
+	execution.Updated = now
+	execution.ExitCode = failCmd.ExitCode
+	if failCmd.Duration > 0 {
+		execution.Duration = failCmd.Duration
+	}
+	if failCmd.Stdout != "" {
+		execution.Stdout = failCmd.Stdout
+	}
+	if failCmd.Stderr != "" {
+		execution.Stderr = failCmd.Stderr
+	}
+
+	logging.Info("ExecFSM: Failed execution %s: %s", failCmd.ExecID, failCmd.Reason)
+
+	return map[string]any{
+		"exec_id":   failCmd.ExecID,
+		"status":    "failed",
+		"reason":    failCmd.Reason,
+		"exit_code": failCmd.ExitCode,
+	}
 }
 
 // ============================================================================
@@ -1033,6 +1369,48 @@ func copyExecutionHistory(history map[string][]ExecutionRecord) map[string][]Exe
 		for i, record := range records {
 			copy[sandboxID][i] = record
 		}
+	}
+	return copy
+}
+
+// copyExecution creates a deep copy of an execution record for read operations.
+// Ensures execution state data is safely accessible without affecting FSM
+// consistency or concurrent access to execution tracking structures.
+func copyExecution(execution *Execution) *Execution {
+	if execution == nil {
+		return nil
+	}
+
+	copy := *execution
+
+	// Deep copy metadata map
+	if execution.Metadata != nil {
+		copy.Metadata = make(map[string]string)
+		for k, v := range execution.Metadata {
+			copy.Metadata[k] = v
+		}
+	}
+
+	// Copy time pointers
+	if execution.StartedAt != nil {
+		startedAt := *execution.StartedAt
+		copy.StartedAt = &startedAt
+	}
+	if execution.CompletedAt != nil {
+		completedAt := *execution.CompletedAt
+		copy.CompletedAt = &completedAt
+	}
+
+	return &copy
+}
+
+// copyExecutionMap creates a deep copy of execution map for read operations.
+// Ensures execution state data is safely accessible without affecting FSM
+// consistency or concurrent access to execution tracking structures.
+func copyExecutionMap(executions map[string]*Execution) map[string]*Execution {
+	copy := make(map[string]*Execution)
+	for k, v := range executions {
+		copy[k] = copyExecution(v)
 	}
 	return copy
 }

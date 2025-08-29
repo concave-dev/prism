@@ -207,6 +207,7 @@ type SandboxListResponse struct {
 // error handling, output processing, and execution status tracking for AI
 // workload management and debugging operations.
 type SandboxExecResponse struct {
+	ExecID    string `json:"exec_id"`
 	SandboxID string `json:"sandbox_id"`
 	Command   string `json:"command"`
 	Status    string `json:"status"`

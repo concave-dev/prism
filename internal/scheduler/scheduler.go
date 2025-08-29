@@ -146,7 +146,7 @@ func (s *NaiveScheduler) ScheduleSandbox(sandboxID string) error {
 	}
 
 	// Verify sandbox is in correct state for scheduling
-	if sandbox.Status != "created" {
+	if sandbox.Status != "pending" {
 		return fmt.Errorf("sandbox %s cannot be scheduled from status %s", sandboxID, sandbox.Status)
 	}
 
@@ -301,8 +301,8 @@ func (s *NaiveScheduler) selectBestNode(nodeResources map[string]*resources.Node
 }
 
 // recordSchedulingDecision updates the Raft state with scheduling information
-// by submitting a schedule command. Transitions sandbox from "created" to
-// "scheduled" status with placement metadata for tracking and monitoring.
+// by submitting a schedule command. Transitions sandbox from "pending" to
+// "assigned" status with placement metadata for tracking and monitoring.
 //
 // Essential for distributed state consistency as it ensures all cluster nodes
 // have identical scheduling records for monitoring and debugging operations.
