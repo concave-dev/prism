@@ -38,10 +38,12 @@ import (
 // unexpected behavior during cluster management tasks.
 func ValidateGlobalFlags(cmd *cobra.Command, args []string) error {
 	if err := ValidateAPIAddress(); err != nil {
+		logging.Error("Failed to validate API address configuration: %v", err)
 		return err
 	}
 
 	if err := ValidateOutputFormat(); err != nil {
+		logging.Error("Failed to validate output format configuration: %v", err)
 		return err
 	}
 
@@ -53,26 +55,23 @@ func ValidateGlobalFlags(cmd *cobra.Command, args []string) error {
 // valid port numbers for establishing HTTP connections to the Prism daemon.
 //
 // Prevents connection failures by rejecting unroutable addresses (0.0.0.0) and invalid
-// port ranges before attempting API communication. Provides clear error messages to
+// port ranges before attempting API communication. Returns detailed error messages to
 // guide users toward correct address configuration for successful cluster interaction.
 func ValidateAPIAddress() error {
 	// Parse and validate API server address
 	netAddr, err := validate.ParseBindAddress(Global.APIAddr)
 	if err != nil {
-		logging.Error("Invalid API address '%s': %v", Global.APIAddr, err)
-		return fmt.Errorf("invalid API address - expected format: host:port (e.g., 127.0.0.1:8008)")
+		return fmt.Errorf("invalid API address '%s': %v - expected format: host:port (e.g., 127.0.0.1:8008)", Global.APIAddr, err)
 	}
 
 	// Reject unroutable 0.0.0.0 target for client connections
 	if netAddr.Host == "0.0.0.0" {
-		logging.Error("Unroutable API address '0.0.0.0:%d' - cannot connect to 0.0.0.0", netAddr.Port)
-		return fmt.Errorf("unroutable API address - use 127.0.0.1 or a specific IP address")
+		return fmt.Errorf("unroutable API address '0.0.0.0:%d' - cannot connect to 0.0.0.0, use 127.0.0.1 or a specific IP address", netAddr.Port)
 	}
 
 	// Client must connect to specific port (not 0)
 	if err := validate.ValidateField(netAddr.Port, "required,min=1,max=65535"); err != nil {
-		logging.Error("Invalid API port %d: %v", netAddr.Port, err)
-		return fmt.Errorf("API port must be between 1-65535")
+		return fmt.Errorf("invalid API port %d: %v - port must be between 1-65535", netAddr.Port, err)
 	}
 
 	return nil
@@ -83,16 +82,15 @@ func ValidateAPIAddress() error {
 // across all prismctl commands and preventing formatting errors.
 //
 // Supports table and JSON output modes, enabling both human-readable displays and
-// machine-parseable output for automation scenarios. Provides immediate feedback
-// for unsupported format specifications to guide proper CLI usage.
+// machine-parseable output for automation scenarios. Returns error messages for
+// unsupported format specifications to guide proper CLI usage.
 func ValidateOutputFormat() error {
 	validOutputs := map[string]bool{
 		"table": true,
 		"json":  true,
 	}
 	if !validOutputs[Global.Output] {
-		logging.Error("Invalid output format '%s' - valid formats are: table, json", Global.Output)
-		return fmt.Errorf("invalid output format - valid: table, json")
+		return fmt.Errorf("invalid output format '%s' - valid formats are: table, json", Global.Output)
 	}
 	return nil
 }
