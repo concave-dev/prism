@@ -114,13 +114,13 @@ type SandboxExecRequest struct {
 	Command string `json:"command" binding:"required"` // Command to execute in sandbox
 }
 
-// SandboxExecResponse represents the HTTP response for sandbox execution requests.
+// ExecResponse represents the HTTP response for execution requests.
 // Contains execution results, output, and status information for monitoring
 // command execution and retrieving results from sandbox environments.
 //
 // Provides comprehensive execution feedback including command output, execution
 // status, and operational messages for debugging and monitoring workflows.
-type SandboxExecResponse struct {
+type ExecResponse struct {
 	ExecID    string `json:"exec_id"`    // Unique execution identifier
 	SandboxID string `json:"sandbox_id"` // Target sandbox identifier
 	Command   string `json:"command"`    // Executed command
@@ -551,7 +551,7 @@ func ExecSandbox(sandboxMgr SandboxManager, nodeID string) gin.HandlerFunc {
 
 		logging.Success("Sandbox exec command submitted to Raft consensus")
 
-		response := SandboxExecResponse{
+		response := ExecResponse{
 			ExecID:    execID,
 			SandboxID: sandboxID,
 			Command:   req.Command,
@@ -615,10 +615,7 @@ func GetSandboxLogs(sandboxMgr SandboxManager) gin.HandlerFunc {
 		logs := []string{
 			fmt.Sprintf("Sandbox %s (%s) created at %s", sandbox.Name, sandbox.ID, sandbox.Created.Format(time.RFC3339)),
 			fmt.Sprintf("Status: %s", sandbox.Status),
-		}
-
-		if sandbox.LastCommand != "" {
-			logs = append(logs, fmt.Sprintf("Last command: %s", sandbox.LastCommand))
+			fmt.Sprintf("Total executions: %d", sandbox.ExecCount),
 		}
 
 		c.JSON(http.StatusOK, gin.H{

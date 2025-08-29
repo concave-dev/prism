@@ -199,14 +199,14 @@ type SandboxListResponse struct {
 	Count     int       `json:"count"`
 }
 
-// SandboxExecResponse represents the API response for command execution in sandboxes.
+// ExecResponse represents the API response for command execution in sandboxes.
 // Contains execution results including stdout, stderr, and operation status for
 // complete command execution feedback and result processing.
 //
 // Provides operators with detailed command execution results enabling proper
 // error handling, output processing, and execution status tracking for AI
 // workload management and debugging operations.
-type SandboxExecResponse struct {
+type ExecResponse struct {
 	ExecID    string `json:"exec_id"`
 	SandboxID string `json:"sandbox_id"`
 	Command   string `json:"command"`
@@ -903,8 +903,8 @@ func (api *PrismAPIClient) CreateSandbox(name string, metadata map[string]string
 // processing. Handles various execution scenarios including sandbox validation,
 // leader redirection, and execution results with comprehensive error handling
 // for debugging command execution and sandbox operational issues.
-func (api *PrismAPIClient) ExecInSandbox(sandboxID, command string) (*SandboxExecResponse, error) {
-	var response SandboxExecResponse
+func (api *PrismAPIClient) ExecInSandbox(sandboxID, command string) (*ExecResponse, error) {
+	var response ExecResponse
 
 	// Prepare request payload
 	payload := map[string]any{
