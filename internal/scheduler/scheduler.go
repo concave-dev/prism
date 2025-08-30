@@ -141,7 +141,11 @@ func (s *NaiveScheduler) ScheduleSandbox(sandboxID string) error {
 	}
 
 	// Get sandbox information from Raft state
-	sandbox := s.raftManager.GetFSM().GetSandbox(sandboxID)
+	fsm := s.raftManager.GetFSM()
+	if fsm == nil {
+		return fmt.Errorf("raft FSM not initialized")
+	}
+	sandbox := fsm.GetSandbox(sandboxID)
 	if sandbox == nil {
 		return fmt.Errorf("sandbox %s not found in cluster state", sandboxID)
 	}
