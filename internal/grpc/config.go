@@ -69,6 +69,12 @@ const (
 	// This controls how long a client will wait for placement responses from nodes.
 	// Longer than resource calls to account for VM provisioning and initialization time.
 	DefaultPlacementCallTimeout = 10 * time.Second
+
+	// DefaultStopCallTimeout is the timeout for sandbox stop operations.
+	// This controls how long a client will wait for stop responses from nodes.
+	// Shorter than placement calls since stops don't involve VM provisioning,
+	// but allows time for graceful shutdown and cleanup operations.
+	DefaultStopCallTimeout = 5 * time.Second
 )
 
 // Config holds configuration for the gRPC server including timeout management
@@ -99,6 +105,7 @@ type Config struct {
 	ClientCallTimeout    time.Duration // Timeout for client gRPC calls
 	ResourceCallTimeout  time.Duration // Timeout for resource query calls
 	PlacementCallTimeout time.Duration // Timeout for sandbox placement calls
+	StopCallTimeout      time.Duration // Timeout for sandbox stop calls
 	EnableTLS            bool          // Whether to enable TLS (future use)
 	CertFile             string        // Path to TLS certificate file (future use)
 	KeyFile              string        // Path to TLS private key file (future use)
@@ -118,6 +125,7 @@ func DefaultConfig() *Config {
 		ClientCallTimeout:    DefaultClientCallTimeout,
 		ResourceCallTimeout:  DefaultResourceCallTimeout,
 		PlacementCallTimeout: DefaultPlacementCallTimeout,
+		StopCallTimeout:      DefaultStopCallTimeout,
 		EnableTLS:            false,
 	}
 }
@@ -148,6 +156,9 @@ func (c *Config) Validate() error {
 		return err
 	}
 	if err := validate.ValidatePositiveTimeout(c.PlacementCallTimeout, "placement call timeout"); err != nil {
+		return err
+	}
+	if err := validate.ValidatePositiveTimeout(c.StopCallTimeout, "stop call timeout"); err != nil {
 		return err
 	}
 

@@ -201,6 +201,159 @@ func (x *PlaceSandboxResponse) GetProcessingDurationMs() int64 {
 	return 0
 }
 
+// StopSandboxRequest represents a sandbox stop request sent from the
+// cluster leader to the node running the sandbox. Contains information
+// needed for stopping sandbox execution with graceful or forceful shutdown.
+//
+// Includes leader verification to ensure stop requests originate from
+// the current cluster leader for security and consistency.
+type StopSandboxRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Core sandbox information
+	SandboxId string `protobuf:"bytes,1,opt,name=sandbox_id,json=sandboxId,proto3" json:"sandbox_id,omitempty"` // Unique sandbox identifier to stop
+	Graceful  bool   `protobuf:"varint,2,opt,name=graceful,proto3" json:"graceful,omitempty"`                   // Whether to perform graceful shutdown
+	// Security and verification
+	LeaderNodeId  string `protobuf:"bytes,3,opt,name=leader_node_id,json=leaderNodeId,proto3" json:"leader_node_id,omitempty"` // Current leader node ID for verification
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StopSandboxRequest) Reset() {
+	*x = StopSandboxRequest{}
+	mi := &file_internal_grpc_proto_scheduler_service_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StopSandboxRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StopSandboxRequest) ProtoMessage() {}
+
+func (x *StopSandboxRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_internal_grpc_proto_scheduler_service_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StopSandboxRequest.ProtoReflect.Descriptor instead.
+func (*StopSandboxRequest) Descriptor() ([]byte, []int) {
+	return file_internal_grpc_proto_scheduler_service_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *StopSandboxRequest) GetSandboxId() string {
+	if x != nil {
+		return x.SandboxId
+	}
+	return ""
+}
+
+func (x *StopSandboxRequest) GetGraceful() bool {
+	if x != nil {
+		return x.Graceful
+	}
+	return false
+}
+
+func (x *StopSandboxRequest) GetLeaderNodeId() string {
+	if x != nil {
+		return x.LeaderNodeId
+	}
+	return ""
+}
+
+// StopSandboxResponse represents the result of a sandbox stop operation
+// performed by a worker node. Contains success/failure status and optional
+// details for stop tracking and debugging operations.
+//
+// Used by the scheduler to update sandbox status in the distributed state
+// based on actual stop results from worker nodes.
+type StopSandboxResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Stop result
+	Success bool   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"` // Whether stop succeeded
+	Message string `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`  // Success details or error message
+	// Node information
+	NodeId string `protobuf:"bytes,3,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"` // Responding node identifier
+	// Timing information for monitoring
+	ProcessedAt          *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=processed_at,json=processedAt,proto3" json:"processed_at,omitempty"`                               // When stop was processed
+	ProcessingDurationMs int64                  `protobuf:"varint,5,opt,name=processing_duration_ms,json=processingDurationMs,proto3" json:"processing_duration_ms,omitempty"` // Time taken to process stop
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *StopSandboxResponse) Reset() {
+	*x = StopSandboxResponse{}
+	mi := &file_internal_grpc_proto_scheduler_service_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StopSandboxResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StopSandboxResponse) ProtoMessage() {}
+
+func (x *StopSandboxResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_internal_grpc_proto_scheduler_service_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StopSandboxResponse.ProtoReflect.Descriptor instead.
+func (*StopSandboxResponse) Descriptor() ([]byte, []int) {
+	return file_internal_grpc_proto_scheduler_service_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *StopSandboxResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *StopSandboxResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *StopSandboxResponse) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+func (x *StopSandboxResponse) GetProcessedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ProcessedAt
+	}
+	return nil
+}
+
+func (x *StopSandboxResponse) GetProcessingDurationMs() int64 {
+	if x != nil {
+		return x.ProcessingDurationMs
+	}
+	return 0
+}
+
 var File_internal_grpc_proto_scheduler_service_proto protoreflect.FileDescriptor
 
 const file_internal_grpc_proto_scheduler_service_proto_rawDesc = "" +
@@ -222,9 +375,21 @@ const file_internal_grpc_proto_scheduler_service_proto_rawDesc = "" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x17\n" +
 	"\anode_id\x18\x03 \x01(\tR\x06nodeId\x12=\n" +
 	"\fprocessed_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\vprocessedAt\x124\n" +
-	"\x16processing_duration_ms\x18\x05 \x01(\x03R\x14processingDurationMs2u\n" +
+	"\x16processing_duration_ms\x18\x05 \x01(\x03R\x14processingDurationMs\"u\n" +
+	"\x12StopSandboxRequest\x12\x1d\n" +
+	"\n" +
+	"sandbox_id\x18\x01 \x01(\tR\tsandboxId\x12\x1a\n" +
+	"\bgraceful\x18\x02 \x01(\bR\bgraceful\x12$\n" +
+	"\x0eleader_node_id\x18\x03 \x01(\tR\fleaderNodeId\"\xd7\x01\n" +
+	"\x13StopSandboxResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\x12\x17\n" +
+	"\anode_id\x18\x03 \x01(\tR\x06nodeId\x12=\n" +
+	"\fprocessed_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\vprocessedAt\x124\n" +
+	"\x16processing_duration_ms\x18\x05 \x01(\x03R\x14processingDurationMs2\xd5\x01\n" +
 	"\x10SchedulerService\x12a\n" +
-	"\fPlaceSandbox\x12'.prism.scheduler.v1.PlaceSandboxRequest\x1a(.prism.scheduler.v1.PlaceSandboxResponseB2Z0github.com/concave-dev/prism/internal/grpc/protob\x06proto3"
+	"\fPlaceSandbox\x12'.prism.scheduler.v1.PlaceSandboxRequest\x1a(.prism.scheduler.v1.PlaceSandboxResponse\x12^\n" +
+	"\vStopSandbox\x12&.prism.scheduler.v1.StopSandboxRequest\x1a'.prism.scheduler.v1.StopSandboxResponseB2Z0github.com/concave-dev/prism/internal/grpc/protob\x06proto3"
 
 var (
 	file_internal_grpc_proto_scheduler_service_proto_rawDescOnce sync.Once
@@ -238,24 +403,29 @@ func file_internal_grpc_proto_scheduler_service_proto_rawDescGZIP() []byte {
 	return file_internal_grpc_proto_scheduler_service_proto_rawDescData
 }
 
-var file_internal_grpc_proto_scheduler_service_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_internal_grpc_proto_scheduler_service_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_internal_grpc_proto_scheduler_service_proto_goTypes = []any{
 	(*PlaceSandboxRequest)(nil),   // 0: prism.scheduler.v1.PlaceSandboxRequest
 	(*PlaceSandboxResponse)(nil),  // 1: prism.scheduler.v1.PlaceSandboxResponse
-	nil,                           // 2: prism.scheduler.v1.PlaceSandboxRequest.MetadataEntry
-	(*timestamppb.Timestamp)(nil), // 3: google.protobuf.Timestamp
+	(*StopSandboxRequest)(nil),    // 2: prism.scheduler.v1.StopSandboxRequest
+	(*StopSandboxResponse)(nil),   // 3: prism.scheduler.v1.StopSandboxResponse
+	nil,                           // 4: prism.scheduler.v1.PlaceSandboxRequest.MetadataEntry
+	(*timestamppb.Timestamp)(nil), // 5: google.protobuf.Timestamp
 }
 var file_internal_grpc_proto_scheduler_service_proto_depIdxs = []int32{
-	2, // 0: prism.scheduler.v1.PlaceSandboxRequest.metadata:type_name -> prism.scheduler.v1.PlaceSandboxRequest.MetadataEntry
-	3, // 1: prism.scheduler.v1.PlaceSandboxRequest.scheduled_at:type_name -> google.protobuf.Timestamp
-	3, // 2: prism.scheduler.v1.PlaceSandboxResponse.processed_at:type_name -> google.protobuf.Timestamp
-	0, // 3: prism.scheduler.v1.SchedulerService.PlaceSandbox:input_type -> prism.scheduler.v1.PlaceSandboxRequest
-	1, // 4: prism.scheduler.v1.SchedulerService.PlaceSandbox:output_type -> prism.scheduler.v1.PlaceSandboxResponse
-	4, // [4:5] is the sub-list for method output_type
-	3, // [3:4] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	4, // 0: prism.scheduler.v1.PlaceSandboxRequest.metadata:type_name -> prism.scheduler.v1.PlaceSandboxRequest.MetadataEntry
+	5, // 1: prism.scheduler.v1.PlaceSandboxRequest.scheduled_at:type_name -> google.protobuf.Timestamp
+	5, // 2: prism.scheduler.v1.PlaceSandboxResponse.processed_at:type_name -> google.protobuf.Timestamp
+	5, // 3: prism.scheduler.v1.StopSandboxResponse.processed_at:type_name -> google.protobuf.Timestamp
+	0, // 4: prism.scheduler.v1.SchedulerService.PlaceSandbox:input_type -> prism.scheduler.v1.PlaceSandboxRequest
+	2, // 5: prism.scheduler.v1.SchedulerService.StopSandbox:input_type -> prism.scheduler.v1.StopSandboxRequest
+	1, // 6: prism.scheduler.v1.SchedulerService.PlaceSandbox:output_type -> prism.scheduler.v1.PlaceSandboxResponse
+	3, // 7: prism.scheduler.v1.SchedulerService.StopSandbox:output_type -> prism.scheduler.v1.StopSandboxResponse
+	6, // [6:8] is the sub-list for method output_type
+	4, // [4:6] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_internal_grpc_proto_scheduler_service_proto_init() }
@@ -269,7 +439,7 @@ func file_internal_grpc_proto_scheduler_service_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_internal_grpc_proto_scheduler_service_proto_rawDesc), len(file_internal_grpc_proto_scheduler_service_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   3,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -189,3 +189,58 @@ func (s *SchedulerServiceImpl) verifyLeaderRequest(requestLeaderID string) error
 	logging.Debug("Scheduler: Verified placement request from current leader %s", requestLeaderID)
 	return nil
 }
+
+// StopSandbox handles sandbox stop requests from the cluster leader
+// by immediately stopping sandbox execution. Returns success confirmation
+// for sandbox lifecycle management and resource cleanup operations.
+//
+// V0 Implementation Details:
+// - Verifies request originates from current cluster leader
+// - Immediately processes stop request without delay for testing
+// - Always returns success for v0 implementation
+// - No actual VM stopping occurs (dummy responses only)
+//
+// Future versions will integrate with Firecracker runtime for actual
+// VM stopping and replace dummy responses with real stop results.
+func (s *SchedulerServiceImpl) StopSandbox(ctx context.Context, req *proto.StopSandboxRequest) (*proto.StopSandboxResponse, error) {
+	startTime := time.Now()
+
+	// Verify request came from current cluster leader for security
+	if err := s.verifyLeaderRequest(req.LeaderNodeId); err != nil {
+		logging.Warn("Scheduler: Rejected stop request for sandbox %s from %s: %v",
+			req.SandboxId, req.LeaderNodeId, err)
+		return &proto.StopSandboxResponse{
+			Success:              false,
+			Message:              fmt.Sprintf("Leader verification failed: %v", err),
+			NodeId:               s.nodeID,
+			ProcessedAt:          timestamppb.New(startTime),
+			ProcessingDurationMs: 0,
+		}, nil
+	}
+
+	logging.Info("Scheduler: Processing stop request for sandbox %s from leader %s (graceful: %v)",
+		req.SandboxId, req.LeaderNodeId, req.Graceful)
+
+	// V0: Immediate success response for testing
+	// This enables testing of stop orchestration patterns before runtime integration
+	processingTime := time.Since(startTime).Milliseconds()
+
+	gracefulMode := "forceful"
+	if req.Graceful {
+		gracefulMode = "graceful"
+	}
+
+	message := fmt.Sprintf("Sandbox %s stopped successfully on node %s (%s mode)",
+		req.SandboxId, s.nodeID, gracefulMode)
+
+	logging.Info("Scheduler: Successfully stopped sandbox %s after %dms (%s)",
+		req.SandboxId, processingTime, gracefulMode)
+
+	return &proto.StopSandboxResponse{
+		Success:              true,
+		Message:              message,
+		NodeId:               s.nodeID,
+		ProcessedAt:          timestamppb.New(time.Now()),
+		ProcessingDurationMs: processingTime,
+	}, nil
+}

@@ -838,6 +838,16 @@ func (s *SandboxFSM) processStatusUpdateCommand(cmd Command) any {
 // sandboxes to stopped state for pause/resume functionality. Coordinates
 // with runtime system to gracefully halt VM execution while preserving state.
 //
+// IMPORTANT: This method is called ONLY AFTER the scheduled node has confirmed
+// successful stop via gRPC. The API handler orchestrates the stop sequence:
+// 1. gRPC StopSandbox call to the scheduled node
+// 2. Node confirmation of successful stop
+// 3. Only then is this Raft command submitted for state update
+//
+// This ensures distributed consistency where Raft state changes occur only
+// after actual node-level stop operations complete, mirroring the creation
+// semantics where placement acknowledgment precedes state transitions.
+//
 // Essential for resource management as it enables pausing unused sandboxes
 // to free resources while maintaining the ability to resume execution later.
 // Validates that only ready sandboxes can be stopped.

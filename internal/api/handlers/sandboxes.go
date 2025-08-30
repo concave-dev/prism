@@ -33,6 +33,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/concave-dev/prism/internal/grpc"
 	"github.com/concave-dev/prism/internal/logging"
 	"github.com/concave-dev/prism/internal/names"
 	"github.com/concave-dev/prism/internal/raft"
@@ -633,7 +634,7 @@ func GetSandboxLogs(sandboxMgr SandboxManager) gin.HandlerFunc {
 // Essential for resource management as it provides the interface for pausing
 // sandbox execution while preserving state for future resume operations.
 // Enables efficient resource utilization by stopping unused sandboxes.
-func StopSandbox(sandboxMgr SandboxManager, nodeID string) gin.HandlerFunc {
+func StopSandbox(sandboxMgr SandboxManager, nodeID string, clientPool *grpc.ClientPool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		sandboxID := c.Param("id")
 		if sandboxID == "" {
@@ -697,7 +698,70 @@ func StopSandbox(sandboxMgr SandboxManager, nodeID string) gin.HandlerFunc {
 			return
 		}
 
-		// Create Raft command for sandbox stop
+		// Validate sandbox has a scheduled node for stop orchestration
+		if sandbox.ScheduledNodeID == "" {
+			logging.Warn("Sandbox stop: No scheduled node for sandbox %s", sandboxID)
+			c.JSON(http.StatusConflict, gin.H{
+				"error":   "Sandbox not scheduled",
+				"details": "Sandbox has no assigned node for stop operation",
+			})
+			return
+		}
+
+		// Validate gRPC client pool availability for node communication
+		if clientPool == nil {
+			logging.Warn("Sandbox stop: gRPC client pool not available")
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"error":   "Node communication unavailable",
+				"details": "gRPC client pool not initialized",
+			})
+			return
+		}
+
+		// Get current leader node ID for gRPC request verification
+		leaderNodeID := sandboxMgr.Leader()
+		if leaderNodeID == "" {
+			logging.Warn("Sandbox stop: No current leader available")
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"error":   "No cluster leader",
+				"details": "Cannot determine current cluster leader for stop operation",
+			})
+			return
+		}
+
+		logging.Info("Sandbox stop: Requesting stop from node %s for sandbox %s (graceful: %v)",
+			sandbox.ScheduledNodeID, sandboxID, stopOptions.Graceful)
+
+		// Step 1: Request stop from the scheduled node via gRPC
+		stopResponse, err := clientPool.StopSandboxOnNode(
+			sandbox.ScheduledNodeID,
+			sandboxID,
+			stopOptions.Graceful,
+			leaderNodeID,
+		)
+
+		if err != nil {
+			logging.Error("Sandbox stop: gRPC call to node %s failed: %v", sandbox.ScheduledNodeID, err)
+			c.JSON(http.StatusBadGateway, gin.H{
+				"error":   "Node communication failed",
+				"details": fmt.Sprintf("Failed to contact node %s: %v", sandbox.ScheduledNodeID, err),
+			})
+			return
+		}
+
+		if !stopResponse.Success {
+			logging.Error("Sandbox stop: Node %s rejected stop request: %s", sandbox.ScheduledNodeID, stopResponse.Message)
+			c.JSON(http.StatusBadGateway, gin.H{
+				"error":   "Node rejected stop request",
+				"details": fmt.Sprintf("Node %s: %s", sandbox.ScheduledNodeID, stopResponse.Message),
+			})
+			return
+		}
+
+		logging.Info("Sandbox stop: Node %s confirmed stop for sandbox %s: %s",
+			sandbox.ScheduledNodeID, sandboxID, stopResponse.Message)
+
+		// Step 2: Only after node confirmation, update Raft state
 		stopCmd := raft.SandboxStopCommand{
 			SandboxID: sandboxID,
 			Graceful:  stopOptions.Graceful,
@@ -734,23 +798,25 @@ func StopSandbox(sandboxMgr SandboxManager, nodeID string) gin.HandlerFunc {
 			return
 		}
 
-		// Submit to Raft for consensus
+		// Submit to Raft for consensus after node confirmation
 		if err := sandboxMgr.SubmitCommand(string(commandJSON)); err != nil {
 			logging.Warn("Sandbox stop: Failed to submit Raft command: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{
-				"error":   "Failed to stop sandbox",
+				"error":   "Failed to update cluster state",
 				"details": fmt.Sprintf("Consensus error: %v", err),
 			})
 			return
 		}
 
-		logging.Success("Sandbox stop command submitted to Raft consensus")
+		logging.Success("Sandbox stop: Successfully stopped sandbox %s on node %s and updated cluster state",
+			sandboxID, sandbox.ScheduledNodeID)
 
 		c.JSON(http.StatusOK, gin.H{
 			"sandbox_id": sandboxID,
 			"status":     "stopped",
-			"message":    "Sandbox stop submitted to cluster",
+			"message":    "Sandbox stopped successfully",
 			"graceful":   stopOptions.Graceful,
+			"node_id":    sandbox.ScheduledNodeID,
 		})
 	}
 }

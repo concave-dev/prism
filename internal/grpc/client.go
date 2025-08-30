@@ -295,6 +295,32 @@ func (cp *ClientPool) PlaceSandboxOnNode(nodeID, sandboxID, sandboxName string, 
 	return client.PlaceSandbox(ctx, req)
 }
 
+// StopSandboxOnNode sends a sandbox stop request to a specific node
+// via the SchedulerService gRPC interface. Uses configured stop timeout
+// to prevent hanging on slow stop operations.
+//
+// Essential for distributed stop orchestration as it coordinates sandbox
+// stopping between leader and worker nodes with proper timeout handling
+// for graceful and forceful shutdown scenarios.
+func (cp *ClientPool) StopSandboxOnNode(nodeID, sandboxID string, graceful bool, leaderNodeID string) (*proto.StopSandboxResponse, error) {
+	client, err := cp.GetSchedulerServiceClient(nodeID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get scheduler client for node %s: %w", nodeID, err)
+	}
+
+	// Use stop timeout (shorter than placement timeout for faster stop operations)
+	ctx, cancel := context.WithTimeout(context.Background(), cp.config.StopCallTimeout)
+	defer cancel()
+
+	req := &proto.StopSandboxRequest{
+		SandboxId:    sandboxID,
+		Graceful:     graceful,
+		LeaderNodeId: leaderNodeID,
+	}
+
+	return client.StopSandbox(ctx, req)
+}
+
 // CloseConnection closes and removes a specific node connection from the pool.
 // Safe to call even if no connection exists for the nodeID.
 func (cp *ClientPool) CloseConnection(nodeID string) {

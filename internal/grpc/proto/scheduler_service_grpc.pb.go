@@ -20,6 +20,7 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	SchedulerService_PlaceSandbox_FullMethodName = "/prism.scheduler.v1.SchedulerService/PlaceSandbox"
+	SchedulerService_StopSandbox_FullMethodName  = "/prism.scheduler.v1.SchedulerService/StopSandbox"
 )
 
 // SchedulerServiceClient is the client API for SchedulerService service.
@@ -39,6 +40,10 @@ type SchedulerServiceClient interface {
 	// based on scheduling decisions made by the cluster leader. Returns
 	// placement success or failure for sandbox lifecycle tracking.
 	PlaceSandbox(ctx context.Context, in *PlaceSandboxRequest, opts ...grpc.CallOption) (*PlaceSandboxResponse, error)
+	// StopSandbox requests a node to stop a running sandbox VM
+	// for pause/resume functionality. Returns stop success or failure
+	// for sandbox lifecycle tracking and resource management.
+	StopSandbox(ctx context.Context, in *StopSandboxRequest, opts ...grpc.CallOption) (*StopSandboxResponse, error)
 }
 
 type schedulerServiceClient struct {
@@ -53,6 +58,16 @@ func (c *schedulerServiceClient) PlaceSandbox(ctx context.Context, in *PlaceSand
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(PlaceSandboxResponse)
 	err := c.cc.Invoke(ctx, SchedulerService_PlaceSandbox_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *schedulerServiceClient) StopSandbox(ctx context.Context, in *StopSandboxRequest, opts ...grpc.CallOption) (*StopSandboxResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StopSandboxResponse)
+	err := c.cc.Invoke(ctx, SchedulerService_StopSandbox_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -76,6 +91,10 @@ type SchedulerServiceServer interface {
 	// based on scheduling decisions made by the cluster leader. Returns
 	// placement success or failure for sandbox lifecycle tracking.
 	PlaceSandbox(context.Context, *PlaceSandboxRequest) (*PlaceSandboxResponse, error)
+	// StopSandbox requests a node to stop a running sandbox VM
+	// for pause/resume functionality. Returns stop success or failure
+	// for sandbox lifecycle tracking and resource management.
+	StopSandbox(context.Context, *StopSandboxRequest) (*StopSandboxResponse, error)
 	mustEmbedUnimplementedSchedulerServiceServer()
 }
 
@@ -88,6 +107,9 @@ type UnimplementedSchedulerServiceServer struct{}
 
 func (UnimplementedSchedulerServiceServer) PlaceSandbox(context.Context, *PlaceSandboxRequest) (*PlaceSandboxResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PlaceSandbox not implemented")
+}
+func (UnimplementedSchedulerServiceServer) StopSandbox(context.Context, *StopSandboxRequest) (*StopSandboxResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StopSandbox not implemented")
 }
 func (UnimplementedSchedulerServiceServer) mustEmbedUnimplementedSchedulerServiceServer() {}
 func (UnimplementedSchedulerServiceServer) testEmbeddedByValue()                          {}
@@ -128,6 +150,24 @@ func _SchedulerService_PlaceSandbox_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SchedulerService_StopSandbox_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StopSandboxRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SchedulerServiceServer).StopSandbox(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SchedulerService_StopSandbox_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SchedulerServiceServer).StopSandbox(ctx, req.(*StopSandboxRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SchedulerService_ServiceDesc is the grpc.ServiceDesc for SchedulerService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -138,6 +178,10 @@ var SchedulerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PlaceSandbox",
 			Handler:    _SchedulerService_PlaceSandbox_Handler,
+		},
+		{
+			MethodName: "StopSandbox",
+			Handler:    _SchedulerService_StopSandbox_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
