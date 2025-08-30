@@ -172,16 +172,16 @@ func (s *SchedulerServiceImpl) verifyLeaderRequest(requestLeaderID string) error
 		return fmt.Errorf("cannot verify leader: Raft manager unavailable")
 	}
 
-	// Get current Raft leader information
-	raftHealth := s.raftManager.GetHealthStatus()
-	if raftHealth.Leader == "" {
+	// Get current Raft leader directly
+	currentLeader := s.raftManager.Leader()
+	if currentLeader == "" {
 		return fmt.Errorf("no current cluster leader known")
 	}
 
 	// Verify the request came from the current leader
-	if raftHealth.Leader != requestLeaderID {
+	if currentLeader != requestLeaderID {
 		return fmt.Errorf("request from %s but current leader is %s",
-			requestLeaderID, raftHealth.Leader)
+			requestLeaderID, currentLeader)
 	}
 
 	logging.Debug("Scheduler: Verified placement request from current leader %s", requestLeaderID)
