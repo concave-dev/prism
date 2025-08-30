@@ -16,15 +16,15 @@
 //
 // ADDRESS INHERITANCE STRATEGY:
 // The daemon uses intelligent address inheritance to minimize configuration burden
-// while maintaining flexibility for complex network topologies:
+// while enforcing same-interface constraints for service discovery reliability:
 //
 //   - Serf: Explicitly configured or defaults to system bind address
 //   - Raft/gRPC/API: Inherit Serf IP address unless explicitly overridden
 //   - Port Management: Each service gets unique port with auto-discovery fallback
+//   - Interface Constraint: Raft must use the same IP as Serf; only ports may differ
 //
-// This pattern ensures cluster-wide accessibility while allowing per-service
-// customization when needed for firewall rules, network segmentation, or
-// multi-interface scenarios.
+// This pattern ensures cluster-wide accessibility and simplifies service discovery
+// by avoiding split-network topologies that would complicate peer resolution.
 //
 // EXPLICIT OVERRIDE TRACKING:
 // The configuration system tracks which values were explicitly set by users

@@ -265,6 +265,13 @@ func Run() error {
 		config.Global.APIAddr = config.Global.SerfAddr
 	}
 
+	// Validate same-interface constraint after all address inheritance is complete
+	// Serf and Raft must use the same IP address (different ports allowed)
+	if err := config.ValidateSameInterfaceForSerfAndRaft(); err != nil {
+		logging.Error("Network interface validation failed: %v", err)
+		return fmt.Errorf("network interface validation failed: %w", err)
+	}
+
 	// ============================================================================
 	// ATOMIC PORT BINDING STRATEGY: Eliminating Race Conditions
 	// ============================================================================

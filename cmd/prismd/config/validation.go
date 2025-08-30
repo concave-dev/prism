@@ -258,3 +258,51 @@ func ValidateConfig() error {
 
 	return nil
 }
+
+// ValidateSameInterfaceForSerfAndRaft ensures Serf and Raft use the same IP address.
+// Different ports are allowed, but both services must be on the same network interface.
+// This constraint simplifies service discovery and prevents complex multi-interface scenarios.
+//
+// Must be called AFTER address inheritance happens in daemon startup, not during ValidateConfig().
+//
+// Validation cases:
+//   - Neither explicitly set: both inherit same defaults → OK
+//   - Only Serf set: Raft inherits Serf IP → OK
+//   - Only Raft set: Error - not supported, Raft must inherit or match Serf
+//   - Both explicitly set: validate IPs match → validate or error
+//
+// IPv6 is not supported - all addresses must be IPv4 format.
+func ValidateSameInterfaceForSerfAndRaft() error {
+	// At this point, addresses have been parsed, normalized, and inheritance has happened:
+	// - Global.SerfAddr contains the IP (no port)
+	// - Global.RaftAddr contains the IP (no port)
+
+	serfIP := Global.SerfAddr
+	raftIP := Global.RaftAddr
+
+	// Both addresses should be IPv4 at this point (validated by ParseBindAddress)
+	// Handle wildcard addresses specially - both must be wildcards to match
+	if serfIP == "0.0.0.0" && raftIP == "0.0.0.0" {
+		return nil // Both wildcards - OK
+	}
+
+	// Explicit IPv6 check (should be caught earlier but be defensive)
+	if serfIP == "::" || raftIP == "::" {
+		return fmt.Errorf("IPv6 addresses are not supported - use IPv4 addresses only")
+	}
+
+	// For specific IPs, they must match exactly
+	if serfIP != raftIP {
+		var suggestion string
+		if Global.raftAddrExplicitlySet {
+			suggestion = fmt.Sprintf("set --raft=%s:<port> or remove --raft to inherit from --serf", serfIP)
+		} else {
+			// This case shouldn't happen since Raft inherits from Serf when not set
+			suggestion = "ensure both services use the same IP address"
+		}
+
+		return fmt.Errorf("raft address (%s) must use the same IP as serf address (%s) - only ports may differ. %s", raftIP, serfIP, suggestion)
+	}
+
+	return nil
+}
