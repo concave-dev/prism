@@ -39,7 +39,6 @@
 package raft
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -743,7 +742,18 @@ func (m *RaftManager) IntegrateWithSerf(serfEventCh <-chan serf.Event) {
 	go m.autopilotCleanup()
 
 	// Start periodic reconciliation to guarantee convergence even if events drop
-	go m.reconcilePeers(context.Background(), 5*time.Second)
+	//
+	// LIFECYCLE MANAGEMENT NOTE:
+	// This reconciliation process is managed via m.shutdown channel rather than
+	// context cancellation. The m.shutdown channel is the authoritative signal
+	// for all RaftManager goroutines and provides consistent shutdown behavior
+	// across autopilot cleanup, event handling, and peer reconciliation.
+	//
+	// No context parameter needed - the reconciliation loop responds only to
+	// m.shutdown for termination. This keeps the lifecycle management simple
+	// and consistent with other goroutines in RaftManager that all use the
+	// same shutdown channel pattern.
+	go m.reconcilePeers(5 * time.Second)
 }
 
 // handleSerfEvents processes Serf membership events to automatically manage
@@ -1304,7 +1314,7 @@ func (m *RaftManager) SetSerfManager(serfMgr SerfInterface) {
 // desyncs caused by dropped best-effort Serf events. Operations are idempotent
 // and safe to run alongside event-based adds/removes, providing a safety net
 // that guarantees convergence within the reconciliation interval.
-func (m *RaftManager) reconcilePeers(ctx context.Context, interval time.Duration) {
+func (m *RaftManager) reconcilePeers(interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -1312,9 +1322,13 @@ func (m *RaftManager) reconcilePeers(ctx context.Context, interval time.Duration
 
 	for {
 		select {
-		case <-ctx.Done():
-			logging.Info("Raft peer reconciliation shutting down")
-			return
+		// NOTE: ctx.Done() case commented out because context.Background() never cancels
+		// All RaftManager goroutines use m.shutdown as the authoritative lifecycle signal
+		// for consistent shutdown behavior across the entire manager
+		//
+		// case <-ctx.Done():
+		//     logging.Info("Raft peer reconciliation shutting down")
+		//     return
 		case <-m.shutdown:
 			logging.Info("Raft peer reconciliation shutting down")
 			return
