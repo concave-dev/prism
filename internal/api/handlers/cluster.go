@@ -159,9 +159,15 @@ func HandleRaftPeers(serfManager *serf.SerfManager, raftManager *raft.RaftManage
 	}
 }
 
-// mapSerfStatus normalizes Serf member status for display consistency
-// Serf emits: alive | failed | left. We show: alive | failed | dead.
-// TODO: Consider surfacing raw status separately if needed for debugging
+// mapSerfStatus normalizes Serf member status for consistent connection state reporting.
+// Serf emits: alive | failed | left. We normalize to: alive | failed | dead.
+//
+// These connection states feed into the status precedence system:
+// - "alive": Node is reachable, proceed to health checks
+// - "failed": Node failed/crashed, bypass health checks → status = "failed"
+// - "dead" (from "left"): Node left cluster, bypass health checks → status = "dead"
+//
+// This provides the critical connection layer that takes priority over health status.
 func mapSerfStatus(raw string) string {
 	switch raw {
 	case "left":
@@ -209,7 +215,9 @@ func HandleMembers(serfManager *serf.SerfManager, raftManager *raft.RaftManager,
 			// Determine if this member is the current Raft leader
 			isLeader := (raftLeader != "" && (raftLeader == member.ID || raftLeader == member.Name))
 
-			// Query health status via gRPC - fallback to Serf status if health check fails
+			// Compute final node status using two-tier precedence system:
+			// 1. Connection status (dead/failed) takes absolute priority
+			// 2. Health status (healthy/unhealthy/degraded/unknown) for reachable nodes
 			healthDetails := getNodeHealthStatusDetails(clientPool, member.ID, serfStatus)
 
 			apiMember := ClusterMember{
@@ -279,7 +287,9 @@ func HandleClusterInfo(serfManager *serf.SerfManager, raftManager *raft.RaftMana
 			// Determine if this member is the current Raft leader
 			isLeader := (raftLeader != "" && (raftLeader == member.ID || raftLeader == member.Name))
 
-			// Query health status via gRPC - fallback to Serf status if health check fails
+			// Compute final node status using two-tier precedence system:
+			// 1. Connection status (dead/failed) takes absolute priority
+			// 2. Health status (healthy/unhealthy/degraded/unknown) for reachable nodes
 			healthDetails := getNodeHealthStatusDetails(clientPool, member.ID, serfStatus)
 
 			apiMember := ClusterMember{
@@ -389,12 +399,31 @@ type HealthStatusDetails struct {
 }
 
 // getNodeHealthStatusDetails queries the health status of a node via gRPC and returns
-// detailed health information including check counts. Falls back to Serf-based status
-// if health checks are unavailable or fail.
+// detailed health information including check counts. Implements a two-tier status
+// precedence system for accurate cluster operational visibility.
 //
-// Returns detailed health status with check counts for enhanced operational visibility.
+// STATUS PRECEDENCE SYSTEM:
+// ========================
+// 1. CRITICAL CONNECTION STATUS (Serf-based) - Takes absolute priority:
+//   - "dead": Node left cluster (Serf "left") - cannot be reached
+//   - "failed": Node failed in cluster (Serf "failed") - network partition/crash
+//     These bypass health checks since the node is fundamentally unreachable.
+//
+// 2. HEALTH CHECK STATUS (gRPC-based) - Used when node is reachable:
+//   - "healthy": All health checks passing, ready for workloads
+//   - "unhealthy": Critical health issues, should not receive workloads
+//   - "degraded": Minor issues, functional but monitor closely
+//   - "unknown": Health checks failed or returned unclear results
+//
+// FALLBACK BEHAVIOR:
+// - If Serf shows "alive" but gRPC unavailable → "unknown" (can't assess health)
+// - If Serf shows "dead"/"failed" → use Serf status (node unreachable)
+//
+// This ensures operators see connection issues (dead/failed) immediately while
+// still getting detailed health information for reachable nodes.
 func getNodeHealthStatusDetails(clientPool *grpc.ClientPool, nodeID, serfStatus string) HealthStatusDetails {
-	// If node is not in Serf (dead/failed), skip health checks as node is unreachable
+	// PRIORITY 1: Critical connection status - node unreachable via Serf
+	// Skip health checks entirely since the node cannot be contacted
 	if serfStatus == "dead" || serfStatus == "failed" {
 		return HealthStatusDetails{
 			Status:        serfStatus,
@@ -403,7 +432,8 @@ func getNodeHealthStatusDetails(clientPool *grpc.ClientPool, nodeID, serfStatus 
 		}
 	}
 
-	// Query health via gRPC with a short timeout to avoid blocking the list operation
+	// PRIORITY 2: Health check status - query gRPC health for reachable nodes
+	// Use short timeout to avoid blocking the list operation
 	if clientPool != nil {
 		grpcRes, err := clientPool.GetHealthFromNode(nodeID)
 		if err != nil {
@@ -426,7 +456,7 @@ func getNodeHealthStatusDetails(clientPool *grpc.ClientPool, nodeID, serfStatus 
 			}
 		}
 
-		// Map gRPC health status to lowercase string for consistent display
+		// Map protobuf health status enum to lowercase strings for consistent API display
 		var status string
 		switch grpcRes.GetStatus().String() {
 		case "HEALTHY":
@@ -448,8 +478,9 @@ func getNodeHealthStatusDetails(clientPool *grpc.ClientPool, nodeID, serfStatus 
 		}
 	}
 
-	// No gRPC client pool available - fall back to Serf status
-	// Map "alive" to "unknown" since we can't determine actual health
+	// FALLBACK: No gRPC available - convert Serf connection status to health status
+	// "alive" → "unknown" since we can't determine actual health without checks
+	// "dead"/"failed" would have been caught above, so this handles edge cases
 	fallbackStatus := "unknown"
 	if serfStatus != "alive" {
 		fallbackStatus = serfStatus
