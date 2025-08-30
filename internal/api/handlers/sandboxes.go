@@ -12,7 +12,7 @@
 //   - POST /api/v1/sandboxes: Create new sandboxes for code execution
 //   - GET /api/v1/sandboxes: List all sandboxes with filtering and pagination
 //   - GET /api/v1/sandboxes/{id}: Get detailed sandbox information
-//   - DELETE /api/v1/sandboxes/{id}: Remove sandboxes from the cluster
+//   - DELETE /api/v1/sandboxes/{id}: Destroy sandboxes from the cluster
 //   - POST /api/v1/sandboxes/{id}/exec: Execute commands within sandboxes
 //   - GET /api/v1/sandboxes/{id}/logs: Retrieve execution logs and output
 //
@@ -33,6 +33,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/concave-dev/prism/internal/grpc"
 	"github.com/concave-dev/prism/internal/logging"
 	"github.com/concave-dev/prism/internal/names"
 	"github.com/concave-dev/prism/internal/raft"
@@ -114,13 +115,14 @@ type SandboxExecRequest struct {
 	Command string `json:"command" binding:"required"` // Command to execute in sandbox
 }
 
-// SandboxExecResponse represents the HTTP response for sandbox execution requests.
+// ExecResponse represents the HTTP response for execution requests.
 // Contains execution results, output, and status information for monitoring
 // command execution and retrieving results from sandbox environments.
 //
 // Provides comprehensive execution feedback including command output, execution
 // status, and operational messages for debugging and monitoring workflows.
-type SandboxExecResponse struct {
+type ExecResponse struct {
+	ExecID    string `json:"exec_id"`    // Unique execution identifier
 	SandboxID string `json:"sandbox_id"` // Target sandbox identifier
 	Command   string `json:"command"`    // Executed command
 	Status    string `json:"status"`     // Execution status
@@ -326,14 +328,14 @@ func GetSandbox(sandboxMgr SandboxManager) gin.HandlerFunc {
 	}
 }
 
-// DeleteSandbox handles HTTP requests for removing sandboxes from the cluster.
-// Submits sandbox deletion commands to Raft consensus and returns deletion
+// DeleteSandbox handles HTTP requests for destroying sandboxes from the cluster.
+// Submits sandbox destruction commands to Raft consensus and returns destruction
 // status information.
 //
 // DELETE /api/v1/sandboxes/{id}
 //
 // Essential for sandbox lifecycle management as it provides clean sandbox
-// removal with proper state cleanup across the distributed cluster.
+// destruction with proper state cleanup across the distributed cluster.
 func DeleteSandbox(sandboxMgr SandboxManager, nodeID string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		sandboxID := c.Param("id")
@@ -346,15 +348,15 @@ func DeleteSandbox(sandboxMgr SandboxManager, nodeID string) gin.HandlerFunc {
 			return
 		}
 
-		logging.Info("Sandbox deletion request: id=%s", sandboxID)
+		logging.Info("Sandbox destruction request: id=%s", sandboxID)
 
 		// Leadership check is now handled by the leader forwarding middleware
 		// This handler only executes if we're the leader or forwarding succeeded
 
-		// Check if sandbox exists before deletion
+		// Check if sandbox exists before destruction
 		fsm := sandboxMgr.GetFSM()
 		if fsm == nil {
-			logging.Warn("Sandbox deletion: FSM not available")
+			logging.Warn("Sandbox destruction: FSM not available")
 			c.JSON(http.StatusServiceUnavailable, gin.H{
 				"error":   "Cluster state not available",
 				"details": "FSM not initialized",
@@ -364,7 +366,7 @@ func DeleteSandbox(sandboxMgr SandboxManager, nodeID string) gin.HandlerFunc {
 
 		sandbox := fsm.GetSandbox(sandboxID)
 		if sandbox == nil {
-			logging.Warn("Sandbox deletion: Sandbox not found: %s", sandboxID)
+			logging.Warn("Sandbox destruction: Sandbox not found: %s", sandboxID)
 			c.JSON(http.StatusNotFound, gin.H{
 				"error":   "Sandbox not found",
 				"details": fmt.Sprintf("No sandbox found with ID: %s", sandboxID),
@@ -372,17 +374,17 @@ func DeleteSandbox(sandboxMgr SandboxManager, nodeID string) gin.HandlerFunc {
 			return
 		}
 
-		// Create Raft command for sandbox deletion
-		deleteCmd := struct {
+		// Create Raft command for sandbox destruction
+		destroyCmd := struct {
 			SandboxID string `json:"sandbox_id"`
 		}{
 			SandboxID: sandboxID,
 		}
 
 		// Marshal command data
-		cmdData, err := json.Marshal(deleteCmd)
+		cmdData, err := json.Marshal(destroyCmd)
 		if err != nil {
-			logging.Warn("Sandbox deletion: Failed to marshal command: %v", err)
+			logging.Warn("Sandbox destruction: Failed to marshal command: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error":   "Failed to process request",
 				"details": "Internal command serialization error",
@@ -393,7 +395,7 @@ func DeleteSandbox(sandboxMgr SandboxManager, nodeID string) gin.HandlerFunc {
 		// Create Raft command wrapper
 		command := raft.Command{
 			Type:      "sandbox",
-			Operation: "delete",
+			Operation: "destroy",
 			Data:      json.RawMessage(cmdData),
 			Timestamp: time.Now(),
 			NodeID:    nodeID,
@@ -402,7 +404,7 @@ func DeleteSandbox(sandboxMgr SandboxManager, nodeID string) gin.HandlerFunc {
 		// Marshal complete command
 		commandJSON, err := json.Marshal(command)
 		if err != nil {
-			logging.Warn("Sandbox deletion: Failed to marshal Raft command: %v", err)
+			logging.Warn("Sandbox destruction: Failed to marshal Raft command: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error":   "Failed to process request",
 				"details": "Internal command serialization error",
@@ -412,20 +414,20 @@ func DeleteSandbox(sandboxMgr SandboxManager, nodeID string) gin.HandlerFunc {
 
 		// Submit to Raft for consensus
 		if err := sandboxMgr.SubmitCommand(string(commandJSON)); err != nil {
-			logging.Warn("Sandbox deletion: Failed to submit Raft command: %v", err)
+			logging.Warn("Sandbox destruction: Failed to submit Raft command: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{
-				"error":   "Failed to delete sandbox",
+				"error":   "Failed to destroy sandbox",
 				"details": fmt.Sprintf("Consensus error: %v", err),
 			})
 			return
 		}
 
-		logging.Success("Sandbox deletion command submitted to Raft consensus")
+		logging.Success("Sandbox destruction command submitted to Raft consensus")
 
 		c.JSON(http.StatusOK, gin.H{
 			"sandbox_id": sandboxID,
-			"status":     "deleted",
-			"message":    "Sandbox deletion submitted to cluster",
+			"status":     "destroyed",
+			"message":    "Sandbox destruction submitted to cluster",
 		})
 	}
 }
@@ -488,10 +490,23 @@ func ExecSandbox(sandboxMgr SandboxManager, nodeID string) gin.HandlerFunc {
 			return
 		}
 
-		// Create Raft command for sandbox execution
-		execCmd := raft.SandboxExecCommand{
+		// Generate unique execution ID
+		execID, err := utils.GenerateID()
+		if err != nil {
+			logging.Warn("Sandbox exec: Failed to generate execution ID: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "Failed to process request",
+				"details": "Internal ID generation error",
+			})
+			return
+		}
+
+		// Create Raft command for execution creation
+		execCmd := raft.ExecCreateCommand{
+			ID:        execID,
 			SandboxID: sandboxID,
 			Command:   req.Command,
+			Metadata:  make(map[string]string), // TODO: Add metadata from request if needed
 		}
 
 		// Marshal command data
@@ -507,8 +522,8 @@ func ExecSandbox(sandboxMgr SandboxManager, nodeID string) gin.HandlerFunc {
 
 		// Create Raft command wrapper
 		command := raft.Command{
-			Type:      "sandbox",
-			Operation: "exec",
+			Type:      "exec",
+			Operation: "create",
 			Data:      json.RawMessage(cmdData),
 			Timestamp: time.Now(),
 			NodeID:    nodeID,
@@ -537,11 +552,12 @@ func ExecSandbox(sandboxMgr SandboxManager, nodeID string) gin.HandlerFunc {
 
 		logging.Success("Sandbox exec command submitted to Raft consensus")
 
-		response := SandboxExecResponse{
+		response := ExecResponse{
+			ExecID:    execID,
 			SandboxID: sandboxID,
 			Command:   req.Command,
-			Status:    "submitted",
-			Message:   "Command execution submitted to cluster",
+			Status:    "pending",
+			Message:   "Execution created and submitted to cluster",
 			Stdout:    "", // TODO: Will be populated by runtime execution
 			Stderr:    "", // TODO: Will be populated by runtime execution
 		}
@@ -600,14 +616,207 @@ func GetSandboxLogs(sandboxMgr SandboxManager) gin.HandlerFunc {
 		logs := []string{
 			fmt.Sprintf("Sandbox %s (%s) created at %s", sandbox.Name, sandbox.ID, sandbox.Created.Format(time.RFC3339)),
 			fmt.Sprintf("Status: %s", sandbox.Status),
-		}
-
-		if sandbox.LastCommand != "" {
-			logs = append(logs, fmt.Sprintf("Last command: %s", sandbox.LastCommand))
+			fmt.Sprintf("Total executions: %d", sandbox.ExecCount),
 		}
 
 		c.JSON(http.StatusOK, gin.H{
 			"logs": logs,
+		})
+	}
+}
+
+// StopSandbox handles HTTP requests for stopping running sandboxes in the cluster.
+// Submits sandbox stop commands to Raft consensus and returns stop operation
+// status information for pause/resume functionality.
+//
+// POST /api/v1/sandboxes/{id}/stop
+//
+// Essential for resource management as it provides the interface for pausing
+// sandbox execution while preserving state for future resume operations.
+// Enables efficient resource utilization by stopping unused sandboxes.
+func StopSandbox(sandboxMgr SandboxManager, nodeID string, clientPool *grpc.ClientPool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		sandboxID := c.Param("id")
+		if sandboxID == "" {
+			logging.Warn("Sandbox stop: Missing sandbox ID")
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "Missing sandbox ID",
+				"details": "Sandbox ID is required in URL path",
+			})
+			return
+		}
+
+		// Parse optional request body for stop options
+		var stopOptions struct {
+			Graceful bool `json:"graceful"`
+		}
+		stopOptions.Graceful = true // Default to graceful stop
+
+		// Parse request body if provided (optional)
+		if err := c.ShouldBindJSON(&stopOptions); err != nil {
+			// Ignore JSON binding errors - stop options are optional
+			logging.Debug("Sandbox stop: Using default stop options for %s", sandboxID)
+		}
+
+		logging.Info("Sandbox stop request: id=%s graceful=%v",
+			sandboxID, stopOptions.Graceful)
+
+		// Leadership check is handled by leader forwarding middleware
+		// This handler only executes if we're the leader or forwarding succeeded
+
+		// Check if sandbox exists and is in valid state for stopping
+		fsm := sandboxMgr.GetFSM()
+		if fsm == nil {
+			logging.Warn("Sandbox stop: FSM not available")
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"error":   "Cluster state not available",
+				"details": "FSM not initialized",
+			})
+			return
+		}
+
+		sandbox := fsm.GetSandbox(sandboxID)
+		if sandbox == nil {
+			logging.Warn("Sandbox stop: Sandbox not found: %s", sandboxID)
+			c.JSON(http.StatusNotFound, gin.H{
+				"error":   "Sandbox not found",
+				"details": fmt.Sprintf("No sandbox found with ID: %s", sandboxID),
+			})
+			return
+		}
+
+		// Validate sandbox can be stopped
+		validStopStates := map[string]bool{
+			"ready": true,
+		}
+		if !validStopStates[sandbox.Status] {
+			logging.Warn("Sandbox stop: Invalid state %s for sandbox %s", sandbox.Status, sandboxID)
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "Invalid sandbox state",
+				"details": fmt.Sprintf("Sandbox in status '%s' cannot be stopped", sandbox.Status),
+			})
+			return
+		}
+
+		// Validate sandbox has a scheduled node for stop orchestration
+		if sandbox.ScheduledNodeID == "" {
+			logging.Warn("Sandbox stop: No scheduled node for sandbox %s", sandboxID)
+			c.JSON(http.StatusConflict, gin.H{
+				"error":   "Sandbox not scheduled",
+				"details": "Sandbox has no assigned node for stop operation",
+			})
+			return
+		}
+
+		// Validate gRPC client pool availability for node communication
+		if clientPool == nil {
+			logging.Warn("Sandbox stop: gRPC client pool not available")
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"error":   "Node communication unavailable",
+				"details": "gRPC client pool not initialized",
+			})
+			return
+		}
+
+		// Get current leader node ID for gRPC request verification
+		leaderNodeID := sandboxMgr.Leader()
+		if leaderNodeID == "" {
+			logging.Warn("Sandbox stop: No current leader available")
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"error":   "No cluster leader",
+				"details": "Cannot determine current cluster leader for stop operation",
+			})
+			return
+		}
+
+		logging.Info("Sandbox stop: Requesting stop from node %s for sandbox %s (graceful: %v)",
+			sandbox.ScheduledNodeID, sandboxID, stopOptions.Graceful)
+
+		// Step 1: Request stop from the scheduled node via gRPC
+		stopResponse, err := clientPool.StopSandboxOnNode(
+			sandbox.ScheduledNodeID,
+			sandboxID,
+			stopOptions.Graceful,
+			leaderNodeID,
+		)
+
+		if err != nil {
+			logging.Error("Sandbox stop: gRPC call to node %s failed: %v", sandbox.ScheduledNodeID, err)
+			c.JSON(http.StatusBadGateway, gin.H{
+				"error":   "Node communication failed",
+				"details": fmt.Sprintf("Failed to contact node %s: %v", sandbox.ScheduledNodeID, err),
+			})
+			return
+		}
+
+		if !stopResponse.Success {
+			logging.Error("Sandbox stop: Node %s rejected stop request: %s", sandbox.ScheduledNodeID, stopResponse.Message)
+			c.JSON(http.StatusBadGateway, gin.H{
+				"error":   "Node rejected stop request",
+				"details": fmt.Sprintf("Node %s: %s", sandbox.ScheduledNodeID, stopResponse.Message),
+			})
+			return
+		}
+
+		logging.Info("Sandbox stop: Node %s confirmed stop for sandbox %s: %s",
+			sandbox.ScheduledNodeID, sandboxID, stopResponse.Message)
+
+		// Step 2: Only after node confirmation, update Raft state
+		stopCmd := raft.SandboxStopCommand{
+			SandboxID: sandboxID,
+			Graceful:  stopOptions.Graceful,
+		}
+
+		// Marshal command data
+		cmdData, err := json.Marshal(stopCmd)
+		if err != nil {
+			logging.Warn("Sandbox stop: Failed to marshal command: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "Failed to process request",
+				"details": "Internal command serialization error",
+			})
+			return
+		}
+
+		// Create Raft command wrapper
+		command := raft.Command{
+			Type:      "sandbox",
+			Operation: "stop",
+			Data:      json.RawMessage(cmdData),
+			Timestamp: time.Now(),
+			NodeID:    nodeID,
+		}
+
+		// Marshal complete command
+		commandJSON, err := json.Marshal(command)
+		if err != nil {
+			logging.Warn("Sandbox stop: Failed to marshal Raft command: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "Failed to process request",
+				"details": "Internal command serialization error",
+			})
+			return
+		}
+
+		// Submit to Raft for consensus after node confirmation
+		if err := sandboxMgr.SubmitCommand(string(commandJSON)); err != nil {
+			logging.Warn("Sandbox stop: Failed to submit Raft command: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "Failed to update cluster state",
+				"details": fmt.Sprintf("Consensus error: %v", err),
+			})
+			return
+		}
+
+		logging.Success("Sandbox stop: Successfully stopped sandbox %s on node %s and updated cluster state",
+			sandboxID, sandbox.ScheduledNodeID)
+
+		c.JSON(http.StatusOK, gin.H{
+			"sandbox_id": sandboxID,
+			"status":     "stopped",
+			"message":    "Sandbox stopped successfully",
+			"graceful":   stopOptions.Graceful,
+			"node_id":    sandbox.ScheduledNodeID,
 		})
 	}
 }

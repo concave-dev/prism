@@ -1,0 +1,102 @@
+syntax = "proto3";
+
+package prism.scheduler.v1;
+
+option go_package = "github.com/concave-dev/prism/internal/grpc/proto";
+
+import "google/protobuf/timestamp.proto";
+
+// SchedulerService provides gRPC methods for distributed sandbox placement
+// and scheduling operations within the Prism cluster. Enables leader nodes
+// to coordinate sandbox placement with worker nodes for optimal resource
+// utilization and distributed code execution.
+//
+// This service handles the communication layer for the naive v0 scheduling
+// implementation, supporting placement requests and status updates between
+// cluster nodes for sandbox lifecycle management.
+service SchedulerService {
+    // PlaceSandbox requests a node to provision and start a sandbox VM
+    // based on scheduling decisions made by the cluster leader. Returns
+    // placement success or failure for sandbox lifecycle tracking.
+    rpc PlaceSandbox(PlaceSandboxRequest) returns (PlaceSandboxResponse);
+    
+    // StopSandbox requests a node to stop a running sandbox VM
+    // for pause/resume functionality. Returns stop success or failure
+    // for sandbox lifecycle tracking and resource management.
+    rpc StopSandbox(StopSandboxRequest) returns (StopSandboxResponse);
+}
+
+// PlaceSandboxRequest represents a sandbox placement request sent from the
+// cluster leader to a selected worker node. Contains all information needed
+// for sandbox provisioning and VM startup within the target node.
+//
+// Includes leader verification information to ensure placement requests
+// originate from the current cluster leader for security and consistency.
+message PlaceSandboxRequest {
+    // Core sandbox information
+    string sandbox_id = 1;   // Unique sandbox identifier
+    string sandbox_name = 2; // Human-readable sandbox name
+    
+    // Sandbox configuration and metadata
+    map<string, string> metadata = 3; // Additional sandbox metadata
+    
+    // Security and verification
+    string leader_node_id = 4; // Current leader node ID for verification
+    
+    // Placement context (optional, for debugging and monitoring)
+    double placement_score = 5; // Resource score that led to this placement
+    google.protobuf.Timestamp scheduled_at = 6; // When scheduling decision was made
+}
+
+// PlaceSandboxResponse represents the result of a sandbox placement operation
+// performed by a worker node. Contains success/failure status and optional
+// details for placement tracking and debugging operations.
+//
+// Used by the scheduler to update sandbox status in the distributed state
+// based on actual placement results from worker nodes.
+message PlaceSandboxResponse {
+    // Placement result
+    bool success = 1;    // Whether placement succeeded
+    string message = 2;  // Success details or error message
+    
+    // Node information
+    string node_id = 3;  // Responding node identifier
+    
+    // Timing information for monitoring
+    google.protobuf.Timestamp processed_at = 4; // When placement was processed
+    int64 processing_duration_ms = 5; // Time taken to process placement (300-500ms for v0)
+}
+
+// StopSandboxRequest represents a sandbox stop request sent from the
+// cluster leader to the node running the sandbox. Contains information
+// needed for stopping sandbox execution with graceful or forceful shutdown.
+//
+// Includes leader verification to ensure stop requests originate from
+// the current cluster leader for security and consistency.
+message StopSandboxRequest {
+    // Core sandbox information
+    string sandbox_id = 1;   // Unique sandbox identifier to stop
+    bool graceful = 2;       // Whether to perform graceful shutdown
+    
+    // Security and verification
+    string leader_node_id = 3; // Current leader node ID for verification
+}
+
+// StopSandboxResponse represents the result of a sandbox stop operation
+// performed by a worker node. Contains success/failure status and optional
+// details for stop tracking and debugging operations.
+//
+// Used by the scheduler to update sandbox status in the distributed state
+// based on actual stop results from worker nodes.
+message StopSandboxResponse {
+    // Stop result
+    bool success = 1;    // Whether stop succeeded
+    string message = 2;  // Success details or error message
+    
+    // Node information
+    string node_id = 3;  // Responding node identifier
+    
+    // Timing information for monitoring
+    google.protobuf.Timestamp processed_at = 4; // When stop was processed
+    int64 processing_duration_ms = 5; // Time taken to process stop
+}

@@ -43,6 +43,7 @@ func SetupFlags(cmd *cobra.Command) {
 	// Raft flags
 	cmd.Flags().StringVar(&config.Global.RaftAddr, "raft", config.DefaultRaft,
 		"Address and port for Raft consensus (e.g., "+config.DefaultRaft+")\n"+
+			"Must use the same IP as --serf; only port may differ\n"+
 			"If not specified, defaults to "+config.DefaultRaft)
 	cmd.Flags().StringVar(&config.Global.DataDir, "data-dir", config.DefaultDataDir,
 		"Directory for persistent data storage (auto-configures to ./data/timestamp when not specified)")

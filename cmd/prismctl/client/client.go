@@ -134,11 +134,20 @@ type ClusterInfo struct {
 // Enables operators to track code execution environments, monitor sandbox health,
 // and manage the complete lifecycle of AI agent workload containers.
 type Sandbox struct {
-	ID          string            `json:"id"`
-	Name        string            `json:"name"`
-	Status      string            `json:"status"`
-	Created     time.Time         `json:"created"`
-	Updated     time.Time         `json:"updated"`
+	ID      string    `json:"id"`
+	Name    string    `json:"name"`
+	Status  string    `json:"status"`
+	Created time.Time `json:"created"`
+	Updated time.Time `json:"updated"`
+
+	// Scheduling information for placement tracking
+	ScheduledNodeID string    `json:"scheduled_node_id,omitempty"`
+	ScheduledAt     time.Time `json:"scheduled_at,omitempty"`
+	PlacementScore  float64   `json:"placement_score,omitempty"`
+
+	// Execution count for summary information
+	ExecCount int `json:"exec_count"` // Total number of commands executed
+
 	LastCommand string            `json:"last_command,omitempty"`
 	LastStdout  string            `json:"last_stdout,omitempty"`
 	LastStderr  string            `json:"last_stderr,omitempty"`
@@ -193,14 +202,15 @@ type SandboxListResponse struct {
 	Count     int       `json:"count"`
 }
 
-// SandboxExecResponse represents the API response for command execution in sandboxes.
+// ExecResponse represents the API response for command execution in sandboxes.
 // Contains execution results including stdout, stderr, and operation status for
 // complete command execution feedback and result processing.
 //
 // Provides operators with detailed command execution results enabling proper
 // error handling, output processing, and execution status tracking for AI
 // workload management and debugging operations.
-type SandboxExecResponse struct {
+type ExecResponse struct {
+	ExecID    string `json:"exec_id"`
 	SandboxID string `json:"sandbox_id"`
 	Command   string `json:"command"`
 	Status    string `json:"status"`
@@ -896,8 +906,8 @@ func (api *PrismAPIClient) CreateSandbox(name string, metadata map[string]string
 // processing. Handles various execution scenarios including sandbox validation,
 // leader redirection, and execution results with comprehensive error handling
 // for debugging command execution and sandbox operational issues.
-func (api *PrismAPIClient) ExecInSandbox(sandboxID, command string) (*SandboxExecResponse, error) {
-	var response SandboxExecResponse
+func (api *PrismAPIClient) ExecInSandbox(sandboxID, command string) (*ExecResponse, error) {
+	var response ExecResponse
 
 	// Prepare request payload
 	payload := map[string]any{
@@ -964,14 +974,14 @@ func (api *PrismAPIClient) GetSandboxLogs(sandboxID string) ([]string, error) {
 	return response.Logs, nil
 }
 
-// DeleteSandbox removes a code execution sandbox via the daemon API performing
+// DeleteSandbox destroys a code execution sandbox via the daemon API performing
 // complete cleanup of sandbox resources and metadata. Handles sandbox identification,
-// deletion coordination, and various API response scenarios.
+// destruction coordination, and various API response scenarios.
 //
 // Completes sandbox lifecycle by cleaning up code execution environments and
-// freeing cluster resources. Handles deletion validation, leader redirection,
+// freeing cluster resources. Handles destruction validation, leader redirection,
 // and cleanup confirmation with proper error handling for missing sandboxes
-// and deletion operation failures.
+// and destruction operation failures.
 func (api *PrismAPIClient) DeleteSandbox(sandboxID string) error {
 	resp, err := api.client.R().
 		Delete(fmt.Sprintf("/sandboxes/%s", sandboxID))
@@ -982,6 +992,46 @@ func (api *PrismAPIClient) DeleteSandbox(sandboxID string) error {
 
 	if resp.StatusCode() == 404 {
 		return fmt.Errorf("sandbox '%s' not found", sandboxID)
+	}
+
+	if resp.StatusCode() == 307 {
+		return fmt.Errorf("not cluster leader - request redirected")
+	}
+
+	if resp.StatusCode() != 200 {
+		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode(), resp.String())
+	}
+
+	return nil
+}
+
+// StopSandbox stops a code execution sandbox via the daemon API performing
+// graceful or forceful shutdown of sandbox execution. Handles sandbox identification,
+// stop coordination, and various API response scenarios for pause/resume functionality.
+//
+// Enables resource management by pausing sandbox execution while preserving state
+// for future resume operations. Handles stop validation, leader redirection,
+// and stop confirmation with proper error handling for sandbox lifecycle management.
+func (api *PrismAPIClient) StopSandbox(sandboxID string, graceful bool) error {
+	// Prepare request payload
+	payload := map[string]any{
+		"graceful": graceful,
+	}
+
+	resp, err := api.client.R().
+		SetBody(payload).
+		Post(fmt.Sprintf("/sandboxes/%s/stop", sandboxID))
+
+	if err != nil {
+		return fmt.Errorf("failed to connect to API server at %s: %w", api.baseURL, err)
+	}
+
+	if resp.StatusCode() == 404 {
+		return fmt.Errorf("sandbox '%s' not found", sandboxID)
+	}
+
+	if resp.StatusCode() == 400 {
+		return fmt.Errorf("invalid request: %s", resp.String())
 	}
 
 	if resp.StatusCode() == 307 {

@@ -39,7 +39,6 @@
 package raft
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -707,7 +706,12 @@ func (m *RaftManager) SubmitCommand(data string) error {
 		return fmt.Errorf("not leader, redirect to %s", leader)
 	}
 
-	logging.Info("Submitting command to Raft cluster: %s", data)
+	// Log truncated command data to avoid verbose logs with large JSON payloads
+	truncatedData := data
+	if len(data) > 100 {
+		truncatedData = data[:97] + "..."
+	}
+	logging.Debug("Submitting command to Raft cluster: %s", truncatedData)
 
 	future := m.raft.Apply([]byte(data), 10*time.Second)
 	if err := future.Error(); err != nil {
@@ -743,7 +747,18 @@ func (m *RaftManager) IntegrateWithSerf(serfEventCh <-chan serf.Event) {
 	go m.autopilotCleanup()
 
 	// Start periodic reconciliation to guarantee convergence even if events drop
-	go m.reconcilePeers(context.Background(), 5*time.Second)
+	//
+	// LIFECYCLE MANAGEMENT NOTE:
+	// This reconciliation process is managed via m.shutdown channel rather than
+	// context cancellation. The m.shutdown channel is the authoritative signal
+	// for all RaftManager goroutines and provides consistent shutdown behavior
+	// across autopilot cleanup, event handling, and peer reconciliation.
+	//
+	// No context parameter needed - the reconciliation loop responds only to
+	// m.shutdown for termination. This keeps the lifecycle management simple
+	// and consistent with other goroutines in RaftManager that all use the
+	// same shutdown channel pattern.
+	go m.reconcilePeers(5 * time.Second)
 }
 
 // handleSerfEvents processes Serf membership events to automatically manage
@@ -975,117 +990,8 @@ func (m *RaftManager) buildRaftConfig(logWriter io.Writer) *raft.Config {
 	return config
 }
 
-// simpleFSM implements a basic finite state machine for Raft command processing
-// and state management. Provides the foundation for distributed state operations
-// that will be expanded for AI sandbox lifecycle and orchestration management.
-//
-// Critical for Raft consensus as it applies committed log entries to maintain
-// consistent state across all cluster nodes. Currently implements basic state
-// tracking that will evolve into comprehensive sandbox state management.
-type simpleFSM struct {
-	mu    sync.RWMutex
-	state map[string]any
-}
-
-// Apply processes committed Raft log entries and applies them to the finite
-// state machine. Maintains consistent state across all cluster nodes by
-// processing commands in the same order on every node.
-//
-// Essential for distributed state consistency as it ensures all nodes apply
-// the same state changes in the same sequence. Forms the foundation for
-// future AI sandbox state management and orchestration operations.
-func (f *simpleFSM) Apply(log *raft.Log) any {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	if f.state == nil {
-		f.state = make(map[string]any)
-	}
-
-	// Simple hello world operation
-	switch log.Type {
-	case raft.LogCommand:
-		// TODO: Implement actual command parsing and execution
-		logging.Info("Raft FSM: Applied log entry %d with data: %s", log.Index, string(log.Data))
-		f.state["last_applied"] = log.Index
-		f.state["last_data"] = string(log.Data)
-		return nil
-	default:
-		logging.Warn("Raft FSM: Unknown log type: %v", log.Type)
-		return nil
-	}
-}
-
-// Snapshot creates a point-in-time snapshot of the finite state machine
-// for log compaction and recovery operations. Enables efficient storage
-// by capturing current state without requiring full log replay.
-//
-// Critical for cluster performance and storage efficiency as it allows
-// Raft to compact logs and reduce storage requirements while maintaining
-// the ability to restore state for new or recovering nodes.
-func (f *simpleFSM) Snapshot() (raft.FSMSnapshot, error) {
-	f.mu.RLock()
-	defer f.mu.RUnlock()
-
-	// TODO: Implement proper state serialization
-	return &simpleFSMSnapshot{state: f.state}, nil
-}
-
-// Restore rebuilds the finite state machine state from a snapshot during
-// cluster recovery or new node initialization. Provides fast state recovery
-// without requiring full log replay from the beginning of time.
-//
-// Essential for cluster scalability and recovery as it enables new nodes
-// to quickly catch up to current state and allows existing nodes to recover
-// efficiently after restarts or failures.
-func (f *simpleFSM) Restore(snapshot io.ReadCloser) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	// TODO: Implement proper state deserialization
-	f.state = make(map[string]any)
-	logging.Info("Raft FSM: State restored from snapshot")
-
-	return snapshot.Close()
-}
-
-// simpleFSMSnapshot represents a point-in-time capture of the finite state
-// machine state for persistence and recovery operations. Implements the
-// snapshot interface required by Raft for log compaction functionality.
-//
-// Critical for efficient cluster operation as it enables state persistence
-// without requiring full log storage and provides fast recovery mechanisms
-// for cluster scaling and failure recovery scenarios.
-type simpleFSMSnapshot struct {
-	state map[string]any
-}
-
-// Persist saves the snapshot data to the provided sink for durable storage.
-// Implements the snapshot persistence interface required by Raft for log
-// compaction and recovery operations.
-//
-// Essential for cluster durability as it ensures snapshot data is properly
-// stored to disk for future recovery operations and log compaction.
-// Currently implements basic persistence that will be enhanced for production use.
-func (s *simpleFSMSnapshot) Persist(sink raft.SnapshotSink) error {
-	// TODO: Implement proper snapshot serialization
-	defer sink.Close()
-
-	// Write simple snapshot data
-	_, err := sink.Write([]byte("hello-world-snapshot"))
-	return err
-}
-
-// Release cleans up resources associated with the snapshot when it's no longer
-// needed. Called by Raft when the snapshot has been successfully persisted
-// or when the snapshot operation is cancelled.
-//
-// Important for resource management and preventing memory leaks during
-// snapshot operations. Currently no cleanup is needed but provides the
-// hook for future resource management as the FSM becomes more complex.
-func (s *simpleFSMSnapshot) Release() {
-	// TODO: Clean up any resources if needed
-}
+// NOTE: Legacy simple FSM scaffolding was removed in favor of PrismFSM.
+// PrismFSM is the authoritative FSM implementation.
 
 // autopilotCleanup runs periodic cleanup of dead Raft peers to maintain
 // cluster health and prevent election deadlocks. Runs continuously in a
@@ -1304,7 +1210,7 @@ func (m *RaftManager) SetSerfManager(serfMgr SerfInterface) {
 // desyncs caused by dropped best-effort Serf events. Operations are idempotent
 // and safe to run alongside event-based adds/removes, providing a safety net
 // that guarantees convergence within the reconciliation interval.
-func (m *RaftManager) reconcilePeers(ctx context.Context, interval time.Duration) {
+func (m *RaftManager) reconcilePeers(interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -1312,9 +1218,13 @@ func (m *RaftManager) reconcilePeers(ctx context.Context, interval time.Duration
 
 	for {
 		select {
-		case <-ctx.Done():
-			logging.Info("Raft peer reconciliation shutting down")
-			return
+		// NOTE: ctx.Done() case commented out because context.Background() never cancels
+		// All RaftManager goroutines use m.shutdown as the authoritative lifecycle signal
+		// for consistent shutdown behavior across the entire manager
+		//
+		// case <-ctx.Done():
+		//     logging.Info("Raft peer reconciliation shutting down")
+		//     return
 		case <-m.shutdown:
 			logging.Info("Raft peer reconciliation shutting down")
 			return

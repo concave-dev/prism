@@ -1,4 +1,4 @@
-.PHONY: build prismd prismctl clean clean-bin stop delete-dir generate-grpc test test-coverage run run-cluster bootstrap-expect
+.PHONY: build prismd prismctl clean clean-bin stop delete-dir proto test test-coverage run run-cluster bootstrap-expect
 
 # Environment Variables:
 # NODES: Number of cluster nodes to start (default: 3)
@@ -10,7 +10,7 @@
 BIN_DIR := bin
 PRISMD := $(BIN_DIR)/prismd
 PRISMCTL := $(BIN_DIR)/prismctl
-PROTO := internal/grpc/proto/node_service.proto
+PROTO := internal/grpc/proto/node_service.proto internal/grpc/proto/scheduler_service.proto
 GO := go
 BOOTSTRAP := true
 
@@ -56,7 +56,7 @@ delete-dir:
 
 clean: stop delete-dir
 
-generate-grpc:
+proto:
 	@echo "=== Generating gRPC code ==="
 	@export PATH="$$PATH:$$($(GO) env GOPATH)/bin"; \
 		if ! command -v protoc >/dev/null 2>&1; then \
@@ -101,23 +101,23 @@ run-cluster: build stop
 	echo "=== Starting Prism cluster with $$NODES nodes (MAX_PORTS: $$MAX_PORTS) ==="; \
 	if [ $$NODES -eq 1 ]; then \
 		echo "Starting single bootstrap node..."; \
-		MAX_PORTS=$$MAX_PORTS $(PRISMD) --bootstrap & \
+		DEBUG=true MAX_PORTS=$$MAX_PORTS $(PRISMD) --bootstrap & \
 		echo "Single node cluster started! Use 'make stop' to stop."; \
 	else \
 		echo "Using bootstrap-expect mode for $$NODES nodes..."; \
 		echo "Starting first 3 nodes (bootstrap cluster)..."; \
-		MAX_PORTS=$$MAX_PORTS $(PRISMD) --serf=0.0.0.0:4200 --bootstrap-expect=3 --join=0.0.0.0:4200,0.0.0.0:4201,0.0.0.0:4202 & \
+		DEBUG=true MAX_PORTS=$$MAX_PORTS $(PRISMD) --serf=0.0.0.0:4200 --bootstrap-expect=3 --join=0.0.0.0:4200,0.0.0.0:4201,0.0.0.0:4202 & \
 		sleep 5; \
-		MAX_PORTS=$$MAX_PORTS $(PRISMD) --serf=0.0.0.0:4201 --bootstrap-expect=3 --join=0.0.0.0:4200,0.0.0.0:4201,0.0.0.0:4202 & \
+		DEBUG=true MAX_PORTS=$$MAX_PORTS $(PRISMD) --serf=0.0.0.0:4201 --bootstrap-expect=3 --join=0.0.0.0:4200,0.0.0.0:4201,0.0.0.0:4202 & \
 		sleep 5; \
-		MAX_PORTS=$$MAX_PORTS $(PRISMD) --serf=0.0.0.0:4202 --bootstrap-expect=3 --join=0.0.0.0:4200,0.0.0.0:4201,0.0.0.0:4202 & \
+		DEBUG=true MAX_PORTS=$$MAX_PORTS $(PRISMD) --serf=0.0.0.0:4202 --bootstrap-expect=3 --join=0.0.0.0:4200,0.0.0.0:4201,0.0.0.0:4202 & \
 		echo "Waiting 15 seconds for initial 3-node cluster to form and elect leader..."; \
 		sleep 15; \
 		if [ $$NODES -gt 3 ]; then \
 			echo "Adding remaining $$(($$NODES-3)) nodes to established cluster..."; \
 			for i in $$(seq 4 $$NODES); do \
 				echo "Starting node $$i/$$NODES (joining established cluster)..."; \
-				MAX_PORTS=$$MAX_PORTS $(PRISMD) --join=0.0.0.0:4200 & \
+				DEBUG=true MAX_PORTS=$$MAX_PORTS $(PRISMD) --join=0.0.0.0:4200 & \
 				sleep 4; \
 			done; \
 		fi; \

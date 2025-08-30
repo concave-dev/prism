@@ -153,7 +153,19 @@ func DisplayClusterInfoFromAPI(info client.ClusterInfo) {
 			fmt.Printf("  Started:     %s\n", info.StartTime.Format(time.RFC3339))
 		}
 		if info.RaftLeader != "" {
-			fmt.Printf("  Raft Leader: %s\n", info.RaftLeader)
+			// Find leader name from members list
+			leaderName := ""
+			for _, member := range info.Members {
+				if member.ID == info.RaftLeader {
+					leaderName = member.Name
+					break
+				}
+			}
+			if leaderName != "" {
+				fmt.Printf("  Raft Leader: %s (%s)\n", internalutils.TruncateIDSafe(info.RaftLeader), leaderName)
+			} else {
+				fmt.Printf("  Raft Leader: %s (unknown)\n", internalutils.TruncateIDSafe(info.RaftLeader))
+			}
 		} else {
 			fmt.Printf("  Raft Leader: No leader\n")
 		}
@@ -202,7 +214,7 @@ func DisplayClusterInfoFromAPI(info client.ClusterInfo) {
 // into cluster capacity, node performance scores, and resource availability. Enables operators
 // to make informed decisions about workload placement, identify resource bottlenecks, and
 // plan capacity expansion for optimal AI agent and workflow execution performance.
-func DisplayClusterResourcesFromAPI(resources []client.NodeResources) {
+func DisplayClusterResourcesFromAPI(resources []client.NodeResources, members []client.ClusterMember) {
 	if len(resources) == 0 {
 		if config.Global.Output == "json" {
 			fmt.Println("[]")
@@ -234,6 +246,12 @@ func DisplayClusterResourcesFromAPI(resources []client.NodeResources) {
 			fmt.Fprintln(w, "ID\tNAME\tCPU\tMEMORY\tDISK\tJOBS\tSCORE\tUPTIME")
 		}
 
+		// Create a map of nodeID to leader status for quick lookup
+		leaderMap := make(map[string]bool)
+		for _, member := range members {
+			leaderMap[member.ID] = member.IsLeader
+		}
+
 		// Display each node's resources
 		for _, resource := range resources {
 			var memoryDisplay, diskDisplay string
@@ -256,11 +274,17 @@ func DisplayClusterResourcesFromAPI(resources []client.NodeResources) {
 			}
 			jobs := fmt.Sprintf("%d/%d", resource.CurrentJobs, resource.MaxJobs)
 
+			// Add leader indicator to node name
+			nodeName := resource.NodeName
+			if leaderMap[resource.NodeID] {
+				nodeName = nodeName + "*"
+			}
+
 			// Always show score column for consistent UX
 			if config.Global.Verbose {
 				fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%.1f\t%s\t%d\n",
 					internalutils.TruncateIDSafe(resource.NodeID),
-					resource.NodeName,
+					nodeName,
 					resource.CPUCores,
 					memoryDisplay,
 					diskDisplay,
@@ -271,7 +295,7 @@ func DisplayClusterResourcesFromAPI(resources []client.NodeResources) {
 			} else {
 				fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%.1f\t%s\n",
 					internalutils.TruncateIDSafe(resource.NodeID),
-					resource.NodeName,
+					nodeName,
 					resource.CPUCores,
 					memoryDisplay,
 					diskDisplay,
@@ -459,9 +483,13 @@ func DisplayNodeInfo(resource client.NodeResources, isLeader bool, health *clien
 // and resource utilization across the distributed cluster. Supports both tabular
 // display for human operators and JSON output for automation and monitoring tools.
 //
+// When cluster members are provided and verbose mode is enabled, displays node
+// placement information showing node names and IP addresses for enhanced
+// operational visibility into sandbox distribution across the cluster.
+//
 // Sorting follows configurable patterns to enable different operational workflows:
 // creation time for recent activity monitoring, name for alphabetical organization.
-func DisplaySandboxes(sandboxes []client.Sandbox) {
+func DisplaySandboxes(sandboxes []client.Sandbox, members []client.ClusterMember) {
 	if len(sandboxes) == 0 {
 		if config.Global.Output == "json" {
 			fmt.Println("[]")
@@ -500,8 +528,22 @@ func DisplaySandboxes(sandboxes []client.Sandbox) {
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 		defer w.Flush()
 
-		// Header with execution-focused columns
-		fmt.Fprintln(w, "ID\tNAME\tSTATUS\tLAST COMMAND\tCREATED")
+		// Create node resolution map for efficient lookups
+		nodeMap := make(map[string]string)
+		if config.Global.Verbose && len(members) > 0 {
+			for _, member := range members {
+				// Format: node-id (node-name)
+				nodeMap[member.ID] = fmt.Sprintf("%s (%s)",
+					internalutils.TruncateIDSafe(member.ID), member.Name)
+			}
+		}
+
+		// Header with execution-focused columns, add NODE in verbose mode
+		if config.Global.Verbose && len(members) > 0 {
+			fmt.Fprintln(w, "ID\tNAME\tSTATUS\tNODE\tLAST COMMAND\tCREATED")
+		} else {
+			fmt.Fprintln(w, "ID\tNAME\tSTATUS\tLAST COMMAND\tCREATED")
+		}
 
 		// Display each sandbox with execution context
 		for _, sandbox := range sandboxes {
@@ -514,8 +556,25 @@ func DisplaySandboxes(sandboxes []client.Sandbox) {
 				lastCommand = lastCommand[:27] + "..."
 			}
 
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-				internalutils.TruncateIDSafe(sandbox.ID), sandbox.Name, sandbox.Status, lastCommand, created)
+			// Resolve node information if verbose mode and members available
+			if config.Global.Verbose && len(members) > 0 {
+				nodeInfo := "-"
+				if sandbox.ScheduledNodeID != "" {
+					if resolvedNode, exists := nodeMap[sandbox.ScheduledNodeID]; exists {
+						nodeInfo = resolvedNode
+					} else {
+						// Node ID exists but can't resolve (node offline/removed)
+						nodeInfo = fmt.Sprintf("%s (offline)", internalutils.TruncateIDSafe(sandbox.ScheduledNodeID))
+					}
+				}
+
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+					internalutils.TruncateIDSafe(sandbox.ID), sandbox.Name, sandbox.Status,
+					nodeInfo, lastCommand, created)
+			} else {
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+					internalutils.TruncateIDSafe(sandbox.ID), sandbox.Name, sandbox.Status, lastCommand, created)
+			}
 		}
 	}
 }
@@ -531,11 +590,25 @@ func DisplaySandboxes(sandboxes []client.Sandbox) {
 // resource utilization patterns across the cluster infrastructure.
 func DisplaySandboxInfo(sandbox *client.Sandbox) {
 	fmt.Printf("Sandbox Information:\n")
-	fmt.Printf("  ID:      %s\n", sandbox.ID)
-	fmt.Printf("  Name:    %s\n", sandbox.Name)
-	fmt.Printf("  Status:  %s\n", sandbox.Status)
-	fmt.Printf("  Created: %s\n", sandbox.Created.Format("2006-01-02 15:04:05 MST"))
-	fmt.Printf("  Updated: %s\n", sandbox.Updated.Format("2006-01-02 15:04:05 MST"))
+	fmt.Printf("  ID:            %s\n", sandbox.ID)
+	fmt.Printf("  Name:          %s\n", sandbox.Name)
+	fmt.Printf("  Status:        %s\n", sandbox.Status)
+	fmt.Printf("  Created:       %s\n", sandbox.Created.Format("2006-01-02 15:04:05 MST"))
+	fmt.Printf("  Updated:       %s\n", sandbox.Updated.Format("2006-01-02 15:04:05 MST"))
+	fmt.Printf("  Exec Count:    %d\n", sandbox.ExecCount)
+
+	// Show scheduling information if available
+	if sandbox.ScheduledNodeID != "" {
+		fmt.Println()
+		fmt.Printf("Scheduling:\n")
+		fmt.Printf("  Scheduled Node: %s\n", internalutils.TruncateIDSafe(sandbox.ScheduledNodeID))
+		if !sandbox.ScheduledAt.IsZero() {
+			fmt.Printf("  Scheduled At:   %s\n", sandbox.ScheduledAt.Format("2006-01-02 15:04:05 MST"))
+		}
+		if sandbox.PlacementScore > 0 {
+			fmt.Printf("  Placement Score: %.1f\n", sandbox.PlacementScore)
+		}
+	}
 
 	if sandbox.LastCommand != "" {
 		// Truncate long commands for readability

@@ -114,6 +114,9 @@ func HandleSandboxCreate(cmd *cobra.Command, args []string) error {
 // Critical for operational visibility into sandbox lifecycle, execution status,
 // and resource utilization patterns across cluster nodes. Supports live updates
 // through watch mode for continuous monitoring of sandbox activity.
+//
+// When --verbose is used, fetches cluster members to resolve node IDs to
+// node names and IP addresses for enhanced placement visibility.
 func HandleSandboxList(cmd *cobra.Command, args []string) error {
 	utils.SetupLogging()
 
@@ -128,10 +131,23 @@ func HandleSandboxList(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
+		// Fetch cluster members for node resolution if verbose mode is enabled
+		var members []client.ClusterMember
+		if config.Global.Verbose {
+			logging.Info("Fetching cluster members for node placement information")
+			members, err = apiClient.GetMembers()
+			if err != nil {
+				logging.Warn("Failed to fetch cluster members for node resolution: %v", err)
+				// Continue without node resolution rather than failing
+				members = nil
+			}
+		}
+
 		// Apply filters
 		filtered := filterSandboxes(sandboxes)
 
-		display.DisplaySandboxes(filtered)
+		// Display sandboxes with optional node information
+		display.DisplaySandboxes(filtered, members)
 		if !config.Sandbox.Watch {
 			logging.Success(
 				"Successfully retrieved %d sandboxes (%d after filtering)",
@@ -209,6 +225,7 @@ func HandleSandboxExec(cmd *cobra.Command, args []string) error {
 			displayCommand = displayCommand[:77] + "..."
 		}
 
+		fmt.Printf("  Exec ID: %s\n", internalutils.TruncateIDSafe(response.ExecID))
 		fmt.Printf("  Command: %s\n", displayCommand)
 		fmt.Printf("  Status:  %s\n", response.Status)
 		fmt.Printf("  Message: %s\n", response.Message)
@@ -358,10 +375,10 @@ func HandleSandboxDestroy(cmd *cobra.Command, args []string) error {
 
 	logging.Info("Destroying sandbox '%s' (%s) from API server: %s", sandboxName, resolvedSandboxID, config.Global.APIAddr)
 
-	// Delete sandbox using resolved ID
+	// Destroy sandbox using resolved ID
 	if err := apiClient.DeleteSandbox(resolvedSandboxID); err != nil {
-		logging.Error("Failed to delete sandbox '%s': %v", sandboxName, err)
-		return fmt.Errorf("failed to delete sandbox '%s': %w", sandboxName, err)
+		logging.Error("Failed to destroy sandbox '%s': %v", sandboxName, err)
+		return fmt.Errorf("failed to destroy sandbox '%s': %w", sandboxName, err)
 	}
 
 	fmt.Printf("Sandbox '%s' (%s) destroyed successfully\n", sandboxName, resolvedSandboxID)
@@ -451,17 +468,38 @@ func HandleSandboxInfo(cmd *cobra.Command, args []string) error {
 // any error. Used for destructive operations where partial matching could lead
 // to unintended consequences.
 //
-// SECURITY: Only supports exact ID or exact name matches for safety - no partial
-// ID matching for destructive operations to prevent accidental sandbox destruction.
+// SECURITY: Supports exact ID matches (both 12-char display IDs and 64-char full IDs)
+// and exact name matches for safety. The 12-char ID is considered "exact" since it's
+// what users see in displays and is expected to work for mutation operations.
 func resolveSandboxIdentifierExact(sandboxes []client.Sandbox, identifier string) (string, string, error) {
-	// First try exact ID match
+	// First try exact full ID match (64 characters)
 	for _, sandbox := range sandboxes {
 		if sandbox.ID == identifier {
 			return sandbox.ID, sandbox.Name, nil
 		}
 	}
 
-	// Then try exact name match
+	// Then try 12-character "exact" ID match (what users see in displays)
+	// This is considered exact because it's the standard display format
+	if len(identifier) == 12 && utils.IsHexString(identifier) {
+		var matches []client.Sandbox
+		for _, sandbox := range sandboxes {
+			if strings.HasPrefix(sandbox.ID, identifier) {
+				matches = append(matches, sandbox)
+			}
+		}
+
+		if len(matches) == 1 {
+			logging.Info("Resolved 12-char ID '%s' to full ID '%s' (sandbox: %s)",
+				identifier, matches[0].ID, matches[0].Name)
+			return matches[0].ID, matches[0].Name, nil
+		} else if len(matches) > 1 {
+			logging.Error("12-char ID '%s' matches multiple sandboxes - not unique", identifier)
+			return "", "", fmt.Errorf("12-char ID '%s' is not unique", identifier)
+		}
+	}
+
+	// Finally try exact name match
 	for _, sandbox := range sandboxes {
 		if sandbox.Name == identifier {
 			return sandbox.ID, sandbox.Name, nil
@@ -490,4 +528,56 @@ func filterSandboxes(sandboxes []client.Sandbox) []client.Sandbox {
 		filtered = append(filtered, s)
 	}
 	return filtered
+}
+
+// HandleSandboxStop handles the sandbox stop subcommand for stopping running
+// sandbox environments in the cluster. Transitions sandboxes to stopped state
+// for pause/resume functionality and resource management operations.
+//
+// Essential for resource management as it enables pausing unused sandboxes
+// to free cluster resources while maintaining the ability to resume execution
+// later. Supports both graceful and forceful stop modes for different scenarios.
+func HandleSandboxStop(cmd *cobra.Command, args []string) error {
+	utils.SetupLogging()
+
+	// args[0] is safe - argument validation handled by Cobra command definition
+	sandboxIdentifier := args[0]
+
+	// Create API client
+	apiClient := client.CreateAPIClient()
+
+	// Get all sandboxes to resolve name to ID if needed
+	sandboxes, err := apiClient.GetSandboxes()
+	if err != nil {
+		logging.Error("Failed to get sandboxes: %v", err)
+		return err
+	}
+
+	// Resolve sandbox identifier (could be ID or name)
+	resolvedSandboxID, sandboxName, err := resolveSandboxIdentifierExact(sandboxes, sandboxIdentifier)
+	if err != nil {
+		logging.Error("Failed to resolve sandbox identifier '%s': %v", sandboxIdentifier, err)
+		return err
+	}
+
+	// Determine graceful vs force stop based on --force flag
+	graceful := !config.Sandbox.Force
+
+	logging.Info("Stopping sandbox '%s' (%s) on API server: %s (graceful: %v)",
+		sandboxName, resolvedSandboxID, config.Global.APIAddr, graceful)
+
+	// Stop sandbox using resolved ID
+	if err := apiClient.StopSandbox(resolvedSandboxID, graceful); err != nil {
+		logging.Error("Failed to stop sandbox '%s': %v", sandboxName, err)
+		return fmt.Errorf("failed to stop sandbox '%s': %w", sandboxName, err)
+	}
+
+	stopMode := "gracefully"
+	if !graceful {
+		stopMode = "forcefully"
+	}
+
+	fmt.Printf("Sandbox '%s' (%s) stopped %s\n", sandboxName, internalutils.TruncateIDSafe(resolvedSandboxID), stopMode)
+	logging.Success("Successfully stopped sandbox '%s' (%s)", sandboxName, resolvedSandboxID)
+	return nil
 }

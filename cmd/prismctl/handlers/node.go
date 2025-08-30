@@ -105,7 +105,7 @@ func HandleNodeTop(cmd *cobra.Command, args []string) error {
 	fetchAndDisplayResources := func() error {
 		logging.Info("Fetching cluster node information from API server: %s", config.Global.APIAddr)
 
-		// Create API client and get cluster resources
+		// Create API client and get both cluster resources and members
 		apiClient := client.CreateAPIClient()
 		resources, err := apiClient.GetClusterResources(config.Node.Sort)
 		if err != nil {
@@ -113,19 +113,16 @@ func HandleNodeTop(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
-		// Get members for filtering
+		// Get cluster members to determine leader status
 		members, err := apiClient.GetMembers()
 		if err != nil {
-			logging.Error("Failed to fetch cluster members for filtering: %v", err)
+			logging.Error("Failed to fetch cluster members for leader status: %v", err)
 			return err
 		}
 
-		// Apply filters
-		filtered := filterResources(resources, members)
-
-		display.DisplayClusterResourcesFromAPI(filtered)
+		display.DisplayClusterResourcesFromAPI(resources, members)
 		if !config.Node.Watch {
-			logging.Success("Successfully retrieved information for %d cluster nodes (%d after filtering)", len(resources), len(filtered))
+			logging.Success("Successfully retrieved information for %d cluster nodes", len(resources))
 		}
 		return nil
 	}
@@ -247,40 +244,6 @@ func filterMembers(members []client.ClusterMember) []client.ClusterMember {
 		}
 
 		filtered = append(filtered, member)
-	}
-	return filtered
-}
-
-// filterResources applies status filters to node resource lists for focused
-// operational monitoring. Enables operators to view specific resource subsets
-// based on node status during capacity planning and performance optimization.
-//
-// Critical for resource management by allowing focused views of node resources
-// during cluster resource monitoring and workload distribution optimization.
-func filterResources(resources []client.NodeResources, members []client.ClusterMember) []client.NodeResources {
-	if config.Node.StatusFilter == "" {
-		return resources
-	}
-
-	// Create a map of nodeID to member for quick lookup
-	memberMap := make(map[string]client.ClusterMember)
-	for _, member := range members {
-		memberMap[member.ID] = member
-	}
-
-	var filtered []client.NodeResources
-	for _, resource := range resources {
-		member, exists := memberMap[resource.NodeID]
-		if !exists {
-			continue
-		}
-
-		// Filter by status
-		if config.Node.StatusFilter != "" && member.Status != config.Node.StatusFilter {
-			continue
-		}
-
-		filtered = append(filtered, resource)
 	}
 	return filtered
 }

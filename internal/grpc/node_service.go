@@ -113,6 +113,7 @@ func (n *NodeServiceImpl) GetResources(ctx context.Context, req *proto.GetResour
 		n.serfManager.NodeID,
 		n.serfManager.NodeName,
 		n.serfManager.GetStartTime(),
+		n.raftManager,
 	)
 
 	// Convert serf.NodeResources to protobuf response
@@ -831,6 +832,7 @@ func (n *NodeServiceImpl) checkCPUResourceHealth(ctx context.Context, now time.T
 		n.serfManager.NodeID,
 		n.serfManager.NodeName,
 		n.serfManager.GetStartTime(),
+		n.raftManager,
 	)
 
 	// Define health thresholds for CPU monitoring
@@ -924,6 +926,7 @@ func (n *NodeServiceImpl) checkMemoryResourceHealth(ctx context.Context, now tim
 		n.serfManager.NodeID,
 		n.serfManager.NodeName,
 		n.serfManager.GetStartTime(),
+		n.raftManager,
 	)
 
 	// Define health thresholds for memory monitoring
@@ -1006,6 +1009,7 @@ func (n *NodeServiceImpl) checkDiskResourceHealth(ctx context.Context, now time.
 		n.serfManager.NodeID,
 		n.serfManager.NodeName,
 		n.serfManager.GetStartTime(),
+		n.raftManager,
 	)
 
 	// Define health thresholds for disk monitoring

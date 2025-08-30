@@ -45,7 +45,7 @@ known nodes including their status and last seen times.`,
   prismctl node ls --watch
 
   # Filter nodes by status
-  prismctl node ls --status=alive
+  prismctl node ls --status=healthy
 
 
 
@@ -77,9 +77,6 @@ including CPU cores, memory usage, job capacity, and runtime statistics.`,
 
   # Show live updates with watch
   prismctl node top --watch
-
-  # Filter nodes by status
-  prismctl node top --status=alive
 
   # Show verbose output including goroutines
   prismctl --verbose node top
@@ -147,13 +144,12 @@ func SetupNodeFlags(nodeLsCmd, nodeTopCmd, nodeInfoCmd *cobra.Command,
 	nodeLsCmd.Flags().BoolVarP(watchPtr, "watch", "w", false,
 		"Watch for changes and continuously update the display")
 	nodeLsCmd.Flags().StringVar(statusFilterPtr, "status", "",
-		"Filter nodes by status (alive, failed, left)")
+		"Filter nodes by status (healthy, unhealthy, degraded, unknown, dead, failed)")
 
 	// Add flags to node top command
 	nodeTopCmd.Flags().BoolVarP(watchPtr, "watch", "w", false,
 		"Watch for changes and continuously update the display")
-	nodeTopCmd.Flags().StringVar(statusFilterPtr, "status", "",
-		"Filter nodes by status (alive, failed, left)")
+
 	nodeTopCmd.Flags().StringVar(sortPtr, "sort", "uptime",
 		"Sort nodes by: uptime, name, score")
 
