@@ -1159,6 +1159,10 @@ func (e *ExecFSM) processCompleteCommand(cmd Command) any {
 	execution.Updated = now
 	execution.ExitCode = completeCmd.ExitCode
 	execution.Duration = completeCmd.Duration
+
+	// TODO: Apply truncation to prevent large outputs from bloating memory and Raft logs
+	// Should call truncateOutput() with MaxCommandOutputSize before assignment
+	// TODO: Later this will be stored to external db instead of Raft state
 	execution.Stdout = completeCmd.Stdout
 	execution.Stderr = completeCmd.Stderr
 
@@ -1208,9 +1212,15 @@ func (e *ExecFSM) processFailCommand(cmd Command) any {
 		execution.Duration = failCmd.Duration
 	}
 	if failCmd.Stdout != "" {
+		// TODO: Apply truncation to prevent large outputs from bloating memory and Raft logs
+		// Should call truncateOutput() with MaxCommandOutputSize before assignment
+		// TODO: Later this will be stored to external db instead of Raft state
 		execution.Stdout = failCmd.Stdout
 	}
 	if failCmd.Stderr != "" {
+		// TODO: Apply truncation to prevent large outputs from bloating memory and Raft logs
+		// Should call truncateOutput() with MaxCommandOutputSize before assignment
+		// TODO: Later this will be stored to external db instead of Raft state
 		execution.Stderr = failCmd.Stderr
 	}
 

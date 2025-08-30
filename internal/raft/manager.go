@@ -711,7 +711,7 @@ func (m *RaftManager) SubmitCommand(data string) error {
 	if len(data) > 100 {
 		truncatedData = data[:97] + "..."
 	}
-	logging.Info("Submitting command to Raft cluster: %s", truncatedData)
+	logging.Debug("Submitting command to Raft cluster: %s", truncatedData)
 
 	future := m.raft.Apply([]byte(data), 10*time.Second)
 	if err := future.Error(); err != nil {
