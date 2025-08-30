@@ -247,37 +247,3 @@ func filterMembers(members []client.ClusterMember) []client.ClusterMember {
 	}
 	return filtered
 }
-
-// filterResources applies status filters to node resource lists for focused
-// operational monitoring. Enables operators to view specific resource subsets
-// based on node status during capacity planning and performance optimization.
-//
-// Critical for resource management by allowing focused views of node resources
-// during cluster resource monitoring and workload distribution optimization.
-func filterResources(resources []client.NodeResources, members []client.ClusterMember) []client.NodeResources {
-	if config.Node.StatusFilter == "" {
-		return resources
-	}
-
-	// Create a map of nodeID to member for quick lookup
-	memberMap := make(map[string]client.ClusterMember)
-	for _, member := range members {
-		memberMap[member.ID] = member
-	}
-
-	var filtered []client.NodeResources
-	for _, resource := range resources {
-		member, exists := memberMap[resource.NodeID]
-		if !exists {
-			continue
-		}
-
-		// Filter by status
-		if config.Node.StatusFilter != "" && member.Status != config.Node.StatusFilter {
-			continue
-		}
-
-		filtered = append(filtered, resource)
-	}
-	return filtered
-}
