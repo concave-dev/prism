@@ -82,7 +82,7 @@ and management purposes. Supports filtering and sorting for operational visibili
   # Filter sandboxes by status
   prismctl sandbox ls --status=running
 
-  # Show detailed output
+  # Show detailed output with node placement information
   prismctl --verbose sandbox ls`,
 	Args: cobra.NoArgs,
 	// RunE will be set by the main package that imports this

@@ -483,9 +483,13 @@ func DisplayNodeInfo(resource client.NodeResources, isLeader bool, health *clien
 // and resource utilization across the distributed cluster. Supports both tabular
 // display for human operators and JSON output for automation and monitoring tools.
 //
+// When cluster members are provided and verbose mode is enabled, displays node
+// placement information showing node names and IP addresses for enhanced
+// operational visibility into sandbox distribution across the cluster.
+//
 // Sorting follows configurable patterns to enable different operational workflows:
 // creation time for recent activity monitoring, name for alphabetical organization.
-func DisplaySandboxes(sandboxes []client.Sandbox) {
+func DisplaySandboxes(sandboxes []client.Sandbox, members []client.ClusterMember) {
 	if len(sandboxes) == 0 {
 		if config.Global.Output == "json" {
 			fmt.Println("[]")
@@ -524,8 +528,22 @@ func DisplaySandboxes(sandboxes []client.Sandbox) {
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 		defer w.Flush()
 
-		// Header with execution-focused columns
-		fmt.Fprintln(w, "ID\tNAME\tSTATUS\tLAST COMMAND\tCREATED")
+		// Create node resolution map for efficient lookups
+		nodeMap := make(map[string]string)
+		if config.Global.Verbose && len(members) > 0 {
+			for _, member := range members {
+				// Format: node-id (node-name)
+				nodeMap[member.ID] = fmt.Sprintf("%s (%s)",
+					internalutils.TruncateIDSafe(member.ID), member.Name)
+			}
+		}
+
+		// Header with execution-focused columns, add NODE in verbose mode
+		if config.Global.Verbose && len(members) > 0 {
+			fmt.Fprintln(w, "ID\tNAME\tSTATUS\tNODE\tLAST COMMAND\tCREATED")
+		} else {
+			fmt.Fprintln(w, "ID\tNAME\tSTATUS\tLAST COMMAND\tCREATED")
+		}
 
 		// Display each sandbox with execution context
 		for _, sandbox := range sandboxes {
@@ -538,8 +556,25 @@ func DisplaySandboxes(sandboxes []client.Sandbox) {
 				lastCommand = lastCommand[:27] + "..."
 			}
 
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-				internalutils.TruncateIDSafe(sandbox.ID), sandbox.Name, sandbox.Status, lastCommand, created)
+			// Resolve node information if verbose mode and members available
+			if config.Global.Verbose && len(members) > 0 {
+				nodeInfo := "-"
+				if sandbox.ScheduledNodeID != "" {
+					if resolvedNode, exists := nodeMap[sandbox.ScheduledNodeID]; exists {
+						nodeInfo = resolvedNode
+					} else {
+						// Node ID exists but can't resolve (node offline/removed)
+						nodeInfo = fmt.Sprintf("%s (offline)", internalutils.TruncateIDSafe(sandbox.ScheduledNodeID))
+					}
+				}
+
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+					internalutils.TruncateIDSafe(sandbox.ID), sandbox.Name, sandbox.Status,
+					nodeInfo, lastCommand, created)
+			} else {
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+					internalutils.TruncateIDSafe(sandbox.ID), sandbox.Name, sandbox.Status, lastCommand, created)
+			}
 		}
 	}
 }

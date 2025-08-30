@@ -114,6 +114,9 @@ func HandleSandboxCreate(cmd *cobra.Command, args []string) error {
 // Critical for operational visibility into sandbox lifecycle, execution status,
 // and resource utilization patterns across cluster nodes. Supports live updates
 // through watch mode for continuous monitoring of sandbox activity.
+//
+// When --verbose is used, fetches cluster members to resolve node IDs to
+// node names and IP addresses for enhanced placement visibility.
 func HandleSandboxList(cmd *cobra.Command, args []string) error {
 	utils.SetupLogging()
 
@@ -128,10 +131,23 @@ func HandleSandboxList(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
+		// Fetch cluster members for node resolution if verbose mode is enabled
+		var members []client.ClusterMember
+		if config.Global.Verbose {
+			logging.Info("Fetching cluster members for node placement information")
+			members, err = apiClient.GetMembers()
+			if err != nil {
+				logging.Warn("Failed to fetch cluster members for node resolution: %v", err)
+				// Continue without node resolution rather than failing
+				members = nil
+			}
+		}
+
 		// Apply filters
 		filtered := filterSandboxes(sandboxes)
 
-		display.DisplaySandboxes(filtered)
+		// Display sandboxes with optional node information
+		display.DisplaySandboxes(filtered, members)
 		if !config.Sandbox.Watch {
 			logging.Success(
 				"Successfully retrieved %d sandboxes (%d after filtering)",
