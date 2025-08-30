@@ -169,9 +169,7 @@ func (s *SchedulerServiceImpl) verifyLeaderRequest(requestLeaderID string) error
 
 	// If we don't have Raft manager, we can't verify leadership
 	if s.raftManager == nil {
-		logging.Debug("Scheduler: Cannot verify leader (Raft not available), accepting request from %s",
-			requestLeaderID)
-		return nil
+		return fmt.Errorf("cannot verify leader: Raft manager unavailable")
 	}
 
 	// Get current Raft leader information
