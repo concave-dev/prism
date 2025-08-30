@@ -706,7 +706,12 @@ func (m *RaftManager) SubmitCommand(data string) error {
 		return fmt.Errorf("not leader, redirect to %s", leader)
 	}
 
-	logging.Info("Submitting command to Raft cluster: %s", data)
+	// Log truncated command data to avoid verbose logs with large JSON payloads
+	truncatedData := data
+	if len(data) > 100 {
+		truncatedData = data[:97] + "..."
+	}
+	logging.Info("Submitting command to Raft cluster: %s", truncatedData)
 
 	future := m.raft.Apply([]byte(data), 10*time.Second)
 	if err := future.Error(); err != nil {
