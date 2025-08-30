@@ -105,7 +105,7 @@ func HandleNodeTop(cmd *cobra.Command, args []string) error {
 	fetchAndDisplayResources := func() error {
 		logging.Info("Fetching cluster node information from API server: %s", config.Global.APIAddr)
 
-		// Create API client and get cluster resources
+		// Create API client and get both cluster resources and members
 		apiClient := client.CreateAPIClient()
 		resources, err := apiClient.GetClusterResources(config.Node.Sort)
 		if err != nil {
@@ -113,7 +113,14 @@ func HandleNodeTop(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
-		display.DisplayClusterResourcesFromAPI(resources)
+		// Get cluster members to determine leader status
+		members, err := apiClient.GetMembers()
+		if err != nil {
+			logging.Error("Failed to fetch cluster members for leader status: %v", err)
+			return err
+		}
+
+		display.DisplayClusterResourcesFromAPI(resources, members)
 		if !config.Node.Watch {
 			logging.Success("Successfully retrieved information for %d cluster nodes", len(resources))
 		}

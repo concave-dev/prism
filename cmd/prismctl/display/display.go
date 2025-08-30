@@ -153,7 +153,19 @@ func DisplayClusterInfoFromAPI(info client.ClusterInfo) {
 			fmt.Printf("  Started:     %s\n", info.StartTime.Format(time.RFC3339))
 		}
 		if info.RaftLeader != "" {
-			fmt.Printf("  Raft Leader: %s\n", info.RaftLeader)
+			// Find leader name from members list
+			leaderName := ""
+			for _, member := range info.Members {
+				if member.ID == info.RaftLeader {
+					leaderName = member.Name
+					break
+				}
+			}
+			if leaderName != "" {
+				fmt.Printf("  Raft Leader: %s (%s)\n", internalutils.TruncateIDSafe(info.RaftLeader), leaderName)
+			} else {
+				fmt.Printf("  Raft Leader: %s (unknown)\n", internalutils.TruncateIDSafe(info.RaftLeader))
+			}
 		} else {
 			fmt.Printf("  Raft Leader: No leader\n")
 		}
@@ -202,7 +214,7 @@ func DisplayClusterInfoFromAPI(info client.ClusterInfo) {
 // into cluster capacity, node performance scores, and resource availability. Enables operators
 // to make informed decisions about workload placement, identify resource bottlenecks, and
 // plan capacity expansion for optimal AI agent and workflow execution performance.
-func DisplayClusterResourcesFromAPI(resources []client.NodeResources) {
+func DisplayClusterResourcesFromAPI(resources []client.NodeResources, members []client.ClusterMember) {
 	if len(resources) == 0 {
 		if config.Global.Output == "json" {
 			fmt.Println("[]")
@@ -234,6 +246,12 @@ func DisplayClusterResourcesFromAPI(resources []client.NodeResources) {
 			fmt.Fprintln(w, "ID\tNAME\tCPU\tMEMORY\tDISK\tJOBS\tSCORE\tUPTIME")
 		}
 
+		// Create a map of nodeID to leader status for quick lookup
+		leaderMap := make(map[string]bool)
+		for _, member := range members {
+			leaderMap[member.ID] = member.IsLeader
+		}
+
 		// Display each node's resources
 		for _, resource := range resources {
 			var memoryDisplay, diskDisplay string
@@ -256,11 +274,17 @@ func DisplayClusterResourcesFromAPI(resources []client.NodeResources) {
 			}
 			jobs := fmt.Sprintf("%d/%d", resource.CurrentJobs, resource.MaxJobs)
 
+			// Add leader indicator to node name
+			nodeName := resource.NodeName
+			if leaderMap[resource.NodeID] {
+				nodeName = nodeName + "*"
+			}
+
 			// Always show score column for consistent UX
 			if config.Global.Verbose {
 				fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%.1f\t%s\t%d\n",
 					internalutils.TruncateIDSafe(resource.NodeID),
-					resource.NodeName,
+					nodeName,
 					resource.CPUCores,
 					memoryDisplay,
 					diskDisplay,
@@ -271,7 +295,7 @@ func DisplayClusterResourcesFromAPI(resources []client.NodeResources) {
 			} else {
 				fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%.1f\t%s\n",
 					internalutils.TruncateIDSafe(resource.NodeID),
-					resource.NodeName,
+					nodeName,
 					resource.CPUCores,
 					memoryDisplay,
 					diskDisplay,
