@@ -348,35 +348,43 @@ func (f *PrismFSM) SetScheduler(scheduler Scheduler) {
 	f.scheduler = scheduler
 }
 
-// triggerSchedulingIfNeeded checks if automatic scheduling should be triggered
-// for sandbox creation commands and initiates scheduling asynchronously.
-// Handles the complexity of result parsing and scheduling coordination.
+// extractScheduleID extracts sandbox ID from command result if scheduling
+// should be triggered. Returns empty string if no scheduling is needed.
+// Handles the complexity of result parsing and scheduling conditions.
 //
 // Keeps the main Apply method clean while providing comprehensive scheduling
 // trigger logic with proper error handling and leader verification.
-func (f *PrismFSM) triggerSchedulingIfNeeded(cmd Command, result any) {
+func (f *PrismFSM) extractScheduleID(cmd Command, result any) string {
 	// Only trigger scheduling for sandbox creation commands
 	if cmd.Operation != "create" {
-		return
+		return ""
 	}
 
 	// Check if scheduler is available and we're the leader
 	if f.scheduler == nil || !f.scheduler.IsLeader() {
-		return
+		return ""
 	}
 
 	// Extract sandbox ID from command result
 	resultMap, ok := result.(map[string]any)
 	if !ok {
-		return
+		return ""
 	}
 
 	sandboxID, exists := resultMap["sandbox_id"].(string)
 	if !exists {
-		return
+		return ""
 	}
 
-	// Trigger scheduling asynchronously to avoid blocking Raft apply
+	return sandboxID
+}
+
+// triggerScheduling initiates scheduling asynchronously for the given sandbox ID.
+// Spawns goroutine to avoid blocking the caller and handles scheduling errors.
+//
+// Called outside the FSM lock to prevent lock contention between Apply operations
+// and scheduler queries that need to read FSM state.
+func (f *PrismFSM) triggerScheduling(sandboxID string) {
 	go func() {
 		if err := f.scheduler.ScheduleSandbox(sandboxID); err != nil {
 			logging.Error("FSM: Failed to trigger scheduling for sandbox %s: %v", sandboxID, err)
@@ -439,15 +447,33 @@ func (e *ExecFSM) processCommand(cmd Command, sandboxes map[string]*Sandbox) any
 // Critical for distributed state consistency as it ensures all nodes apply
 // the same state changes in the same sequence. Routes commands to specialized
 // FSMs while maintaining overall coordination and state integrity.
+//
+// LOCK CONTENTION FIX:
+// Previous implementation held f.mu.Lock() while spawning scheduling goroutines,
+// causing lock contention when the goroutine immediately called GetSandbox() which
+// needs f.mu.RLock(). This created unnecessary blocking and increased Raft Apply
+// tail latency on busy leaders.
+//
+// Current implementation:
+// 1. Hold lock only during state mutations (processCommand)
+// 2. Extract scheduling information while locked (extractScheduleID)
+// 3. Release lock explicitly before spawning goroutines
+// 4. Spawn scheduling goroutines outside lock to eliminate contention
+//
+// This reduces Apply latency and prevents potential deadlocks in future
+// scheduler implementations that might need FSM callbacks during Apply.
 func (f *PrismFSM) Apply(log *raft.Log) any {
 	f.mu.Lock()
-	defer f.mu.Unlock()
+
+	var scheduleID string // Track sandbox ID for scheduling outside lock
+	var result any
 
 	switch log.Type {
 	case raft.LogCommand:
 		// Parse the command from log data
 		var cmd Command
 		if err := json.Unmarshal(log.Data, &cmd); err != nil {
+			f.mu.Unlock()
 			return fmt.Errorf("failed to unmarshal command: %w", err)
 		}
 
@@ -457,21 +483,31 @@ func (f *PrismFSM) Apply(log *raft.Log) any {
 		// Route command to appropriate sub-FSM
 		switch cmd.Type {
 		case "sandbox":
-			result := f.sandboxFSM.processCommand(cmd)
-			f.triggerSchedulingIfNeeded(cmd, result)
-			return result
+			result = f.sandboxFSM.processCommand(cmd)
+			scheduleID = f.extractScheduleID(cmd, result)
 		case "exec":
-			return f.sandboxFSM.execFSM.processCommand(cmd, f.sandboxFSM.sandboxes)
+			result = f.sandboxFSM.execFSM.processCommand(cmd, f.sandboxFSM.sandboxes)
 		case "cluster_id":
-			return f.applyClusterIDCommand(cmd)
+			result = f.applyClusterIDCommand(cmd)
 		default:
+			f.mu.Unlock()
 			return fmt.Errorf("unknown command type: %s", cmd.Type)
 		}
 
 	default:
 		logging.Warn("FSM: Unknown log type: %v", log.Type)
+		f.mu.Unlock()
 		return fmt.Errorf("unknown log type: %v", log.Type)
 	}
+
+	f.mu.Unlock() // Release lock before spawning goroutine
+
+	// Trigger scheduling outside the lock to avoid contention
+	if scheduleID != "" {
+		f.triggerScheduling(scheduleID)
+	}
+
+	return result
 }
 
 // Snapshot creates a point-in-time snapshot of all FSM state for log compaction
