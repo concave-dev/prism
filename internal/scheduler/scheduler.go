@@ -242,7 +242,7 @@ func (s *NaiveScheduler) gatherClusterResources() (map[string]*resources.NodeRes
 			DiskAvailable: grpcRes.DiskAvailable,
 			DiskUsage:     grpcRes.DiskUsage,
 
-			// Capacity and Score
+			// Capacity and Score (now includes leader penalty from node)
 			MaxJobs:        int(grpcRes.MaxJobs),
 			CurrentJobs:    int(grpcRes.CurrentJobs),
 			AvailableSlots: int(grpcRes.AvailableSlots),

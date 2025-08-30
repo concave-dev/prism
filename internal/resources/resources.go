@@ -90,6 +90,12 @@ type NodeResources struct {
 	Score float64 `json:"score"` // Composite resource score for sandbox placement decisions
 }
 
+// RaftManager interface for leader detection in resource scoring.
+// Enables resource calculation to apply leader bias without circular dependencies.
+type RaftManager interface {
+	IsLeader() bool
+}
+
 // GatherSystemResources collects comprehensive resource information for a cluster node
 // including system metrics, Go runtime statistics, and operational capacity data.
 // Combines multiple data sources to provide complete resource visibility for orchestration.
@@ -98,7 +104,7 @@ type NodeResources struct {
 // real-time snapshots of node capacity and utilization. Handles data collection failures
 // gracefully with fallback mechanisms to ensure reliable resource reporting even during
 // system stress or monitoring tool unavailability.
-func GatherSystemResources(nodeID, nodeName string, startTime time.Time) *NodeResources {
+func GatherSystemResources(nodeID, nodeName string, startTime time.Time, raftManager RaftManager) *NodeResources {
 	now := time.Now()
 
 	// Collect Go runtime memory statistics for application-level resource tracking
@@ -211,7 +217,7 @@ func GatherSystemResources(nodeID, nodeName string, startTime time.Time) *NodeRe
 	}
 
 	// Calculate composite resource score for intelligent scheduling decisions
-	resources.Score = CalculateNodeScore(resources)
+	resources.Score = CalculateNodeScore(resources, raftManager)
 
 	logging.Debug("Gathered resources for node %s: CPU=%.1f%%, Memory=%dMB (%.1f%%), Disk=%dMB (%.1f%%), Load=%.2f, Score=%.1f, Goroutines=%d",
 		nodeID, resources.CPUUsage, resources.MemoryTotal/(1024*1024), resources.MemoryUsage,
@@ -247,6 +253,12 @@ func NodeResourcesFromJSON(data []byte) (*NodeResources, error) {
 	return &resources, nil
 }
 
+// LeaderPlacementPenalty applies a small bias against selecting the current
+// cluster leader for sandbox placement. This helps keep the control plane
+// responsive by making non-leader nodes slightly more preferable while still
+// allowing the leader to be chosen when it has significantly better resources.
+const LeaderPlacementPenalty = 5.0
+
 // CalculateNodeScore computes a composite resource score for intelligent sandbox
 // placement and node ranking decisions. Higher scores indicate nodes with more
 // available resources and better capacity for handling additional sandboxes.
@@ -257,6 +269,7 @@ func NodeResourcesFromJSON(data []byte) (*NodeResources, error) {
 //   - Available Memory (40%): Available memory has highest weight for code execution
 //   - Available Disk (20%): Sufficient storage for artifacts and temporary files
 //   - Load Average (10%): Lower system load indicates better responsiveness
+//   - Leader Penalty: Small bias against leader nodes to preserve control plane
 //
 // Score ranges from 0.0 (fully utilized/unavailable) to 100.0 (maximum capacity).
 // This enables intelligent scheduling by prioritizing nodes with optimal resource
@@ -265,7 +278,7 @@ func NodeResourcesFromJSON(data []byte) (*NodeResources, error) {
 // Note: If the system load average exceeds the number of CPU cores, the load availability
 // score becomes negative and is capped at 0 to handle overloaded systems. This ensures
 // that nodes under heavy load do not receive artificially high scores.
-func CalculateNodeScore(resources *NodeResources) float64 {
+func CalculateNodeScore(resources *NodeResources, raftManager RaftManager) float64 {
 	if resources == nil {
 		return 0.0
 	}
@@ -313,6 +326,12 @@ func CalculateNodeScore(resources *NodeResources) float64 {
 
 	// Combine all scores into final composite score
 	finalScore := cpuScore + memoryScore + diskScore + loadScore
+
+	// Apply leader penalty to keep control plane responsive
+	if raftManager != nil && raftManager.IsLeader() {
+		finalScore -= LeaderPlacementPenalty
+		logging.Debug("Applied leader penalty: %.1f -> %.1f", finalScore+LeaderPlacementPenalty, finalScore)
+	}
 
 	// Ensure score stays within valid range [0.0, 100.0]
 	if finalScore < 0.0 {

@@ -12,8 +12,8 @@ func TestGatherSystemResources(t *testing.T) {
 	nodeName := "test-node"
 	startTime := time.Now().Add(-time.Hour) // Simulate 1 hour uptime
 
-	// Test resource gathering
-	resources := GatherSystemResources(nodeID, nodeName, startTime)
+	// Test resource gathering (without raft manager for unit test)
+	resources := GatherSystemResources(nodeID, nodeName, startTime, nil)
 
 	// Validate core fields are populated
 	if resources.NodeID != nodeID {
