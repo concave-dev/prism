@@ -126,8 +126,10 @@ func (s *SchedulerServiceImpl) PlaceSandbox(ctx context.Context, req *proto.Plac
 		}, ctx.Err()
 	}
 
-	// V0: Generate random 50/50 success/failure for testing
+	// V0: Generate random 50/50 success/failure for testing purposes
 	// This enables testing of both successful and failed placement scenarios
+	// TODO: Remove this debug behavior once real Firecracker VM provisioning is implemented
+	// This intentional failure helps test error handling, retry logic, and failure scenarios
 	success := rand.Intn(2) == 0
 	processingTime := time.Since(startTime).Milliseconds()
 
@@ -138,9 +140,9 @@ func (s *SchedulerServiceImpl) PlaceSandbox(ctx context.Context, req *proto.Plac
 		logging.Info("Scheduler: Successfully placed sandbox %s (%s) after %dms",
 			req.SandboxId, req.SandboxName, processingTime)
 	} else {
-		message = fmt.Sprintf("Failed to provision sandbox %s: simulated resource constraint",
+		message = fmt.Sprintf("Failed to provision sandbox %s: simulated resource constraint (debug mode)",
 			req.SandboxName)
-		logging.Info("Scheduler: Failed to place sandbox %s (%s) after %dms: simulated failure",
+		logging.Info("Scheduler: Failed to place sandbox %s (%s) after %dms: simulated failure for testing",
 			req.SandboxId, req.SandboxName, processingTime)
 	}
 
