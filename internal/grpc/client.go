@@ -115,6 +115,11 @@ func (cp *ClientPool) GetNodeServiceClient(nodeID string) (proto.NodeServiceClie
 // Uses singleflight pattern to prevent duplicate connection attempts and
 // discovers node addresses via Serf membership with per-node port configuration.
 func (cp *ClientPool) ensureConnection(nodeID string) (*grpcstd.ClientConn, error) {
+	// Early nil check to prevent panic when serf manager is not configured
+	if cp.serfManager == nil {
+		return nil, fmt.Errorf("serf manager not configured: cannot ensure connection for node %s", nodeID)
+	}
+
 	// Fast path: check if connection already exists with read lock
 	cp.mu.RLock()
 	if conn, exists := cp.connections[nodeID]; exists {
