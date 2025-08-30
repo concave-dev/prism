@@ -47,6 +47,11 @@ func ValidateGlobalFlags(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	if err := ValidateLogLevel(); err != nil {
+		logging.Error("Failed to validate log level configuration: %v", err)
+		return err
+	}
+
 	return nil
 }
 
@@ -91,6 +96,26 @@ func ValidateOutputFormat() error {
 	}
 	if !validOutputs[Global.Output] {
 		return fmt.Errorf("invalid output format '%s' - valid formats are: table, json", Global.Output)
+	}
+	return nil
+}
+
+// ValidateLogLevel validates the log level specification for CLI logging behavior.
+// Ensures only supported log levels are used, maintaining consistent logging across
+// all prismctl commands and preventing configuration errors.
+//
+// Supports DEBUG, INFO, WARN, and ERROR log levels, enabling appropriate verbosity
+// control for different use cases. Returns error messages for unsupported log level
+// specifications to guide proper CLI usage and prevent silent configuration issues.
+func ValidateLogLevel() error {
+	validLevels := map[string]bool{
+		"DEBUG": true,
+		"INFO":  true,
+		"WARN":  true,
+		"ERROR": true,
+	}
+	if !validLevels[Global.LogLevel] {
+		return fmt.Errorf("invalid log level '%s' - valid levels are: DEBUG, INFO, WARN, ERROR", Global.LogLevel)
 	}
 	return nil
 }
