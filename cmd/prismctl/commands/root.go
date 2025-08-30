@@ -37,7 +37,7 @@ execute AI-generated code securely, and inspect cluster state.`,
   prismctl node ls --watch
 
   # Filter nodes by status
-  prismctl node ls --status=alive
+  prismctl node ls --status=healthy
 
   # Show node resource overview
   prismctl node top
