@@ -32,7 +32,7 @@ You can learn more about Concave [here](https://concave.dev/).
 - [x] **Resource monitoring** - Real-time CPU, memory, disk tracking across nodes
 - [x] **CLI management** - Complete cluster control via `prismctl` commands
 - [x] **REST API** - HTTP endpoints for all cluster operations
-- [x] **Sandbox state tracking** - Create, list, delete, exec sandboxes (commands recorded but not executed)
+- [x] **Sandbox state tracking** - Create, list, destroy, exec sandboxes (commands recorded but not executed)
 
 ### What's Next
 - [ ] **Runtime integration** - Connect to Firecracker/Docker for actual execution

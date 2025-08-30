@@ -974,14 +974,14 @@ func (api *PrismAPIClient) GetSandboxLogs(sandboxID string) ([]string, error) {
 	return response.Logs, nil
 }
 
-// DeleteSandbox removes a code execution sandbox via the daemon API performing
+// DeleteSandbox destroys a code execution sandbox via the daemon API performing
 // complete cleanup of sandbox resources and metadata. Handles sandbox identification,
-// deletion coordination, and various API response scenarios.
+// destruction coordination, and various API response scenarios.
 //
 // Completes sandbox lifecycle by cleaning up code execution environments and
-// freeing cluster resources. Handles deletion validation, leader redirection,
+// freeing cluster resources. Handles destruction validation, leader redirection,
 // and cleanup confirmation with proper error handling for missing sandboxes
-// and deletion operation failures.
+// and destruction operation failures.
 func (api *PrismAPIClient) DeleteSandbox(sandboxID string) error {
 	resp, err := api.client.R().
 		Delete(fmt.Sprintf("/sandboxes/%s", sandboxID))
