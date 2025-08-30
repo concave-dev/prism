@@ -9,7 +9,8 @@ Open-Source distributed sandbox runtime for running AI-generated code.
 </picture>
 
 > [!CAUTION]
-> This is early development software. Sandbox code execution is not implemented yet. Test coverage: 7.1%.
+> Early development software. Cluster management and v0 scheduler are complete, 
+> but runtime execution is not wired to Firecracker/Docker yet.
 
 ## Overview  
 
@@ -22,8 +23,6 @@ Prism is a high-performance distributed sandbox runtime designed specifically fo
 - **Docker Compatibility**: Supports any Docker image via OCI compliance.
 - **Multi-Runtime Flexibility**: Firecracker for production isolation, Docker for development.
 
-You can learn more about Concave [here](https://concave.dev/).
-
 ## Implementation Status
 
 ### What's Done
@@ -32,7 +31,8 @@ You can learn more about Concave [here](https://concave.dev/).
 - [x] **Resource monitoring** - Real-time CPU, memory, disk tracking across nodes
 - [x] **CLI management** - Complete cluster control via `prismctl` commands
 - [x] **REST API** - HTTP endpoints for all cluster operations
-- [x] **Sandbox state tracking** - Create, list, destroy, exec sandboxes (commands recorded but not executed)
+- [x] **Sandbox state tracking** - Create, list, destroy, exec sandboxes with distributed state
+- [x] **V0 distributed scheduler** - gRPC-based placement with leader verification and simulated responses
 
 ### What's Next
 - [ ] **Runtime integration** - Connect to Firecracker/Docker for actual execution
@@ -54,6 +54,11 @@ make run
 
 # Check cluster status
 ./bin/prismctl info
+
+# Try sandbox commands
+./bin/prismctl sandbox create --name=test
+./bin/prismctl sandbox ls
+./bin/prismctl sandbox info test
 ```
 
 ## Usage
@@ -117,9 +122,12 @@ Use the CLI:
 ./bin/prismctl node info <node-name-or-id>
 
 # Manage code execution sandboxes
-./bin/prismctl sandbox ls
 ./bin/prismctl sandbox create --name=my-sandbox
+./bin/prismctl sandbox ls
 ./bin/prismctl sandbox info <sandbox-name-or-id>
+./bin/prismctl sandbox exec <sandbox-name-or-id> --command="python -c 'print(42)'"
+./bin/prismctl sandbox logs <sandbox-name-or-id>
+./bin/prismctl sandbox stop <sandbox-name-or-id>
 ./bin/prismctl sandbox destroy <sandbox-name-or-id>
 
 # Connect to remote cluster
@@ -128,6 +136,8 @@ Use the CLI:
 # Enable debug output for CLI operations
 DEBUG=true ./bin/prismctl info
 ```
+
+**Safety Note**: Commands like `exec`, `stop`, and `destroy` require exact ID or name matches - no partial matching for safety.
 
 ## Security Considerations
 
@@ -173,5 +183,6 @@ The HTTP API defaults to cluster-wide accessibility (inherits Serf bind address)
 - **Resource aggregation delays on failures:** Aggregation counts all known members; failed nodes are included until reaped, so calls may wait for timeout before returning.
 - **Serf reap delay:** Reaping of dead members is time-based. Large `DeadNodeReclaimTime` can delay full cleanup and UI/CLI visibility.
 - **Metrics completeness:** CPU usage, load averages, and job accounting are placeholders; reported metrics are not yet suitable for scheduling decisions.
+- **V0 scheduler simulation:** Placement and stop operations return simulated responses (random success/failure) to exercise distributed scheduling patterns before runtime integration.
 - **0.0.0.0 Bind Address Limitation:** When `0.0.0.0` is specified as a bind address, the system doesn't truly bind to all network interfaces. Instead, it resolves to a single IP address by determining which local interface can reach external networks (via 8.8.8.8). This works for most setups but may bind to unexpected interfaces on multi-homed servers or fail in offline environments where it falls back to 127.0.0.1.
 - **IPv6 Not Supported:** The system currently only supports IPv4 addresses. IPv6 addresses, dual-stack configurations, and IPv6-only environments are not supported. All network components (Serf, Raft, gRPC, HTTP API) assume IPv4 addressing.
