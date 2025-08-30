@@ -69,18 +69,12 @@ func NewClientPool(serfManager *serf.SerfManager, grpcPort int, config *Config) 
 }
 
 // GetNodeServiceClient returns a NodeService gRPC client for the specified node,
-// creating a new connection if one doesn't exist. Discovers node address via Serf
-// membership and supports per-node port configuration via "grpc_port" tag.
+// creating a new connection if one doesn't exist. This method only handles
+// NodeService client creation and maintains proper separation of concerns.
 //
 // This method provides access to the NodeService interface for resource queries,
-// health checks, and node-level operations. The connection is shared with the
-// SchedulerService client for efficiency and resource conservation.
-//
-// Race Condition Fix: Uses singleflight pattern to ensure only one dial operation
-// occurs per nodeID, even with concurrent calls. This prevents:
-//   - Multiple redundant network dials to the same address
-//   - Wasted connections that get immediately closed
-//   - Resource contention during high-concurrency scenarios
+// health checks, and node-level operations. It uses the shared connection
+// infrastructure but only creates and manages NodeService clients.
 func (cp *ClientPool) GetNodeServiceClient(nodeID string) (proto.NodeServiceClient, error) {
 	// Fast path: check if client already exists with read lock
 	cp.mu.RLock()
@@ -90,16 +84,53 @@ func (cp *ClientPool) GetNodeServiceClient(nodeID string) (proto.NodeServiceClie
 	}
 	cp.mu.RUnlock()
 
-	// Singleflight ensures only one dial per nodeID happens concurrently.
-	// All goroutines requesting the same nodeID will wait for the single
-	// dial operation to complete and receive the same result.
+	// Ensure connection exists (shared infrastructure)
+	conn, err := cp.ensureConnection(nodeID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create NodeService client with proper locking
+	cp.mu.Lock()
+	defer cp.mu.Unlock()
+
+	// Double-check: another goroutine might have created the client
+	if existingClient, exists := cp.nodeServiceClients[nodeID]; exists {
+		return existingClient, nil
+	}
+
+	// Create only the NodeService client
+	client := proto.NewNodeServiceClient(conn)
+	cp.nodeServiceClients[nodeID] = client
+
+	logging.Debug("Created NodeService client for node %s", nodeID)
+	return client, nil
+}
+
+// ensureConnection establishes a gRPC connection to the specified node if one
+// doesn't already exist. This is a shared method used by both NodeService and
+// SchedulerService client getters to avoid code duplication while maintaining
+// proper separation of concerns.
+//
+// Uses singleflight pattern to prevent duplicate connection attempts and
+// discovers node addresses via Serf membership with per-node port configuration.
+func (cp *ClientPool) ensureConnection(nodeID string) (*grpcstd.ClientConn, error) {
+	// Fast path: check if connection already exists with read lock
+	cp.mu.RLock()
+	if conn, exists := cp.connections[nodeID]; exists {
+		cp.mu.RUnlock()
+		return conn, nil
+	}
+	cp.mu.RUnlock()
+
+	// Singleflight ensures only one dial per nodeID happens concurrently
 	result, err, _ := cp.dialGroup.Do(nodeID, func() (any, error) {
 		// Double-check inside singleflight - another goroutine might have
 		// completed the connection while we were waiting
 		cp.mu.RLock()
-		if client, exists := cp.nodeServiceClients[nodeID]; exists {
+		if conn, exists := cp.connections[nodeID]; exists {
 			cp.mu.RUnlock()
-			return client, nil
+			return conn, nil
 		}
 		cp.mu.RUnlock()
 
@@ -125,8 +156,6 @@ func (cp *ClientPool) GetNodeServiceClient(nodeID string) (proto.NodeServiceClie
 
 		// Create gRPC connection (this is the expensive I/O operation that
 		// singleflight prevents from happening multiple times concurrently)
-		// TODO: Add TLS support when available
-		// TODO: Add custom dial options for timeouts and keepalive
 		conn, err := grpcstd.NewClient(addr,
 			grpcstd.WithTransportCredentials(insecure.NewCredentials()),
 		)
@@ -138,29 +167,23 @@ func (cp *ClientPool) GetNodeServiceClient(nodeID string) (proto.NodeServiceClie
 		cp.mu.Lock()
 		defer cp.mu.Unlock()
 
-		// Final check: ensure no other goroutine stored a client during our dial
-		if existingClient, exists := cp.nodeServiceClients[nodeID]; exists {
+		// Final check: ensure no other goroutine stored a connection during our dial
+		if existingConn, exists := cp.connections[nodeID]; exists {
 			conn.Close() // Close our connection since an existing one was found
-			logging.Debug("Found existing NodeService client for node %s after dial, using existing", nodeID)
-			return existingClient, nil
+			logging.Debug("Found existing connection for node %s after dial, using existing", nodeID)
+			return existingConn, nil
 		}
 
-		// Create both node service and scheduler service clients
-		client := proto.NewNodeServiceClient(conn)
-		schedulerClient := proto.NewSchedulerServiceClient(conn)
 		cp.connections[nodeID] = conn
-		cp.nodeServiceClients[nodeID] = client
-		cp.schedulerServiceClients[nodeID] = schedulerClient
-
-		logging.Debug("Created NodeService and SchedulerService clients for node %s at %s", nodeID, addr)
-		return client, nil
+		logging.Debug("Created gRPC connection for node %s at %s", nodeID, addr)
+		return conn, nil
 	})
 
 	if err != nil {
 		return nil, err
 	}
 
-	return result.(proto.NodeServiceClient), nil
+	return result.(*grpcstd.ClientConn), nil
 }
 
 // GetResourcesFromNode queries resource information from a specific node via gRPC.
@@ -204,31 +227,45 @@ func (cp *ClientPool) GetHealthFromNodeWithTypes(nodeID string, checkTypes []str
 }
 
 // GetSchedulerServiceClient returns a SchedulerService gRPC client for the
-// specified node, creating a new connection if one doesn't exist. Uses the same
-// connection as the NodeService client for efficiency and resource conservation.
+// specified node, creating a new connection if one doesn't exist. This method
+// only handles SchedulerService client creation and maintains proper separation.
 //
 // This method provides access to the SchedulerService interface for sandbox
-// placement requests and distributed scheduling operations. The underlying
-// connection is shared with NodeService to minimize resource overhead.
+// placement requests and distributed scheduling operations. It uses the shared
+// connection infrastructure but only creates and manages SchedulerService clients.
 //
 // Essential for distributed scheduling where leaders coordinate sandbox placement
 // with worker nodes through gRPC calls with proper timeout handling.
 func (cp *ClientPool) GetSchedulerServiceClient(nodeID string) (proto.SchedulerServiceClient, error) {
-	// Ensure connection exists by getting the node client first
-	_, err := cp.GetNodeServiceClient(nodeID)
+	// Fast path: check if client already exists with read lock
+	cp.mu.RLock()
+	if client, exists := cp.schedulerServiceClients[nodeID]; exists {
+		cp.mu.RUnlock()
+		return client, nil
+	}
+	cp.mu.RUnlock()
+
+	// Ensure connection exists (shared infrastructure)
+	conn, err := cp.ensureConnection(nodeID)
 	if err != nil {
 		return nil, err
 	}
 
-	// Now get the scheduler client (should exist since GetNodeServiceClient creates it)
-	cp.mu.RLock()
-	defer cp.mu.RUnlock()
+	// Create SchedulerService client with proper locking
+	cp.mu.Lock()
+	defer cp.mu.Unlock()
 
-	if schedulerClient, exists := cp.schedulerServiceClients[nodeID]; exists {
-		return schedulerClient, nil
+	// Double-check: another goroutine might have created the client
+	if existingClient, exists := cp.schedulerServiceClients[nodeID]; exists {
+		return existingClient, nil
 	}
 
-	return nil, fmt.Errorf("scheduler service client not found for node %s", nodeID)
+	// Create only the SchedulerService client
+	client := proto.NewSchedulerServiceClient(conn)
+	cp.schedulerServiceClients[nodeID] = client
+
+	logging.Debug("Created SchedulerService client for node %s", nodeID)
+	return client, nil
 }
 
 // PlaceSandboxOnNode sends a sandbox placement request to a specific node
