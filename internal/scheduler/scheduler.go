@@ -42,6 +42,7 @@ import (
 	"github.com/concave-dev/prism/internal/raft"
 	"github.com/concave-dev/prism/internal/resources"
 	"github.com/concave-dev/prism/internal/serf"
+	serfpkg "github.com/hashicorp/serf/serf"
 )
 
 // Scheduler defines the interface for sandbox scheduling operations
@@ -196,10 +197,21 @@ func (s *NaiveScheduler) gatherClusterResources() (map[string]*resources.NodeRes
 		return nil, fmt.Errorf("serf manager not available for node discovery")
 	}
 
-	// Get all cluster members from Serf
+	// Get all cluster members and filter to alive nodes only
 	allMembers := s.serfManager.GetMembers()
 	if len(allMembers) == 0 {
 		return nil, fmt.Errorf("no cluster members found")
+	}
+
+	aliveMembers := make(map[string]*serf.PrismNode)
+	for id, member := range allMembers {
+		if member != nil && member.Status == serfpkg.StatusAlive {
+			aliveMembers[id] = member
+		}
+	}
+
+	if len(aliveMembers) == 0 {
+		return nil, fmt.Errorf("no alive cluster members found")
 	}
 
 	nodeResources := make(map[string]*resources.NodeResources)
@@ -211,7 +223,7 @@ func (s *NaiveScheduler) gatherClusterResources() (map[string]*resources.NodeRes
 
 	// TODO: Implement concurrent resource collection for better performance
 	// For v0, collect resources sequentially to keep implementation simple
-	for nodeID := range allMembers {
+	for nodeID := range aliveMembers {
 		// Skip if we can't get gRPC client (node may be unreachable)
 		grpcRes, err := s.grpcPool.GetResourcesFromNode(nodeID)
 		if err != nil {
@@ -242,7 +254,7 @@ func (s *NaiveScheduler) gatherClusterResources() (map[string]*resources.NodeRes
 			DiskAvailable: grpcRes.DiskAvailable,
 			DiskUsage:     grpcRes.DiskUsage,
 
-			// Capacity and Score (now includes leader penalty from node)
+			// Capacity and Score (score already includes leader penalty)
 			MaxJobs:        int(grpcRes.MaxJobs),
 			CurrentJobs:    int(grpcRes.CurrentJobs),
 			AvailableSlots: int(grpcRes.AvailableSlots),
@@ -255,11 +267,17 @@ func (s *NaiveScheduler) gatherClusterResources() (map[string]*resources.NodeRes
 			Load15: grpcRes.Load15,
 		}
 
+		// Skip nodes with no available capacity
+		if nodeRes.AvailableSlots <= 0 {
+			logging.Debug("Scheduler: Skipping node %s - no available slots", nodeID)
+			continue
+		}
+
 		nodeResources[nodeID] = nodeRes
 		logging.Debug("Scheduler: Collected resources from node %s (score: %.1f)", nodeID, nodeRes.Score)
 	}
 
-	logging.Info("Scheduler: Collected resources from %d of %d nodes", len(nodeResources), len(allMembers))
+	logging.Info("Scheduler: Collected resources from %d of %d alive nodes", len(nodeResources), len(aliveMembers))
 	return nodeResources, nil
 }
 
