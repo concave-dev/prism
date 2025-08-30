@@ -113,19 +113,9 @@ func HandleNodeTop(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
-		// Get members for filtering
-		members, err := apiClient.GetMembers()
-		if err != nil {
-			logging.Error("Failed to fetch cluster members for filtering: %v", err)
-			return err
-		}
-
-		// Apply filters
-		filtered := filterResources(resources, members)
-
-		display.DisplayClusterResourcesFromAPI(filtered)
+		display.DisplayClusterResourcesFromAPI(resources)
 		if !config.Node.Watch {
-			logging.Success("Successfully retrieved information for %d cluster nodes (%d after filtering)", len(resources), len(filtered))
+			logging.Success("Successfully retrieved information for %d cluster nodes", len(resources))
 		}
 		return nil
 	}
