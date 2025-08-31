@@ -171,7 +171,7 @@ func (rc *ResourceCache) GetResources(ctx context.Context, nodeID string, fetchF
 		// Check if cached data is still fresh
 		if !cached.Stale && now.Sub(cached.CachedAt) <= rc.config.TTL {
 			atomic.AddInt64(&rc.hitCount, 1)
-			logging.Debug("Cache hit for node %s (age: %s)", nodeID, formatDuration(now.Sub(cached.CachedAt)))
+			logging.Debug("Cache hit for node %s (age: %s)", logging.FormatNodeID(nodeID), formatDuration(now.Sub(cached.CachedAt)))
 			return cached.Resources, nil
 		}
 
@@ -189,7 +189,7 @@ func (rc *ResourceCache) GetResources(ctx context.Context, nodeID string, fetchF
 
 	// Cache miss or data too stale - fetch fresh data synchronously
 	atomic.AddInt64(&rc.missCount, 1)
-	logging.Debug("Cache miss for node %s, fetching fresh data", nodeID)
+	logging.Debug("Cache miss for node %s, fetching fresh data", logging.FormatNodeID(nodeID))
 
 	freshResources, err := fetchFunc()
 	if err != nil {
@@ -197,7 +197,7 @@ func (rc *ResourceCache) GetResources(ctx context.Context, nodeID string, fetchF
 		
 		// If we have stale data and fetch failed, return stale data with warning
 		if exists && cached.Resources != nil {
-			logging.Warn("Failed to refresh node %s resources, returning stale data: %v", nodeID, err)
+			logging.Warn("Failed to refresh node %s resources, returning stale data: %v", logging.FormatNodeID(nodeID), err)
 			return cached.Resources, nil
 		}
 		
@@ -215,7 +215,7 @@ func (rc *ResourceCache) GetResources(ctx context.Context, nodeID string, fetchF
 	}
 	rc.mu.Unlock()
 
-	logging.Debug("Cached fresh resources for node %s", nodeID)
+	logging.Debug("Cached fresh resources for node %s", logging.FormatNodeID(nodeID))
 	return freshResources, nil
 }
 
@@ -246,7 +246,7 @@ func (rc *ResourceCache) refreshNode(nodeID string, fetchFunc func() (*NodeResou
 		// Mark as stale if too many consecutive errors
 		if cached.ErrorCount >= rc.config.MaxErrorCount {
 			cached.Stale = true
-			logging.Warn("Marking node %s as stale due to excessive refresh errors", nodeID)
+			logging.Warn("Marking node %s as stale due to excessive refresh errors", logging.FormatNodeID(nodeID))
 		}
 		return
 	}
@@ -258,7 +258,7 @@ func (rc *ResourceCache) refreshNode(nodeID string, fetchFunc func() (*NodeResou
 	cached.ErrorCount = 0
 	rc.lastRefresh = now
 	
-	logging.Debug("Background refresh completed for node %s", nodeID)
+	logging.Debug("Background refresh completed for node %s", logging.FormatNodeID(nodeID))
 }
 
 // StartBackgroundRefresh starts background cache warming for all discovered nodes.
@@ -343,7 +343,7 @@ func (rc *ResourceCache) InvalidateNode(nodeID string) {
 	
 	if _, exists := rc.cache[nodeID]; exists {
 		delete(rc.cache, nodeID)
-		logging.Debug("Invalidated cache entry for node %s", nodeID)
+		logging.Debug("Invalidated cache entry for node %s", logging.FormatNodeID(nodeID))
 	}
 }
 

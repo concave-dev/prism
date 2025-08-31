@@ -84,13 +84,13 @@ func ResolveNodeIdentifierFromMembers(members []MemberLike, identifier string) (
 		if len(matches) == 1 {
 			// Unique partial match found
 			logging.Info("Resolved partial ID '%s' to full ID '%s' (node: %s)",
-				identifier, matches[0].GetID(), matches[0].GetName())
+				identifier, logging.FormatNodeID(matches[0].GetID()), matches[0].GetName())
 			return matches[0].GetID(), nil
 		} else if len(matches) > 1 {
 			// Multiple matches - not unique
 			var matchIDs []string
 			for _, match := range matches {
-				matchIDs = append(matchIDs, fmt.Sprintf("%s (%s)", match.GetID(), match.GetName()))
+				matchIDs = append(matchIDs, fmt.Sprintf("%s (%s)", logging.FormatNodeID(match.GetID()), match.GetName()))
 			}
 			logging.Error("Partial ID '%s' is not unique, matches multiple nodes:", identifier)
 			for _, matchID := range matchIDs {
@@ -127,13 +127,13 @@ func ResolvePeerIdentifierFromPeers(peers []PeerLike, identifier string) (string
 		if len(matches) == 1 {
 			// Unique partial match found
 			logging.Info("Resolved partial ID '%s' to full ID '%s' (peer: %s)",
-				identifier, matches[0].GetID(), matches[0].GetName())
+				identifier, logging.FormatPeerID(matches[0].GetID()), matches[0].GetName())
 			return matches[0].GetID(), nil
 		} else if len(matches) > 1 {
 			// Multiple matches - not unique
 			var matchIDs []string
 			for _, match := range matches {
-				matchIDs = append(matchIDs, fmt.Sprintf("%s (%s)", match.GetID(), match.GetName()))
+				matchIDs = append(matchIDs, fmt.Sprintf("%s (%s)", logging.FormatPeerID(match.GetID()), match.GetName()))
 			}
 			logging.Error("Partial ID '%s' is not unique, matches multiple peers:", identifier)
 			for _, matchID := range matchIDs {
@@ -170,13 +170,13 @@ func ResolveSandboxIdentifierFromSandboxes(sandboxes []SandboxLike, identifier s
 		if len(matches) == 1 {
 			// Unique partial match found
 			logging.Info("Resolved partial ID '%s' to full ID '%s' (sandbox: %s)",
-				identifier, matches[0].GetID(), matches[0].GetName())
+				identifier, logging.FormatSandboxID(matches[0].GetID()), matches[0].GetName())
 			return matches[0].GetID(), nil
 		} else if len(matches) > 1 {
 			// Multiple matches - not unique
 			var matchIDs []string
 			for _, match := range matches {
-				matchIDs = append(matchIDs, fmt.Sprintf("%s (%s)", match.GetID(), match.GetName()))
+				matchIDs = append(matchIDs, fmt.Sprintf("%s (%s)", logging.FormatSandboxID(match.GetID()), match.GetName()))
 			}
 			logging.Error("Partial ID '%s' is not unique, matches multiple sandboxes:", identifier)
 			for _, matchID := range matchIDs {

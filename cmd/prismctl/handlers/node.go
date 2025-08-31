@@ -183,7 +183,7 @@ func HandleNodeInfo(cmd *cobra.Command, args []string) error {
 			if member.Name == nodeIdentifier {
 				targetMember = &member
 				resolvedNodeID = member.ID
-				logging.Info("Resolved node name '%s' to ID '%s'", nodeIdentifier, member.ID)
+				logging.Info("Resolved node name '%s' to ID '%s'", nodeIdentifier, logging.FormatNodeID(member.ID))
 				break
 			}
 		}

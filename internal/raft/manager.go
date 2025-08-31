@@ -322,7 +322,7 @@ func (m *RaftManager) checkBootstrapExpectConditions() {
 	// Deterministically pick a single coordinator by selecting the smallest node ID
 	coordinatorID := m.selectBootstrapCoordinator(eligibleIDs)
 	if coordinatorID != m.config.NodeID {
-		logging.Debug("Bootstrap-expect: Coordinator selected as %s, this node will not bootstrap", coordinatorID)
+		logging.Debug("Bootstrap-expect: Coordinator selected as %s, this node will not bootstrap", logging.FormatNodeID(coordinatorID))
 		return
 	}
 
@@ -371,7 +371,7 @@ func (m *RaftManager) performBootstrapExpect(serfMembers map[string]*serfpkg.Pri
 		// Only include nodes that advertise raft_port
 		raftPortStr, ok := member.Tags["raft_port"]
 		if !ok || raftPortStr == "" {
-			logging.Warn("Bootstrap-expect: Peer %s (%s) has no raft_port tag, excluding from initial cluster", member.Name, nodeID)
+			logging.Warn("Bootstrap-expect: Peer %s (%s) has no raft_port tag, excluding from initial cluster", member.Name, logging.FormatNodeID(nodeID))
 			continue
 		}
 
@@ -383,7 +383,7 @@ func (m *RaftManager) performBootstrapExpect(serfMembers map[string]*serfpkg.Pri
 			Address: raft.ServerAddress(raftAddr),
 		})
 
-		logging.Info("Bootstrap-expect: Added peer %s (%s) at %s to initial cluster", member.Name, nodeID, raftAddr)
+		logging.Info("Bootstrap-expect: Added peer %s (%s) at %s to initial cluster", member.Name, logging.FormatNodeID(nodeID), raftAddr)
 	}
 
 	// Create cluster configuration
@@ -601,7 +601,7 @@ func (m *RaftManager) AddPeer(nodeID, address string) error {
 		return fmt.Errorf("not leader, cannot add peer %s", nodeID)
 	}
 
-	logging.Info("Adding Raft peer: %s at %s", nodeID, address)
+	logging.Info("Adding Raft peer: %s at %s", logging.FormatNodeID(nodeID), address)
 
 	// Add as voting member to the cluster
 	future := m.raft.AddVoter(
@@ -615,7 +615,7 @@ func (m *RaftManager) AddPeer(nodeID, address string) error {
 		return fmt.Errorf("failed to add peer %s: %w", nodeID, err)
 	}
 
-	logging.Success("Successfully added Raft peer: %s", nodeID)
+	logging.Success("Successfully added Raft peer: %s", logging.FormatNodeID(nodeID))
 	return nil
 }
 
@@ -643,7 +643,7 @@ func (m *RaftManager) RemovePeer(nodeID string) error {
 		return fmt.Errorf("not leader, cannot remove peer %s", nodeID)
 	}
 
-	logging.Info("Removing Raft peer: %s", nodeID)
+	logging.Info("Removing Raft peer: %s", logging.FormatNodeID(nodeID))
 
 	// Remove from cluster
 	future := m.raft.RemoveServer(
@@ -656,7 +656,7 @@ func (m *RaftManager) RemovePeer(nodeID string) error {
 		return fmt.Errorf("failed to remove peer %s: %w", nodeID, err)
 	}
 
-	logging.Success("Successfully removed Raft peer: %s", nodeID)
+	logging.Success("Successfully removed Raft peer: %s", logging.FormatNodeID(nodeID))
 	return nil
 }
 
@@ -833,23 +833,23 @@ func (m *RaftManager) handleMemberJoin(member serf.Member) {
 	// Extract raft_port from member tags
 	raftPortStr, exists := member.Tags["raft_port"]
 	if !exists {
-		logging.Warn("Member %s (%s) joined but has no raft_port tag, skipping Raft peer addition", member.Name, nodeID)
+		logging.Warn("Member %s (%s) joined but has no raft_port tag, skipping Raft peer addition", member.Name, logging.FormatNodeID(nodeID))
 		return
 	}
 
 	raftPort, err := strconv.Atoi(raftPortStr)
 	if err != nil {
-		logging.Error("Member %s (%s) has invalid raft_port tag '%s': %v", member.Name, nodeID, raftPortStr, err)
+		logging.Error("Member %s (%s) has invalid raft_port tag '%s': %v", member.Name, logging.FormatNodeID(nodeID), raftPortStr, err)
 		return
 	}
 
 	// Build Raft address
 	raftAddr := fmt.Sprintf("%s:%d", member.Addr.String(), raftPort)
 
-	logging.Info("Serf member %s (%s) joined, attempting to add as Raft peer at %s", member.Name, nodeID, raftAddr)
+	logging.Info("Serf member %s (%s) joined, attempting to add as Raft peer at %s", member.Name, logging.FormatNodeID(nodeID), raftAddr)
 
 	if err := m.AddPeer(nodeID, raftAddr); err != nil {
-		logging.Error("Failed to add Raft peer %s: %v", nodeID, err)
+		logging.Error("Failed to add Raft peer %s: %v", logging.FormatNodeID(nodeID), err)
 	}
 }
 
@@ -883,9 +883,9 @@ func (m *RaftManager) handleMemberLeave(member serf.Member) {
 	// thresholds (last-contact, stabilization, lag) before any removal.
 	if m.autopilotSuspectSince[nodeID].IsZero() {
 		m.autopilotSuspectSince[nodeID] = time.Now()
-		logging.Info("Autopilot: Marked %s as suspect due to Serf leave/failure", nodeID)
+		logging.Info("Autopilot: Marked %s as suspect due to Serf leave/failure", logging.FormatNodeID(nodeID))
 	} else {
-		logging.Debug("Autopilot: %s already suspect since %v", nodeID, m.autopilotSuspectSince[nodeID])
+		logging.Debug("Autopilot: %s already suspect since %v", logging.FormatNodeID(nodeID), m.autopilotSuspectSince[nodeID])
 	}
 }
 
@@ -1088,7 +1088,7 @@ func (m *RaftManager) performAutopilotCleanup() {
 		// If alive in Serf, clear suspect tracking if any
 		if aliveNodeIDs[nodeID] {
 			if !m.autopilotSuspectSince[nodeID].IsZero() {
-				logging.Info("Autopilot: Clearing suspect status for %s (alive in Serf)", nodeID)
+				logging.Info("Autopilot: Clearing suspect status for %s (alive in Serf)", logging.FormatNodeID(nodeID))
 				delete(m.autopilotSuspectSince, nodeID)
 			}
 			continue
@@ -1099,13 +1099,13 @@ func (m *RaftManager) performAutopilotCleanup() {
 		if suspectAt.IsZero() {
 			// No prior suspect mark; start tracking and skip this round
 			m.autopilotSuspectSince[nodeID] = time.Now()
-			logging.Info("Autopilot: Marked %s as suspect (cleanup loop)", nodeID)
+			logging.Info("Autopilot: Marked %s as suspect (cleanup loop)", logging.FormatNodeID(nodeID))
 			continue
 		}
 
 		// Require stabilization since suspect
 		if time.Since(suspectAt) < m.config.ServerStabilizationTime {
-			logging.Debug("Autopilot: %s still within stabilization window (%v < %v)", nodeID, time.Since(suspectAt), m.config.ServerStabilizationTime)
+			logging.Debug("Autopilot: %s still within stabilization window (%v < %v)", logging.FormatNodeID(nodeID), time.Since(suspectAt), m.config.ServerStabilizationTime)
 			continue
 		}
 
@@ -1136,7 +1136,7 @@ func (m *RaftManager) performAutopilotCleanup() {
 		// - Result: Prioritize availability and data safety over aggressive cleanup
 		//   The potential for a whole node to recover far outweighs memory tracking costs
 		if m.isRaftPeerReachable(address) {
-			logging.Debug("Autopilot: %s reachable over TCP, deferring removal", nodeID)
+			logging.Debug("Autopilot: %s reachable over TCP, deferring removal", logging.FormatNodeID(nodeID))
 			continue
 		}
 
@@ -1161,13 +1161,13 @@ func (m *RaftManager) performAutopilotCleanup() {
 	// Apply at most one membership change per run to avoid thrash
 	if len(candidates) > 0 {
 		nodeID := candidates[0]
-		logging.Info("Autopilot: Removing dead peer %s from Raft cluster", nodeID)
+		logging.Info("Autopilot: Removing dead peer %s from Raft cluster", logging.FormatNodeID(nodeID))
 
 		future := m.raft.RemoveServer(raft.ServerID(nodeID), 0, 0)
 		if err := future.Error(); err != nil {
-			logging.Error("Autopilot: Failed to remove dead peer %s: %v", nodeID, err)
+			logging.Error("Autopilot: Failed to remove dead peer %s: %v", logging.FormatNodeID(nodeID), err)
 		} else {
-			logging.Success("Autopilot: Successfully removed dead peer %s", nodeID)
+			logging.Success("Autopilot: Successfully removed dead peer %s", logging.FormatNodeID(nodeID))
 			m.lastReconfigTime = time.Now()
 			delete(m.autopilotSuspectSince, nodeID)
 		}
@@ -1309,9 +1309,9 @@ func (m *RaftManager) performPeerReconciliation() {
 	var addedCount int
 	for nodeID, raftAddr := range desired {
 		if _, exists := currentSet[nodeID]; !exists {
-			logging.Info("Reconciliation: Adding missing peer %s at %s", nodeID, raftAddr)
+			logging.Info("Reconciliation: Adding missing peer %s at %s", logging.FormatNodeID(nodeID), raftAddr)
 			if err := m.AddPeer(nodeID, raftAddr); err != nil {
-				logging.Error("Reconciliation: Failed to add peer %s: %v", nodeID, err)
+				logging.Error("Reconciliation: Failed to add peer %s: %v", logging.FormatNodeID(nodeID), err)
 			} else {
 				addedCount++
 			}
@@ -1447,7 +1447,7 @@ func (m *RaftManager) checkPeerConnectivity(peers []string) (reachable, unreacha
 			reachable++
 		} else {
 			unreachable++
-			logging.Debug("Raft health: Peer %s (%s) is unreachable", nodeID, address)
+			logging.Debug("Raft health: Peer %s (%s) is unreachable", logging.FormatNodeID(nodeID), address)
 		}
 	}
 
@@ -1613,6 +1613,6 @@ func (rm *RaftManager) SetClusterID(clusterID string) error {
 		}
 	}
 
-	logging.Info("Successfully set cluster ID: %s", clusterID)
+	logging.Info("Successfully set cluster ID: %s", logging.FormatClusterID(clusterID))
 	return nil
 }

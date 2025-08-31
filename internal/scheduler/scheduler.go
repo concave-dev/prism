@@ -133,7 +133,7 @@ func (s *NaiveScheduler) ScheduleSandbox(sandboxID string) error {
 		return fmt.Errorf("scheduling attempted on non-leader node %s", s.nodeID)
 	}
 
-	logging.Info("Scheduler: Starting scheduling for sandbox %s", sandboxID)
+	logging.Info("Scheduler: Starting scheduling for sandbox %s", logging.FormatSandboxID(sandboxID))
 
 	// Verify raftManager availability for state access
 	if s.raftManager == nil {
@@ -158,19 +158,19 @@ func (s *NaiveScheduler) ScheduleSandbox(sandboxID string) error {
 	// Step 1: Gather cluster resources for placement decision
 	nodeResources, err := s.gatherClusterResources()
 	if err != nil {
-		logging.Error("Scheduler: Failed to gather cluster resources for sandbox %s: %v", sandboxID, err)
+		logging.Error("Scheduler: Failed to gather cluster resources for sandbox %s: %v", logging.FormatSandboxID(sandboxID), err)
 		return fmt.Errorf("resource collection failed: %w", err)
 	}
 
 	if len(nodeResources) == 0 {
-		logging.Error("Scheduler: No nodes available for scheduling sandbox %s", sandboxID)
+		logging.Error("Scheduler: No nodes available for scheduling sandbox %s", logging.FormatSandboxID(sandboxID))
 		return fmt.Errorf("no nodes available for scheduling")
 	}
 
 	// Step 2: Select optimal node based on resource scores
 	selectedNodeID, placementScore, err := s.selectBestNode(nodeResources)
 	if err != nil {
-		logging.Error("Scheduler: Node selection failed for sandbox %s: %v", sandboxID, err)
+		logging.Error("Scheduler: Node selection failed for sandbox %s: %v", logging.FormatSandboxID(sandboxID), err)
 		return fmt.Errorf("node selection failed: %w", err)
 	}
 
@@ -179,7 +179,7 @@ func (s *NaiveScheduler) ScheduleSandbox(sandboxID string) error {
 
 	// Step 3: Record scheduling decision in Raft state
 	if err := s.recordSchedulingDecision(sandboxID, selectedNodeID, placementScore); err != nil {
-		logging.Error("Scheduler: Failed to record scheduling decision for sandbox %s: %v", sandboxID, err)
+		logging.Error("Scheduler: Failed to record scheduling decision for sandbox %s: %v", logging.FormatSandboxID(sandboxID), err)
 		return fmt.Errorf("scheduling decision recording failed: %w", err)
 	}
 
@@ -250,7 +250,7 @@ func (s *NaiveScheduler) gatherClusterResourcesWithCache(useCache bool) (map[str
 		// Use cached version of gRPC call for better performance
 		grpcRes, err := s.grpcPool.GetResourcesFromNodeCached(nodeID, useCache)
 		if err != nil {
-			logging.Warn("Scheduler: Failed to get resources from node %s: %v", nodeID, err)
+			logging.Warn("Scheduler: Failed to get resources from node %s: %v", logging.FormatNodeID(nodeID), err)
 			continue
 		}
 
@@ -292,7 +292,7 @@ func (s *NaiveScheduler) gatherClusterResourcesWithCache(useCache bool) (map[str
 
 		// Skip nodes with no available capacity
 		if nodeRes.AvailableSlots <= 0 {
-			logging.Debug("Scheduler: Skipping node %s - no available slots", nodeID)
+			logging.Debug("Scheduler: Skipping node %s - no available slots", logging.FormatNodeID(nodeID))
 			continue
 		}
 
@@ -301,7 +301,7 @@ func (s *NaiveScheduler) gatherClusterResourcesWithCache(useCache bool) (map[str
 		if useCache {
 			cacheStatus = "cached"
 		}
-		logging.Debug("Scheduler: Collected %s resources from node %s (score: %.1f)", cacheStatus, nodeID, nodeRes.Score)
+		logging.Debug("Scheduler: Collected %s resources from node %s (score: %.1f)", cacheStatus, logging.FormatNodeID(nodeID), nodeRes.Score)
 	}
 
 	logging.Info("Scheduler: Collected %s resources from %d of %d alive nodes", 
@@ -388,7 +388,7 @@ func (s *NaiveScheduler) recordSchedulingDecision(sandboxID, selectedNodeID stri
 		return fmt.Errorf("failed to submit schedule command to Raft: %w", err)
 	}
 
-	logging.Debug("Scheduler: Recorded scheduling decision for sandbox %s", sandboxID)
+	logging.Debug("Scheduler: Recorded scheduling decision for sandbox %s", logging.FormatSandboxID(sandboxID))
 	return nil
 }
 
@@ -400,13 +400,13 @@ func (s *NaiveScheduler) recordSchedulingDecision(sandboxID, selectedNodeID stri
 // updates through Raft for comprehensive placement lifecycle management.
 // Critical for testing distributed scheduling patterns with realistic timing.
 func (s *NaiveScheduler) executePlacement(sandboxID, sandboxName, selectedNodeID string, metadata map[string]string) {
-	logging.Info("Scheduler: Executing placement for sandbox %s on node %s", sandboxID, selectedNodeID)
+	logging.Info("Scheduler: Executing placement for sandbox %s on node %s", logging.FormatSandboxID(sandboxID), logging.FormatNodeID(selectedNodeID))
 
 	// Verify gRPC pool availability for placement communication
 	if s.grpcPool == nil {
 		logging.Error("Scheduler: gRPC client pool not available for placement communication")
 		if err := s.updateSandboxStatus(sandboxID, "lost", "gRPC client pool not available"); err != nil {
-			logging.Error("Scheduler: Failed to update status for sandbox %s: %v", sandboxID, err)
+			logging.Error("Scheduler: Failed to update status for sandbox %s: %v", logging.FormatSandboxID(sandboxID), err)
 		}
 		return
 	}
@@ -421,22 +421,22 @@ func (s *NaiveScheduler) executePlacement(sandboxID, sandboxName, selectedNodeID
 		// Handle timeout or communication error
 		status = "lost"
 		message = fmt.Sprintf("Placement communication failed: %v", err)
-		logging.Error("Scheduler: Placement failed for sandbox %s on node %s: %v", sandboxID, selectedNodeID, err)
+		logging.Error("Scheduler: Placement failed for sandbox %s on node %s: %v", logging.FormatSandboxID(sandboxID), logging.FormatNodeID(selectedNodeID), err)
 	} else if response.Success {
 		// Placement succeeded
 		status = "ready"
 		message = response.Message
-		logging.Info("Scheduler: Placement succeeded for sandbox %s on node %s: %s", sandboxID, selectedNodeID, message)
+		logging.Info("Scheduler: Placement succeeded for sandbox %s on node %s: %s", logging.FormatSandboxID(sandboxID), logging.FormatNodeID(selectedNodeID), message)
 	} else {
 		// Placement failed (node returned failure)
 		status = "failed"
 		message = response.Message
-		logging.Info("Scheduler: Placement failed for sandbox %s on node %s: %s", sandboxID, selectedNodeID, message)
+		logging.Info("Scheduler: Placement failed for sandbox %s on node %s: %s", logging.FormatSandboxID(sandboxID), logging.FormatNodeID(selectedNodeID), message)
 	}
 
 	// Update sandbox status in Raft state
 	if err := s.updateSandboxStatus(sandboxID, status, message); err != nil {
-		logging.Error("Scheduler: Failed to update status for sandbox %s: %v", sandboxID, err)
+		logging.Error("Scheduler: Failed to update status for sandbox %s: %v", logging.FormatSandboxID(sandboxID), err)
 	}
 }
 
@@ -481,6 +481,6 @@ func (s *NaiveScheduler) updateSandboxStatus(sandboxID, status, message string) 
 		return fmt.Errorf("failed to submit status update command to Raft: %w", err)
 	}
 
-	logging.Debug("Scheduler: Updated sandbox %s status to %s", sandboxID, status)
+	logging.Debug("Scheduler: Updated sandbox %s status to %s", logging.FormatSandboxID(sandboxID), status)
 	return nil
 }

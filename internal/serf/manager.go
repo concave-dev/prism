@@ -130,7 +130,7 @@ func NewSerfManager(config *Config) (*SerfManager, error) {
 // Must be called before attempting to join a cluster or serve requests.
 func (sm *SerfManager) Start() error {
 	sm.startTime = time.Now()
-	logging.Info("Starting SerfManager for node %s", sm.NodeID)
+	logging.Info("Starting SerfManager for node %s", logging.FormatNodeID(sm.NodeID))
 
 	// Create Serf configuration
 	serfConfig := serf.DefaultConfig()

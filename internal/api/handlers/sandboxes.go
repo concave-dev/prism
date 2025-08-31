@@ -171,7 +171,7 @@ func CreateSandbox(sandboxMgr SandboxManager, nodeID string) gin.HandlerFunc {
 			return
 		}
 
-		logging.Info("Sandbox creation request: name=%s id=%s", sandboxName, sandboxID)
+		logging.Info("Sandbox creation request: name=%s id=%s", sandboxName, logging.FormatSandboxID(sandboxID))
 
 		// Leadership check is now handled by the leader forwarding middleware.
 		// This demonstrates the architectural separation: middleware handles
@@ -315,7 +315,7 @@ func GetSandbox(sandboxMgr SandboxManager) gin.HandlerFunc {
 		// Get specific sandbox
 		sandbox := fsm.GetSandbox(sandboxID)
 		if sandbox == nil {
-			logging.Warn("Sandbox query: Sandbox not found: %s", sandboxID)
+			logging.Warn("Sandbox query: Sandbox not found: %s", logging.FormatSandboxID(sandboxID))
 			c.JSON(http.StatusNotFound, gin.H{
 				"error":   "Sandbox not found",
 				"details": fmt.Sprintf("No sandbox found with ID: %s", sandboxID),
@@ -323,7 +323,7 @@ func GetSandbox(sandboxMgr SandboxManager) gin.HandlerFunc {
 			return
 		}
 
-		logging.Info("Sandbox query: Returning sandbox %s", sandboxID)
+		logging.Info("Sandbox query: Returning sandbox %s", logging.FormatSandboxID(sandboxID))
 		c.JSON(http.StatusOK, sandbox)
 	}
 }
@@ -348,7 +348,7 @@ func DeleteSandbox(sandboxMgr SandboxManager, nodeID string) gin.HandlerFunc {
 			return
 		}
 
-		logging.Info("Sandbox destruction request: id=%s", sandboxID)
+		logging.Info("Sandbox destruction request: id=%s", logging.FormatSandboxID(sandboxID))
 
 		// Leadership check is now handled by the leader forwarding middleware
 		// This handler only executes if we're the leader or forwarding succeeded
@@ -366,7 +366,7 @@ func DeleteSandbox(sandboxMgr SandboxManager, nodeID string) gin.HandlerFunc {
 
 		sandbox := fsm.GetSandbox(sandboxID)
 		if sandbox == nil {
-			logging.Warn("Sandbox destruction: Sandbox not found: %s", sandboxID)
+			logging.Warn("Sandbox destruction: Sandbox not found: %s", logging.FormatSandboxID(sandboxID))
 			c.JSON(http.StatusNotFound, gin.H{
 				"error":   "Sandbox not found",
 				"details": fmt.Sprintf("No sandbox found with ID: %s", sandboxID),
@@ -464,7 +464,7 @@ func ExecSandbox(sandboxMgr SandboxManager, nodeID string) gin.HandlerFunc {
 			return
 		}
 
-		logging.Info("Sandbox exec request: id=%s command=%s", sandboxID, req.Command)
+		logging.Info("Sandbox exec request: id=%s command=%s", logging.FormatSandboxID(sandboxID), req.Command)
 
 		// Leadership check is now handled by the leader forwarding middleware
 		// This handler only executes if we're the leader or forwarding succeeded
@@ -482,7 +482,7 @@ func ExecSandbox(sandboxMgr SandboxManager, nodeID string) gin.HandlerFunc {
 
 		sandbox := fsm.GetSandbox(sandboxID)
 		if sandbox == nil {
-			logging.Warn("Sandbox exec: Sandbox not found: %s", sandboxID)
+			logging.Warn("Sandbox exec: Sandbox not found: %s", logging.FormatSandboxID(sandboxID))
 			c.JSON(http.StatusNotFound, gin.H{
 				"error":   "Sandbox not found",
 				"details": fmt.Sprintf("No sandbox found with ID: %s", sandboxID),
@@ -601,7 +601,7 @@ func GetSandboxLogs(sandboxMgr SandboxManager) gin.HandlerFunc {
 		// Check if sandbox exists
 		sandbox := fsm.GetSandbox(sandboxID)
 		if sandbox == nil {
-			logging.Warn("Sandbox logs: Sandbox not found: %s", sandboxID)
+			logging.Warn("Sandbox logs: Sandbox not found: %s", logging.FormatSandboxID(sandboxID))
 			c.JSON(http.StatusNotFound, gin.H{
 				"error":   "Sandbox not found",
 				"details": fmt.Sprintf("No sandbox found with ID: %s", sandboxID),
@@ -609,7 +609,7 @@ func GetSandboxLogs(sandboxMgr SandboxManager) gin.HandlerFunc {
 			return
 		}
 
-		logging.Info("Sandbox logs: Returning logs for sandbox %s", sandboxID)
+		logging.Info("Sandbox logs: Returning logs for sandbox %s", logging.FormatSandboxID(sandboxID))
 
 		// TODO: Integrate with actual log storage and retrieval system
 		// For now, return placeholder logs based on sandbox state
@@ -655,11 +655,11 @@ func StopSandbox(sandboxMgr SandboxManager, nodeID string, clientPool *grpc.Clie
 		// Parse request body if provided (optional)
 		if err := c.ShouldBindJSON(&stopOptions); err != nil {
 			// Ignore JSON binding errors - stop options are optional
-			logging.Debug("Sandbox stop: Using default stop options for %s", sandboxID)
+			logging.Debug("Sandbox stop: Using default stop options for %s", logging.FormatSandboxID(sandboxID))
 		}
 
 		logging.Info("Sandbox stop request: id=%s graceful=%v",
-			sandboxID, stopOptions.Graceful)
+			logging.FormatSandboxID(sandboxID), stopOptions.Graceful)
 
 		// Leadership check is handled by leader forwarding middleware
 		// This handler only executes if we're the leader or forwarding succeeded
@@ -677,7 +677,7 @@ func StopSandbox(sandboxMgr SandboxManager, nodeID string, clientPool *grpc.Clie
 
 		sandbox := fsm.GetSandbox(sandboxID)
 		if sandbox == nil {
-			logging.Warn("Sandbox stop: Sandbox not found: %s", sandboxID)
+			logging.Warn("Sandbox stop: Sandbox not found: %s", logging.FormatSandboxID(sandboxID))
 			c.JSON(http.StatusNotFound, gin.H{
 				"error":   "Sandbox not found",
 				"details": fmt.Sprintf("No sandbox found with ID: %s", sandboxID),
@@ -690,7 +690,7 @@ func StopSandbox(sandboxMgr SandboxManager, nodeID string, clientPool *grpc.Clie
 			"ready": true,
 		}
 		if !validStopStates[sandbox.Status] {
-			logging.Warn("Sandbox stop: Invalid state %s for sandbox %s", sandbox.Status, sandboxID)
+			logging.Warn("Sandbox stop: Invalid state %s for sandbox %s", sandbox.Status, logging.FormatSandboxID(sandboxID))
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error":   "Invalid sandbox state",
 				"details": fmt.Sprintf("Sandbox in status '%s' cannot be stopped", sandbox.Status),
@@ -700,7 +700,7 @@ func StopSandbox(sandboxMgr SandboxManager, nodeID string, clientPool *grpc.Clie
 
 		// Validate sandbox has a scheduled node for stop orchestration
 		if sandbox.ScheduledNodeID == "" {
-			logging.Warn("Sandbox stop: No scheduled node for sandbox %s", sandboxID)
+			logging.Warn("Sandbox stop: No scheduled node for sandbox %s", logging.FormatSandboxID(sandboxID))
 			c.JSON(http.StatusConflict, gin.H{
 				"error":   "Sandbox not scheduled",
 				"details": "Sandbox has no assigned node for stop operation",

@@ -387,7 +387,7 @@ func (f *PrismFSM) extractScheduleID(cmd Command, result any) string {
 func (f *PrismFSM) triggerScheduling(sandboxID string) {
 	go func() {
 		if err := f.scheduler.ScheduleSandbox(sandboxID); err != nil {
-			logging.Error("FSM: Failed to trigger scheduling for sandbox %s: %v", sandboxID, err)
+			logging.Error("FSM: Failed to trigger scheduling for sandbox %s: %v", logging.FormatSandboxID(sandboxID), err)
 		}
 	}()
 }
@@ -765,7 +765,7 @@ func (s *SandboxFSM) processDestroyCommand(cmd Command) any {
 		}
 	}
 
-	logging.Info("SandboxFSM: Destroyed sandbox %s", destroyCmd.SandboxID)
+	logging.Info("SandboxFSM: Destroyed sandbox %s", logging.FormatSandboxID(destroyCmd.SandboxID))
 
 	// TODO: Coordinate with runtime system for VM cleanup and resource deallocation
 
@@ -1123,7 +1123,7 @@ func (e *ExecFSM) processStartCommand(cmd Command) any {
 	execution.StartedAt = &now
 	execution.Updated = now
 
-	logging.Info("ExecFSM: Started execution %s", startCmd.ExecID)
+	logging.Info("ExecFSM: Started execution %s", logging.FormatExecID(startCmd.ExecID))
 
 	return map[string]any{
 		"exec_id": startCmd.ExecID,
@@ -1224,7 +1224,7 @@ func (e *ExecFSM) processFailCommand(cmd Command) any {
 		execution.Stderr = failCmd.Stderr
 	}
 
-	logging.Info("ExecFSM: Failed execution %s: %s", failCmd.ExecID, failCmd.Reason)
+	logging.Info("ExecFSM: Failed execution %s: %s", logging.FormatExecID(failCmd.ExecID), failCmd.Reason)
 
 	return map[string]any{
 		"exec_id":   failCmd.ExecID,

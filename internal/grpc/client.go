@@ -106,7 +106,7 @@ func (cp *ClientPool) GetNodeServiceClient(nodeID string) (proto.NodeServiceClie
 	client := proto.NewNodeServiceClient(conn)
 	cp.nodeServiceClients[nodeID] = client
 
-	logging.Debug("Created NodeService client for node %s", nodeID)
+	logging.Debug("Created NodeService client for node %s", logging.FormatNodeID(nodeID))
 	return client, nil
 }
 
@@ -178,12 +178,12 @@ func (cp *ClientPool) ensureConnection(nodeID string) (*grpcstd.ClientConn, erro
 		// Final check: ensure no other goroutine stored a connection during our dial
 		if existingConn, exists := cp.connections[nodeID]; exists {
 			conn.Close() // Close our connection since an existing one was found
-			logging.Debug("Found existing connection for node %s after dial, using existing", nodeID)
+			logging.Debug("Found existing connection for node %s after dial, using existing", logging.FormatNodeID(nodeID))
 			return existingConn, nil
 		}
 
 		cp.connections[nodeID] = conn
-		logging.Debug("Created gRPC connection for node %s at %s", nodeID, addr)
+		logging.Debug("Created gRPC connection for node %s at %s", logging.FormatNodeID(nodeID), addr)
 		return conn, nil
 	})
 
@@ -230,7 +230,7 @@ func (cp *ClientPool) GetResourcesFromNodeCached(nodeID string, useCache bool) (
 	cache := resources.GetGlobalCache()
 	if cache == nil {
 		// Cache not initialized, fall back to direct call
-		logging.Debug("Resource cache not initialized, using direct gRPC call for node %s", nodeID)
+		logging.Debug("Resource cache not initialized, using direct gRPC call for node %s", logging.FormatNodeID(nodeID))
 		return cp.GetResourcesFromNode(nodeID)
 	}
 	
@@ -320,7 +320,7 @@ func (cp *ClientPool) GetSchedulerServiceClient(nodeID string) (proto.SchedulerS
 	client := proto.NewSchedulerServiceClient(conn)
 	cp.schedulerServiceClients[nodeID] = client
 
-	logging.Debug("Created SchedulerService client for node %s", nodeID)
+	logging.Debug("Created SchedulerService client for node %s", logging.FormatNodeID(nodeID))
 	return client, nil
 }
 
@@ -388,7 +388,7 @@ func (cp *ClientPool) CloseConnection(nodeID string) {
 		delete(cp.connections, nodeID)
 		delete(cp.nodeServiceClients, nodeID)
 		delete(cp.schedulerServiceClients, nodeID)
-		logging.Debug("Closed gRPC connection to node %s", nodeID)
+		logging.Debug("Closed gRPC connection to node %s", logging.FormatNodeID(nodeID))
 	}
 }
 
@@ -400,7 +400,7 @@ func (cp *ClientPool) Close() {
 
 	for nodeID, conn := range cp.connections {
 		conn.Close()
-		logging.Debug("Closed gRPC connection to node %s", nodeID)
+		logging.Debug("Closed gRPC connection to node %s", logging.FormatNodeID(nodeID))
 	}
 
 	cp.connections = make(map[string]*grpcstd.ClientConn)

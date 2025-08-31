@@ -437,7 +437,7 @@ func getNodeHealthStatusDetails(clientPool *grpc.ClientPool, nodeID, serfStatus 
 	if clientPool != nil {
 		grpcRes, err := clientPool.GetHealthFromNode(nodeID)
 		if err != nil {
-			logging.Error("Failed to get health from node '%s': %v", nodeID, err)
+			logging.Error("Failed to get health from node '%s': %v", logging.FormatNodeID(nodeID), err)
 			// Health check failed - return "unknown" rather than Serf status
 			// This indicates the node is reachable via Serf but health is unclear
 			return HealthStatusDetails{

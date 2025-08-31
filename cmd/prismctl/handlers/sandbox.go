@@ -102,7 +102,7 @@ func HandleSandboxCreate(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  Message: %s\n", response.Message)
 	}
 
-	logging.Success("Successfully created sandbox '%s' with ID: %s", response.SandboxName, response.SandboxID)
+	logging.Success("Successfully created sandbox '%s' with ID: %s", response.SandboxName, logging.FormatSandboxID(response.SandboxID))
 	return nil
 }
 
@@ -237,7 +237,7 @@ func HandleSandboxExec(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	logging.Success("Successfully executed command in sandbox '%s' (%s)", sandboxName, internalutils.TruncateIDSafe(resolvedSandboxID))
+	logging.Success("Successfully executed command in sandbox '%s' (%s)", sandboxName, logging.FormatSandboxID(resolvedSandboxID))
 	return nil
 }
 
@@ -298,7 +298,7 @@ func HandleSandboxLogs(cmd *cobra.Command, args []string) error {
 		for _, s := range sandboxes {
 			if s.Name == sandboxIdentifier {
 				targetSandbox = &s
-				logging.Info("Resolved sandbox name '%s' to ID '%s'", sandboxIdentifier, s.ID)
+				logging.Info("Resolved sandbox name '%s' to ID '%s'", sandboxIdentifier, logging.FormatSandboxID(s.ID))
 				break
 			}
 		}
@@ -337,7 +337,7 @@ func HandleSandboxLogs(cmd *cobra.Command, args []string) error {
 		display.DisplaySandboxLogs(sandboxName, resolvedSandboxID, logs, config.Global.Verbose)
 	}
 
-	logging.Success("Successfully retrieved logs for sandbox '%s' (%s)", sandboxName, resolvedSandboxID)
+	logging.Success("Successfully retrieved logs for sandbox '%s' (%s)", sandboxName, logging.FormatSandboxID(resolvedSandboxID))
 	return nil
 }
 
@@ -373,7 +373,7 @@ func HandleSandboxDestroy(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	logging.Info("Destroying sandbox '%s' (%s) from API server: %s", sandboxName, resolvedSandboxID, config.Global.APIAddr)
+	logging.Info("Destroying sandbox '%s' (%s) from API server: %s", sandboxName, logging.FormatSandboxID(resolvedSandboxID), config.Global.APIAddr)
 
 	// Destroy sandbox using resolved ID
 	if err := apiClient.DeleteSandbox(resolvedSandboxID); err != nil {
@@ -382,7 +382,7 @@ func HandleSandboxDestroy(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("Sandbox '%s' (%s) destroyed successfully\n", sandboxName, resolvedSandboxID)
-	logging.Success("Successfully destroyed sandbox '%s' (%s)", sandboxName, resolvedSandboxID)
+	logging.Success("Successfully destroyed sandbox '%s' (%s)", sandboxName, logging.FormatSandboxID(resolvedSandboxID))
 	return nil
 }
 
@@ -438,7 +438,7 @@ func HandleSandboxInfo(cmd *cobra.Command, args []string) error {
 		for _, s := range sandboxes {
 			if s.Name == sandboxIdentifier {
 				targetSandbox = &s
-				logging.Info("Resolved sandbox name '%s' to ID '%s'", sandboxIdentifier, s.ID)
+				logging.Info("Resolved sandbox name '%s' to ID '%s'", sandboxIdentifier, logging.FormatSandboxID(s.ID))
 				break
 			}
 		}
@@ -491,7 +491,7 @@ func resolveSandboxIdentifierExact(sandboxes []client.Sandbox, identifier string
 
 		if len(matches) == 1 {
 			logging.Info("Resolved 12-char ID '%s' to full ID '%s' (sandbox: %s)",
-				identifier, matches[0].ID, matches[0].Name)
+				identifier, logging.FormatSandboxID(matches[0].ID), matches[0].Name)
 			return matches[0].ID, matches[0].Name, nil
 		} else if len(matches) > 1 {
 			logging.Error("12-char ID '%s' matches multiple sandboxes - not unique", identifier)
@@ -578,6 +578,6 @@ func HandleSandboxStop(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("Sandbox '%s' (%s) stopped %s\n", sandboxName, internalutils.TruncateIDSafe(resolvedSandboxID), stopMode)
-	logging.Success("Successfully stopped sandbox '%s' (%s)", sandboxName, resolvedSandboxID)
+	logging.Success("Successfully stopped sandbox '%s' (%s)", sandboxName, logging.FormatSandboxID(resolvedSandboxID))
 	return nil
 }

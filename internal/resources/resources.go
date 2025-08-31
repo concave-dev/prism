@@ -386,7 +386,7 @@ func GetGlobalCache() *ResourceCache {
 // latency can become a bottleneck during batch operations.
 func CachedGatherSystemResources(nodeID, nodeName string, startTime time.Time, raftManager RaftManager, useCache bool) *NodeResources {
 	if !useCache || globalCache == nil {
-		logging.Debug("Cache disabled or unavailable for node %s, using fresh data", nodeID)
+		logging.Debug("Cache disabled or unavailable for node %s, using fresh data", logging.FormatNodeID(nodeID))
 		return GatherSystemResources(nodeID, nodeName, startTime, raftManager)
 	}
 	
@@ -399,7 +399,7 @@ func CachedGatherSystemResources(nodeID, nodeName string, startTime time.Time, r
 	})
 	
 	if err != nil {
-		logging.Warn("Cache lookup failed for node %s, using fresh data: %v", nodeID, err)
+		logging.Warn("Cache lookup failed for node %s, using fresh data: %v", logging.FormatNodeID(nodeID), err)
 		return GatherSystemResources(nodeID, nodeName, startTime, raftManager)
 	}
 	

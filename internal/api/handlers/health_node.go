@@ -59,7 +59,7 @@ func HandleNodeHealth(clientPool *grpc.ClientPool, serfManager *serf.SerfManager
 
 		// Check if node exists by exact ID only (name resolution handled by CLI)
 		if _, exists := serfManager.GetMember(nodeID); !exists {
-			logging.Warn("Node %s not found in Serf cluster", nodeID)
+			logging.Warn("Node %s not found in Serf cluster", logging.FormatNodeID(nodeID))
 			c.JSON(http.StatusNotFound, gin.H{
 				"status":  "error",
 				"message": "Node not found",
@@ -70,7 +70,7 @@ func HandleNodeHealth(clientPool *grpc.ClientPool, serfManager *serf.SerfManager
 		// Query via gRPC
 		grpcRes, err := clientPool.GetHealthFromNode(nodeID)
 		if err != nil {
-			logging.Warn("gRPC health query failed for node %s: %v", nodeID, err)
+			logging.Warn("gRPC health query failed for node %s: %v", logging.FormatNodeID(nodeID), err)
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"status":  "error",
 				"message": fmt.Sprintf("Failed to query node health via gRPC: %v", err),

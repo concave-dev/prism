@@ -114,7 +114,7 @@ func HandleClusterResources(clientPool *grpc.ClientPool, serfManager *serf.SerfM
 		for nodeID := range allMembers {
 			grpcRes, err := clientPool.GetResourcesFromNodeCached(nodeID, useCache)
 			if err != nil {
-				logging.Warn("Failed to get resources from node %s via gRPC: %v", nodeID, err)
+				logging.Warn("Failed to get resources from node %s via gRPC: %v", logging.FormatNodeID(nodeID), err)
 				unreachable = append(unreachable, nodeID)
 				continue
 			}
@@ -189,7 +189,7 @@ func HandleNodeResources(clientPool *grpc.ClientPool, serfManager *serf.SerfMana
 		// Check if node exists by exact ID only (name resolution handled by CLI)
 		_, exists := serfManager.GetMember(nodeID)
 		if !exists {
-			logging.Warn("Node %s not found in Serf cluster", nodeID)
+			logging.Warn("Node %s not found in Serf cluster", logging.FormatNodeID(nodeID))
 			c.JSON(http.StatusNotFound, gin.H{
 				"status":  "error",
 				"message": fmt.Sprintf("Node '%s' not found in cluster", nodeID),
@@ -200,7 +200,7 @@ func HandleNodeResources(clientPool *grpc.ClientPool, serfManager *serf.SerfMana
 		// Query node using gRPC with optional caching - fail fast, no fallbacks
 		grpcRes, err := clientPool.GetResourcesFromNodeCached(nodeID, useCache)
 		if err != nil {
-			logging.Warn("Failed to get resources from node %s via gRPC: %v", nodeID, err)
+			logging.Warn("Failed to get resources from node %s via gRPC: %v", logging.FormatNodeID(nodeID), err)
 			c.JSON(http.StatusServiceUnavailable, gin.H{
 				"status":  "error",
 				"message": fmt.Sprintf("Node '%s' is unreachable via gRPC: %v", nodeID, err),

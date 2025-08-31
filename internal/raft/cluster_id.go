@@ -156,7 +156,7 @@ func (c *ClusterIDCoordinator) ensureClusterID() {
 
 	// Check if cluster ID already exists
 	if clusterID := c.raftManager.GetClusterID(); clusterID != "" {
-		logging.Debug("ClusterID: Cluster ID already exists: %s", clusterID)
+		logging.Debug("ClusterID: Cluster ID already exists: %s", logging.FormatClusterID(clusterID))
 		return
 	}
 
@@ -167,7 +167,7 @@ func (c *ClusterIDCoordinator) ensureClusterID() {
 		return
 	}
 
-	logging.Info("ClusterID: Generating new cluster ID: %s", clusterID)
+	logging.Info("ClusterID: Generating new cluster ID: %s", logging.FormatClusterID(clusterID))
 
 	// Apply cluster ID via Raft consensus
 	if err := c.raftManager.SetClusterID(clusterID); err != nil {
@@ -175,5 +175,5 @@ func (c *ClusterIDCoordinator) ensureClusterID() {
 		return
 	}
 
-	logging.Success("ClusterID: Successfully established cluster ID: %s", clusterID)
+	logging.Success("ClusterID: Successfully established cluster ID: %s", logging.FormatClusterID(clusterID))
 }

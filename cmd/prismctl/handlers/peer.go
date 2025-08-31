@@ -125,7 +125,7 @@ func HandlePeerInfo(cmd *cobra.Command, args []string) error {
 		for i := range resp.Peers {
 			if resp.Peers[i].Name == peerIdentifier {
 				targetPeer = &resp.Peers[i]
-				logging.Info("Resolved peer name '%s' to ID '%s'", peerIdentifier, resp.Peers[i].ID)
+				logging.Info("Resolved peer name '%s' to ID '%s'", peerIdentifier, logging.FormatPeerID(resp.Peers[i].ID))
 				break
 			}
 		}

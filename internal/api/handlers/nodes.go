@@ -35,7 +35,7 @@ func HandleNodeByID(serfManager *serf.SerfManager, raftManager *raft.RaftManager
 		member, exists := members[nodeID]
 
 		if !exists {
-			logging.Warn("Node %s not found in Serf cluster", nodeID)
+			logging.Warn("Node %s not found in Serf cluster", logging.FormatNodeID(nodeID))
 			c.JSON(http.StatusNotFound, gin.H{
 				"status":  "error",
 				"message": "Node not found",
@@ -51,7 +51,7 @@ func HandleNodeByID(serfManager *serf.SerfManager, raftManager *raft.RaftManager
 			var err error
 			raftPeers, err = raftManager.GetPeers()
 			if err != nil {
-				logging.Warn("Failed to get Raft peers for node '%s': %v", nodeID, err)
+				logging.Warn("Failed to get Raft peers for node '%s': %v", logging.FormatNodeID(nodeID), err)
 				// If we can't get Raft peers, log but continue (show all as disconnected)
 				raftPeers = []string{}
 			}
