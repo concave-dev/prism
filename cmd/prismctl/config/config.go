@@ -52,6 +52,7 @@ var Node struct {
 	Watch        bool   // Enable watch mode for live updates
 	StatusFilter string // Filter nodes by status (alive, failed, left)
 	Sort         string // Sort nodes by: uptime, name, score
+	NoCache      bool   // Bypass cache and fetch fresh resource data
 }
 
 // Peer holds configuration specific to Raft peer management commands for distributed

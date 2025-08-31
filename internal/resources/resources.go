@@ -27,8 +27,10 @@
 package resources
 
 import (
+	"context"
 	"encoding/json"
 	"runtime"
+	"sync"
 	"time"
 
 	"github.com/concave-dev/prism/internal/logging"
@@ -342,4 +344,64 @@ func CalculateNodeScore(resources *NodeResources, raftManager RaftManager) float
 	}
 
 	return finalScore
+}
+
+// Global cache instance (initialized by components that need it)
+var globalCache *ResourceCache
+var cacheOnce sync.Once
+
+// SetGlobalCache initializes the global resource cache instance.
+// This is called during daemon startup to establish a shared cache
+// across all components that need resource information.
+//
+// Thread-safe and idempotent - subsequent calls are ignored to prevent
+// cache reinitialization and ensure consistent cache behavior.
+func SetGlobalCache(config CacheConfig) {
+	cacheOnce.Do(func() {
+		globalCache = NewResourceCache(config)
+		logging.Info("Global resource cache initialized with TTL: %v, Refresh: %v", 
+			config.TTL, config.RefreshRate)
+	})
+}
+
+// GetGlobalCache returns the global cache instance.
+// Returns nil if SetGlobalCache has not been called yet.
+//
+// Safe to call from any goroutine and used by components throughout
+// the system to access cached resource information.
+func GetGlobalCache() *ResourceCache {
+	return globalCache
+}
+
+// CachedGatherSystemResources returns cached resources if available,
+// otherwise gathers fresh resources and caches them for future use.
+// This is the cache-aware version of GatherSystemResources.
+//
+// Cache behavior:
+// - If useCache is false, always gathers fresh data (for debugging/monitoring)
+// - If cache is not initialized, falls back to fresh data gathering
+// - Otherwise uses intelligent caching with stale-while-revalidate pattern
+//
+// Essential for high-throughput scheduling scenarios where resource gathering
+// latency can become a bottleneck during batch operations.
+func CachedGatherSystemResources(nodeID, nodeName string, startTime time.Time, raftManager RaftManager, useCache bool) *NodeResources {
+	if !useCache || globalCache == nil {
+		logging.Debug("Cache disabled or unavailable for node %s, using fresh data", nodeID)
+		return GatherSystemResources(nodeID, nodeName, startTime, raftManager)
+	}
+	
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	
+	resources, err := globalCache.GetResources(ctx, nodeID, func() (*NodeResources, error) {
+		freshResources := GatherSystemResources(nodeID, nodeName, startTime, raftManager)
+		return freshResources, nil
+	})
+	
+	if err != nil {
+		logging.Warn("Cache lookup failed for node %s, using fresh data: %v", nodeID, err)
+		return GatherSystemResources(nodeID, nodeName, startTime, raftManager)
+	}
+	
+	return resources
 }

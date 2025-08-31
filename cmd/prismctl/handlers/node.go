@@ -107,7 +107,7 @@ func HandleNodeTop(cmd *cobra.Command, args []string) error {
 
 		// Create API client and get both cluster resources and members
 		apiClient := client.CreateAPIClient()
-		resources, err := apiClient.GetClusterResources(config.Node.Sort)
+		resources, err := apiClient.GetClusterResources(config.Node.Sort, config.Node.NoCache)
 		if err != nil {
 			logging.Error("Failed to fetch cluster resources: %v", err)
 			return err
@@ -195,7 +195,7 @@ func HandleNodeInfo(cmd *cobra.Command, args []string) error {
 	}
 
 	// Get node resources using resolved ID
-	resource, err := apiClient.GetNodeResources(resolvedNodeID)
+	resource, err := apiClient.GetNodeResources(resolvedNodeID, config.Node.NoCache)
 	if err != nil {
 		logging.Error("Failed to fetch node resources for '%s': %v", nodeIdentifier, err)
 		return err

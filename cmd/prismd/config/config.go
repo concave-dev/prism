@@ -41,6 +41,8 @@
 package config
 
 import (
+	"time"
+
 	configDefaults "github.com/concave-dev/prism/internal/config"
 )
 
@@ -87,12 +89,29 @@ type Config struct {
 	BootstrapExpect int      // Expected number of nodes for cluster formation (0 = disabled)
 	MaxPorts        int      // Maximum number of ports to try when finding available ports (default: 100)
 
+	// Resource Cache configuration for performance optimization
+	ResourceCache ResourceCacheConfig `yaml:"resource_cache" mapstructure:"resource_cache"`
+
 	// Flags to track if values were explicitly set by user
 	serfExplicitlySet     bool
 	raftAddrExplicitlySet bool
 	grpcAddrExplicitlySet bool
 	apiAddrExplicitlySet  bool
 	dataDirExplicitlySet  bool
+}
+
+// ResourceCacheConfig holds configuration for the resource caching system.
+// Enables fine-tuning of cache behavior for optimal performance vs data freshness
+// trade-offs based on cluster characteristics and scheduling requirements.
+//
+// Default values are optimized for typical cluster sizes (3-10 nodes) with
+// moderate network latency and high scheduling throughput requirements.
+type ResourceCacheConfig struct {
+	Enabled       bool          `yaml:"enabled" mapstructure:"enabled"`             // Global cache enable/disable
+	TTL           time.Duration `yaml:"ttl" mapstructure:"ttl"`                     // How long cache entries are valid
+	RefreshRate   time.Duration `yaml:"refresh_rate" mapstructure:"refresh_rate"`   // How often to refresh in background  
+	MaxStaleTime  time.Duration `yaml:"max_stale_time" mapstructure:"max_stale_time"` // Max time to serve stale data
+	MaxErrorCount int           `yaml:"max_error_count" mapstructure:"max_error_count"` // Max errors before marking node as failed
 }
 
 // Global configuration instance

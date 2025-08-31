@@ -190,13 +190,25 @@ func (s *NaiveScheduler) ScheduleSandbox(sandboxID string) error {
 }
 
 // gatherClusterResources collects resource information from all available
-// cluster nodes via gRPC calls. Handles node failures gracefully by
-// continuing with available nodes rather than failing entire scheduling.
+// cluster nodes with intelligent caching support. Uses cached data by default
+// for optimal performance during high-load scheduling scenarios.
 //
 // Uses concurrent resource collection with timeouts to minimize scheduling
 // latency while maintaining resilience against slow or unresponsive nodes.
 // Essential for resource-aware placement decisions in distributed scheduling.
 func (s *NaiveScheduler) gatherClusterResources() (map[string]*resources.NodeResources, error) {
+	return s.gatherClusterResourcesWithCache(true) // Use cache by default
+}
+
+// gatherClusterResourcesWithCache collects resource information with optional caching.
+// When useCache is true, leverages the global resource cache to minimize gRPC calls
+// and improve scheduling performance during high-load scenarios.
+//
+// Cache benefits:
+// - Reduces gRPC calls from N*sandboxes to ~constant during batch operations
+// - Maintains sub-millisecond scheduling latency under load
+// - Provides stale-while-revalidate for optimal performance vs freshness trade-off
+func (s *NaiveScheduler) gatherClusterResourcesWithCache(useCache bool) (map[string]*resources.NodeResources, error) {
 	if s.serfManager == nil {
 		return nil, fmt.Errorf("serf manager not available for node discovery")
 	}
@@ -225,11 +237,18 @@ func (s *NaiveScheduler) gatherClusterResources() (map[string]*resources.NodeRes
 		return nil, fmt.Errorf("gRPC client pool not available for resource collection")
 	}
 
+	// Log cache usage for debugging and monitoring
+	if useCache {
+		logging.Debug("Scheduler: Using cached resource collection for %d nodes", len(aliveMembers))
+	} else {
+		logging.Debug("Scheduler: Using fresh resource collection for %d nodes", len(aliveMembers))
+	}
+
 	// TODO: Implement concurrent resource collection for better performance
 	// For v0, collect resources sequentially to keep implementation simple
 	for nodeID := range aliveMembers {
-		// Skip if we can't get gRPC client (node may be unreachable)
-		grpcRes, err := s.grpcPool.GetResourcesFromNode(nodeID)
+		// Use cached version of gRPC call for better performance
+		grpcRes, err := s.grpcPool.GetResourcesFromNodeCached(nodeID, useCache)
 		if err != nil {
 			logging.Warn("Scheduler: Failed to get resources from node %s: %v", nodeID, err)
 			continue
@@ -278,10 +297,15 @@ func (s *NaiveScheduler) gatherClusterResources() (map[string]*resources.NodeRes
 		}
 
 		nodeResources[nodeID] = nodeRes
-		logging.Debug("Scheduler: Collected resources from node %s (score: %.1f)", nodeID, nodeRes.Score)
+		cacheStatus := "fresh"
+		if useCache {
+			cacheStatus = "cached"
+		}
+		logging.Debug("Scheduler: Collected %s resources from node %s (score: %.1f)", cacheStatus, nodeID, nodeRes.Score)
 	}
 
-	logging.Info("Scheduler: Collected resources from %d of %d alive nodes", len(nodeResources), len(aliveMembers))
+	logging.Info("Scheduler: Collected %s resources from %d of %d alive nodes", 
+		map[bool]string{true: "cached", false: "fresh"}[useCache], len(nodeResources), len(aliveMembers))
 	return nodeResources, nil
 }
 

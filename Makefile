@@ -101,23 +101,23 @@ run-cluster: build stop
 	echo "=== Starting Prism cluster with $$NODES nodes (MAX_PORTS: $$MAX_PORTS) ==="; \
 	if [ $$NODES -eq 1 ]; then \
 		echo "Starting single bootstrap node..."; \
-		MAX_PORTS=$$MAX_PORTS $(PRISMD) --bootstrap & \
+		DEBUG=true MAX_PORTS=$$MAX_PORTS $(PRISMD) --bootstrap & \
 		echo "Single node cluster started! Use 'make stop' to stop."; \
 	else \
 		echo "Using bootstrap-expect mode for $$NODES nodes..."; \
 		echo "Starting first 3 nodes (bootstrap cluster)..."; \
-		MAX_PORTS=$$MAX_PORTS $(PRISMD) --serf=0.0.0.0:4200 --bootstrap-expect=3 --join=0.0.0.0:4200,0.0.0.0:4201,0.0.0.0:4202 & \
+		DEBUG=true MAX_PORTS=$$MAX_PORTS $(PRISMD) --serf=0.0.0.0:4200 --bootstrap-expect=3 --join=0.0.0.0:4200,0.0.0.0:4201,0.0.0.0:4202 & \
 		sleep 5; \
-		MAX_PORTS=$$MAX_PORTS $(PRISMD) --serf=0.0.0.0:4201 --bootstrap-expect=3 --join=0.0.0.0:4200,0.0.0.0:4201,0.0.0.0:4202 & \
+		DEBUG=true MAX_PORTS=$$MAX_PORTS $(PRISMD) --serf=0.0.0.0:4201 --bootstrap-expect=3 --join=0.0.0.0:4200,0.0.0.0:4201,0.0.0.0:4202 & \
 		sleep 5; \
-		MAX_PORTS=$$MAX_PORTS $(PRISMD) --serf=0.0.0.0:4202 --bootstrap-expect=3 --join=0.0.0.0:4200,0.0.0.0:4201,0.0.0.0:4202 & \
+		DEBUG=true MAX_PORTS=$$MAX_PORTS $(PRISMD) --serf=0.0.0.0:4202 --bootstrap-expect=3 --join=0.0.0.0:4200,0.0.0.0:4201,0.0.0.0:4202 & \
 		echo "Waiting 15 seconds for initial 3-node cluster to form and elect leader..."; \
 		sleep 15; \
 		if [ $$NODES -gt 3 ]; then \
 			echo "Adding remaining $$(($$NODES-3)) nodes to established cluster..."; \
 			for i in $$(seq 4 $$NODES); do \
 				echo "Starting node $$i/$$NODES (joining established cluster)..."; \
-				MAX_PORTS=$$MAX_PORTS $(PRISMD) --join=0.0.0.0:4200 & \
+				DEBUG=true MAX_PORTS=$$MAX_PORTS $(PRISMD) --join=0.0.0.0:4200 & \
 				sleep 4; \
 			done; \
 		fi; \

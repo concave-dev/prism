@@ -27,13 +27,16 @@ import (
 	"fmt"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/concave-dev/prism/internal/grpc/proto"
 	"github.com/concave-dev/prism/internal/logging"
+	"github.com/concave-dev/prism/internal/resources"
 	"github.com/concave-dev/prism/internal/serf"
 	"golang.org/x/sync/singleflight"
 	grpcstd "google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // ClientPool manages gRPC connections to cluster nodes for efficient inter-node
@@ -206,6 +209,54 @@ func (cp *ClientPool) GetResourcesFromNode(nodeID string) (*proto.GetResourcesRe
 	return client.GetResources(ctx, req)
 }
 
+// GetResourcesFromNodeCached queries resource information with optional caching
+// support. When useCache is true, attempts to return cached data if available,
+// otherwise falls back to direct gRPC calls.
+//
+// Cache behavior:
+// - useCache=false: Always makes direct gRPC call (for debugging/monitoring)
+// - useCache=true: Uses global cache with stale-while-revalidate pattern
+// - Cache miss: Fetches fresh data and populates cache for future requests
+//
+// Essential for high-throughput scheduling where resource gathering latency
+// can become a significant bottleneck during batch operations.
+func (cp *ClientPool) GetResourcesFromNodeCached(nodeID string, useCache bool) (*proto.GetResourcesResponse, error) {
+	// Direct path when cache is disabled
+	if !useCache {
+		return cp.GetResourcesFromNode(nodeID)
+	}
+	
+	// Import resources package for cache access
+	cache := resources.GetGlobalCache()
+	if cache == nil {
+		// Cache not initialized, fall back to direct call
+		logging.Debug("Resource cache not initialized, using direct gRPC call for node %s", nodeID)
+		return cp.GetResourcesFromNode(nodeID)
+	}
+	
+	ctx, cancel := context.WithTimeout(context.Background(), cp.config.ResourceCallTimeout)
+	defer cancel()
+	
+	// Use cache with conversion between internal and proto types
+	nodeRes, err := cache.GetResources(ctx, nodeID, func() (*resources.NodeResources, error) {
+		// Fetch fresh data via gRPC and convert to internal format
+		resp, err := cp.GetResourcesFromNode(nodeID)
+		if err != nil {
+			return nil, err
+		}
+		
+		// Convert proto response to NodeResources
+		return protoToNodeResources(resp), nil
+	})
+	
+	if err != nil {
+		return nil, err
+	}
+	
+	// Convert back to proto response for caller
+	return nodeResourcesToProto(nodeRes), nil
+}
+
 // GetHealthFromNode queries health information from a specific node via gRPC.
 // Uses configured client call timeout which is greater than server health check timeout
 // to prevent race conditions and ensure proper error handling.
@@ -355,4 +406,100 @@ func (cp *ClientPool) Close() {
 	cp.connections = make(map[string]*grpcstd.ClientConn)
 	cp.nodeServiceClients = make(map[string]proto.NodeServiceClient)
 	cp.schedulerServiceClients = make(map[string]proto.SchedulerServiceClient)
+}
+
+// protoToNodeResources converts a gRPC GetResourcesResponse to internal NodeResources format.
+// Used by the caching system to store resource data in the cache using internal types.
+func protoToNodeResources(resp *proto.GetResourcesResponse) *resources.NodeResources {
+	return &resources.NodeResources{
+		NodeID:    resp.NodeId,
+		NodeName:  resp.NodeName,
+		Timestamp: resp.Timestamp.AsTime(),
+
+		// CPU Information
+		CPUCores:     int(resp.CpuCores),
+		CPUUsage:     resp.CpuUsage,
+		CPUAvailable: resp.CpuAvailable,
+
+		// Memory Information
+		MemoryTotal:     resp.MemoryTotal,
+		MemoryUsed:      resp.MemoryUsed,
+		MemoryAvailable: resp.MemoryAvailable,
+		MemoryUsage:     resp.MemoryUsage,
+
+		// Disk Information
+		DiskTotal:     resp.DiskTotal,
+		DiskUsed:      resp.DiskUsed,
+		DiskAvailable: resp.DiskAvailable,
+		DiskUsage:     resp.DiskUsage,
+
+		// Go Runtime Information
+		GoRoutines: int(resp.GoRoutines),
+		GoMemAlloc: resp.GoMemAlloc,
+		GoMemSys:   resp.GoMemSys,
+		GoGCCycles: resp.GoGcCycles,
+		GoGCPause:  resp.GoGcPause,
+
+		// Node Status
+		Uptime: time.Duration(resp.UptimeSeconds) * time.Second,
+		Load1:  resp.Load1,
+		Load5:  resp.Load5,
+		Load15: resp.Load15,
+
+		// Capacity Limits
+		MaxJobs:        int(resp.MaxJobs),
+		CurrentJobs:    int(resp.CurrentJobs),
+		AvailableSlots: int(resp.AvailableSlots),
+
+		// Resource Score
+		Score: resp.Score,
+	}
+}
+
+// nodeResourcesToProto converts internal NodeResources to gRPC GetResourcesResponse format.
+// Used by the caching system to return cached data in the expected proto format.
+func nodeResourcesToProto(res *resources.NodeResources) *proto.GetResourcesResponse {
+	return &proto.GetResourcesResponse{
+		NodeId:    res.NodeID,
+		NodeName:  res.NodeName,
+		Timestamp: timestamppb.New(res.Timestamp),
+
+		// CPU Information
+		CpuCores:     int32(res.CPUCores),
+		CpuUsage:     res.CPUUsage,
+		CpuAvailable: res.CPUAvailable,
+
+		// Memory Information
+		MemoryTotal:     res.MemoryTotal,
+		MemoryUsed:      res.MemoryUsed,
+		MemoryAvailable: res.MemoryAvailable,
+		MemoryUsage:     res.MemoryUsage,
+
+		// Disk Information
+		DiskTotal:     res.DiskTotal,
+		DiskUsed:      res.DiskUsed,
+		DiskAvailable: res.DiskAvailable,
+		DiskUsage:     res.DiskUsage,
+
+		// Go Runtime Information
+		GoRoutines: int32(res.GoRoutines),
+		GoMemAlloc: res.GoMemAlloc,
+		GoMemSys:   res.GoMemSys,
+		GoGcCycles: res.GoGCCycles,
+		GoGcPause:  res.GoGCPause,
+
+		// Node Status
+		UptimeSeconds: int64(res.Uptime.Seconds()),
+		Load1:         res.Load1,
+		Load5:         res.Load5,
+		Load15:        res.Load15,
+
+		// Capacity Limits
+		MaxJobs:        int32(res.MaxJobs),
+		CurrentJobs:    int32(res.CurrentJobs),
+		AvailableSlots: int32(res.AvailableSlots),
+
+		// Resource Score
+		Score: res.Score,
+	}
 }

@@ -97,18 +97,22 @@ func formatDuration(d time.Duration) string {
 	}
 }
 
-// HandleClusterResources returns resources from all cluster nodes using gRPC exclusively.
-// Returns partial results with unreachable nodes listed for transparency.
+// HandleClusterResources returns resources from all cluster nodes using gRPC with
+// intelligent caching support. Returns partial results with unreachable nodes listed 
+// for transparency. Supports `no_cache=true` query parameter to bypass cache.
 func HandleClusterResources(clientPool *grpc.ClientPool, serfManager *serf.SerfManager) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// Check if cache should be bypassed
+		useCache := c.Query("no_cache") != "true" // Default to using cache
+		
 		// Get all cluster members from serf for node discovery
 		allMembers := serfManager.GetMembers()
 		var resList []NodeResourcesResponse
 		var unreachable []string
 
-		// Query all nodes using gRPC - fail fast, no fallbacks
+		// Query all nodes using gRPC with optional caching - fail fast, no fallbacks
 		for nodeID := range allMembers {
-			grpcRes, err := clientPool.GetResourcesFromNode(nodeID)
+			grpcRes, err := clientPool.GetResourcesFromNodeCached(nodeID, useCache)
 			if err != nil {
 				logging.Warn("Failed to get resources from node %s via gRPC: %v", nodeID, err)
 				unreachable = append(unreachable, nodeID)
@@ -164,8 +168,9 @@ func HandleClusterResources(clientPool *grpc.ClientPool, serfManager *serf.SerfM
 	}
 }
 
-// HandleNodeResources returns resources from a specific node using gRPC exclusively.
-// Returns 503 Service Unavailable if the node cannot be reached via gRPC.
+// HandleNodeResources returns resources from a specific node using gRPC with
+// intelligent caching support. Returns 503 Service Unavailable if the node cannot 
+// be reached via gRPC. Supports `no_cache=true` query parameter to bypass cache.
 func HandleNodeResources(clientPool *grpc.ClientPool, serfManager *serf.SerfManager) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		nodeID := c.Param("id")
@@ -178,6 +183,9 @@ func HandleNodeResources(clientPool *grpc.ClientPool, serfManager *serf.SerfMana
 			return
 		}
 
+		// Check if cache should be bypassed
+		useCache := c.Query("no_cache") != "true" // Default to using cache
+
 		// Check if node exists by exact ID only (name resolution handled by CLI)
 		_, exists := serfManager.GetMember(nodeID)
 		if !exists {
@@ -189,8 +197,8 @@ func HandleNodeResources(clientPool *grpc.ClientPool, serfManager *serf.SerfMana
 			return
 		}
 
-		// Query node using gRPC - fail fast, no fallbacks
-		grpcRes, err := clientPool.GetResourcesFromNode(nodeID)
+		// Query node using gRPC with optional caching - fail fast, no fallbacks
+		grpcRes, err := clientPool.GetResourcesFromNodeCached(nodeID, useCache)
 		if err != nil {
 			logging.Warn("Failed to get resources from node %s via gRPC: %v", nodeID, err)
 			c.JSON(http.StatusServiceUnavailable, gin.H{

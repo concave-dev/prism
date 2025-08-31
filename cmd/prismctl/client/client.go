@@ -597,14 +597,14 @@ func (api *PrismAPIClient) GetRaftPeers() (*RaftPeersResponse, error) {
 }
 
 // GetClusterResources fetches comprehensive resource utilization data for all cluster
-// nodes from the daemon API with optional sorting capabilities. Validates sort parameters
-// and handles complex resource data parsing for capacity management operations.
+// nodes from the daemon API with optional sorting and caching capabilities. Validates 
+// sort parameters and handles complex resource data parsing for capacity management operations.
 //
 // Provides complete cluster resource visibility enabling capacity planning, performance
 // monitoring, and workload placement decisions. Supports multiple sorting options for
-// operational convenience and handles API communication errors gracefully with
-// detailed error messages for resource monitoring troubleshooting.
-func (api *PrismAPIClient) GetClusterResources(sortBy string) ([]NodeResources, error) {
+// operational convenience and cache bypass for debugging. Handles API communication 
+// errors gracefully with detailed error messages for resource monitoring troubleshooting.
+func (api *PrismAPIClient) GetClusterResources(sortBy string, noCache bool) ([]NodeResources, error) {
 	var response APIResponse
 
 	req := api.client.R().SetResult(&response)
@@ -615,6 +615,9 @@ func (api *PrismAPIClient) GetClusterResources(sortBy string) ([]NodeResources, 
 			return nil, fmt.Errorf("invalid sort parameter '%s'. Valid options: name, score, uptime", sortBy)
 		}
 		req.SetQueryParam("sort", sortBy)
+	}
+	if noCache {
+		req.SetQueryParam("no_cache", "true")
 	}
 	resp, err := req.Get("/cluster/resources")
 
@@ -677,19 +680,22 @@ func (api *PrismAPIClient) GetClusterResources(sortBy string) ([]NodeResources, 
 }
 
 // GetNodeResources fetches detailed resource utilization and capacity information
-// for a specific cluster node from the daemon API. Handles node identification,
-// API response parsing, and error conditions including node-not-found scenarios.
+// for a specific cluster node from the daemon API with optional cache bypass.
+// Handles node identification, API response parsing, and error conditions including 
+// node-not-found scenarios.
 //
 // Enables targeted node resource monitoring and capacity assessment for individual
 // cluster members. Provides comprehensive resource data for node-level analysis,
 // performance troubleshooting, and capacity planning decisions with proper error
-// handling for missing or unreachable nodes.
-func (api *PrismAPIClient) GetNodeResources(nodeID string) (*NodeResources, error) {
+// handling for missing or unreachable nodes. Supports cache bypass for debugging.
+func (api *PrismAPIClient) GetNodeResources(nodeID string, noCache bool) (*NodeResources, error) {
 	var response APIResponse
 
-	resp, err := api.client.R().
-		SetResult(&response).
-		Get(fmt.Sprintf("/nodes/%s/resources", nodeID))
+	req := api.client.R().SetResult(&response)
+	if noCache {
+		req.SetQueryParam("no_cache", "true")
+	}
+	resp, err := req.Get(fmt.Sprintf("/nodes/%s/resources", nodeID))
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to API server at %s: %w", api.baseURL, err)

@@ -81,6 +81,9 @@ including CPU cores, memory usage, job capacity, and runtime statistics.`,
   # Show verbose output including goroutines
   prismctl --verbose node top
 
+  # Fetch fresh data bypassing cache (for debugging)
+  prismctl node top --no-cache
+
   # Show resource overview from specific API server
   prismctl --api=192.168.1.100:8008 node top
   
@@ -139,7 +142,7 @@ func GetNodeCommands() (*cobra.Command, *cobra.Command, *cobra.Command) {
 
 // SetupNodeFlags configures flags for node commands
 func SetupNodeFlags(nodeLsCmd, nodeTopCmd, nodeInfoCmd *cobra.Command,
-	watchPtr *bool, statusFilterPtr *string, sortPtr *string) {
+	watchPtr *bool, statusFilterPtr *string, sortPtr *string, noCachePtr *bool) {
 	// Add flags to node ls command
 	nodeLsCmd.Flags().BoolVarP(watchPtr, "watch", "w", false,
 		"Watch for changes and continuously update the display")
@@ -152,6 +155,13 @@ func SetupNodeFlags(nodeLsCmd, nodeTopCmd, nodeInfoCmd *cobra.Command,
 
 	nodeTopCmd.Flags().StringVar(sortPtr, "sort", "uptime",
 		"Sort nodes by: uptime, name, score")
+		
+	nodeTopCmd.Flags().BoolVar(noCachePtr, "no-cache", false,
+		"Fetch fresh resource data instead of using cache (for debugging)")
+
+	// Add --no-cache flag to node info command for consistency
+	nodeInfoCmd.Flags().BoolVar(noCachePtr, "no-cache", false,
+		"Fetch fresh resource data instead of using cache (for debugging)")
 
 	// Note: verbose flag is now handled globally via --verbose/-v
 	// No node-specific verbose flags to avoid ambiguity

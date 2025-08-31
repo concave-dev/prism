@@ -59,7 +59,7 @@ func init() {
 	// Setup node command flags
 	nodeLsCmd, nodeTopCmd, nodeInfoCmd := commands.GetNodeCommands()
 	commands.SetupNodeFlags(nodeLsCmd, nodeTopCmd, nodeInfoCmd,
-		&config.Node.Watch, &config.Node.StatusFilter, &config.Node.Sort)
+		&config.Node.Watch, &config.Node.StatusFilter, &config.Node.Sort, &config.Node.NoCache)
 
 	// Setup peer command flags
 	peerLsCmd, peerInfoCmd := commands.GetPeerCommands()

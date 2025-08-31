@@ -49,6 +49,36 @@ func InitializeConfig() {
 			logging.Warn("Invalid MAX_PORTS environment variable '%s', using default: %d", maxPortsEnv, Global.MaxPorts)
 		}
 	}
+
+	// Initialize Resource Cache configuration with performance-optimized defaults
+	if Global.ResourceCache.TTL == 0 {
+		Global.ResourceCache.Enabled = true
+		Global.ResourceCache.TTL = 10 * time.Second      // Cache entries valid for 10 seconds
+		Global.ResourceCache.RefreshRate = 5 * time.Second  // Refresh every 5 seconds to keep cache warm
+		Global.ResourceCache.MaxStaleTime = 30 * time.Second // Serve stale data up to 30 seconds during failures
+		Global.ResourceCache.MaxErrorCount = 3           // Mark node as failed after 3 consecutive errors
+		logging.Debug("Resource cache initialized with defaults: TTL=%v, RefreshRate=%v, MaxStaleTime=%v", 
+			Global.ResourceCache.TTL, Global.ResourceCache.RefreshRate, Global.ResourceCache.MaxStaleTime)
+	}
+	
+	// Environment variable overrides for resource cache
+	if cacheEnabledEnv := os.Getenv("PRISM_CACHE_ENABLED"); cacheEnabledEnv != "" {
+		if cacheEnabled, err := strconv.ParseBool(cacheEnabledEnv); err == nil {
+			Global.ResourceCache.Enabled = cacheEnabled
+			logging.Info("PRISM_CACHE_ENABLED environment variable detected, setting cache enabled to %v", cacheEnabled)
+		} else {
+			logging.Warn("Invalid PRISM_CACHE_ENABLED environment variable '%s', using default: %v", cacheEnabledEnv, Global.ResourceCache.Enabled)
+		}
+	}
+	
+	if cacheTTLEnv := os.Getenv("PRISM_CACHE_TTL"); cacheTTLEnv != "" {
+		if cacheTTL, err := time.ParseDuration(cacheTTLEnv); err == nil {
+			Global.ResourceCache.TTL = cacheTTL
+			logging.Info("PRISM_CACHE_TTL environment variable detected, setting cache TTL to %v", cacheTTL)
+		} else {
+			logging.Warn("Invalid PRISM_CACHE_TTL environment variable '%s', using default: %v", cacheTTLEnv, Global.ResourceCache.TTL)
+		}
+	}
 }
 
 // ValidateConfig performs comprehensive validation and normalization of all daemon
