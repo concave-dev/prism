@@ -37,6 +37,27 @@ import (
 	"github.com/concave-dev/prism/internal/logging"
 )
 
+// formatDuration formats a duration into a human-readable format for logging.
+// Examples: "2.5s", "1.2m", "3.4h", "2d5h"
+func formatDuration(d time.Duration) string {
+	if d < time.Second {
+		return fmt.Sprintf("%.0fms", float64(d.Nanoseconds())/1e6)
+	} else if d < time.Minute {
+		return fmt.Sprintf("%.1fs", d.Seconds())
+	} else if d < time.Hour {
+		return fmt.Sprintf("%.1fm", d.Minutes())
+	} else if d < 24*time.Hour {
+		return fmt.Sprintf("%.1fh", d.Hours())
+	} else {
+		days := int(d.Hours() / 24)
+		hours := d.Hours() - float64(days*24)
+		if hours < 1 {
+			return fmt.Sprintf("%dd", days)
+		}
+		return fmt.Sprintf("%dd%.0fh", days, hours)
+	}
+}
+
 // ResourceCache manages cached node resource information with intelligent
 // refresh and invalidation strategies. Designed for high-throughput scheduling
 // scenarios where rapid resource lookups are critical for performance.
@@ -150,15 +171,15 @@ func (rc *ResourceCache) GetResources(ctx context.Context, nodeID string, fetchF
 		// Check if cached data is still fresh
 		if !cached.Stale && now.Sub(cached.CachedAt) <= rc.config.TTL {
 			atomic.AddInt64(&rc.hitCount, 1)
-			logging.Debug("Cache hit for node %s (age: %v)", nodeID, now.Sub(cached.CachedAt))
+			logging.Debug("Cache hit for node %s (age: %s)", nodeID, formatDuration(now.Sub(cached.CachedAt)))
 			return cached.Resources, nil
 		}
 
 		// Data is stale but within acceptable staleness window
 		if now.Sub(cached.CachedAt) <= rc.config.MaxStaleTime {
 			atomic.AddInt64(&rc.hitCount, 1)
-			logging.Debug("Cache stale hit for node %s (age: %v), triggering background refresh", 
-				nodeID, now.Sub(cached.CachedAt))
+			logging.Debug("Cache stale hit for node %s (age: %s), triggering background refresh", 
+				nodeID, formatDuration(now.Sub(cached.CachedAt)))
 			
 			// Trigger background refresh but return stale data immediately
 			go rc.refreshNode(nodeID, fetchFunc)
