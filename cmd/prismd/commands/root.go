@@ -105,8 +105,16 @@ Auto-configures network addresses and data directory when not explicitly specifi
 		logging.SetLevel(config.Global.LogLevel)
 		// Initialize configuration from environment variables and defaults
 		config.InitializeConfig()
-		// Validate configuration
-		return config.ValidateConfig()
+		// Re-apply logging level after config initialization to pick up
+		// any environment variable overrides that may have changed the log level
+		logging.SetLevel(config.Global.LogLevel)
+		// Validate configuration and ensure log file cleanup on validation failure
+		if err := config.ValidateConfig(); err != nil {
+			// Close log file handle if validation fails to prevent resource leak
+			CleanupLogFile()
+			return err
+		}
+		return nil
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Ensure log file cleanup on exit
