@@ -124,18 +124,6 @@ run-cluster: build stop
 		echo "Cluster will form once all $$NODES nodes are discovered. Use 'make stop' to stop all nodes."; \
 	fi
 
-bootstrap-expect: build stop
-	@echo "=== Starting Prism cluster with bootstrap-expect (3 nodes) ==="
-	@echo "Starting first node (bootstrap seed)..."
-	@$(PRISMD) --bootstrap-expect=3 &
-	@sleep 5
-	@echo "Starting second node (joining cluster)..."
-	@$(PRISMD) --bootstrap-expect=3 --join=0.0.0.0:4200 &
-	@sleep 5
-	@echo "Starting third node (joining cluster)..."
-	@$(PRISMD) --bootstrap-expect=3 --join=0.0.0.0:4200 &
-	@echo "Cluster will form once all 3 nodes are discovered. Use 'make stop' to stop all nodes."
-
 # Pattern rule for any number of nodes: make run-N
 run-%:
 	@$(MAKE) run-cluster NODES=$*
