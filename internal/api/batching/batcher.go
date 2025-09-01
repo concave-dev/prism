@@ -404,6 +404,7 @@ func (b *Batcher) processPendingCreates(batch []Item) {
 	for {
 		select {
 		case item := <-b.createQueue:
+			atomic.AddInt64(&b.createQueueSize, -1)
 			batch = append(batch, item)
 		default:
 			if len(batch) > 0 {
@@ -420,6 +421,7 @@ func (b *Batcher) processPendingDeletes(batch []Item) {
 	for {
 		select {
 		case item := <-b.deleteQueue:
+			atomic.AddInt64(&b.deleteQueueSize, -1)
 			batch = append(batch, item)
 		default:
 			if len(batch) > 0 {
