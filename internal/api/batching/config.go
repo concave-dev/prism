@@ -54,6 +54,10 @@ func DefaultConfig() *Config {
 // performance. Validates that timing parameters are sensible for real-world
 // operational requirements.
 func (c *Config) Validate() error {
+	if !c.Enabled {
+		return nil
+	}
+
 	if c.CreateQueueSize <= 0 {
 		return fmt.Errorf("create queue size must be positive, got %d", c.CreateQueueSize)
 	}
