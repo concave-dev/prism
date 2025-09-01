@@ -217,20 +217,24 @@ The sandbox can be resumed later (future feature) or deleted permanently.`,
 
 // Sandbox rm command
 var sandboxRmCmd = &cobra.Command{
-	Use:   "rm SANDBOX_ID_OR_NAME",
+	Use:   "rm SANDBOX_ID_OR_NAME [flags]",
 	Short: "Delete a sandbox from the cluster",
 	Long: `Delete a sandbox from the Prism cluster.
 
 Removes the sandbox and cleans up all associated state including execution
 history, file system, and resource tracking. This operation cannot be undone.
 
-SAFETY: You can specify either the exact sandbox ID or exact sandbox name.
+SAFETY: Running sandboxes must be stopped before deletion unless --force is used.
+You can specify either the exact sandbox ID or exact sandbox name.
 Partial ID matching is disabled for deletion operations.`,
 	Example: `  # Delete by exact sandbox ID
   prismctl sandbox rm a1b2c3d4e5f6
 
   # Delete by exact sandbox name
-  prismctl sandbox rm my-sandbox-name`,
+  prismctl sandbox rm my-sandbox-name
+
+  # Force delete a running sandbox (stop then delete)
+  prismctl sandbox rm my-sandbox-name --force`,
 	Args: func(cmd *cobra.Command, args []string) error {
 		if len(args) != 1 {
 			cmd.Help()

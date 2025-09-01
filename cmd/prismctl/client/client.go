@@ -31,6 +31,7 @@ package client
 
 import (
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/concave-dev/prism/cmd/prismctl/config"
@@ -981,15 +982,16 @@ func (api *PrismAPIClient) GetSandboxLogs(sandboxID string) ([]string, error) {
 }
 
 // DeleteSandbox deletes a code execution sandbox via the daemon API performing
-// complete cleanup of sandbox resources and metadata. Handles sandbox identification,
-// deletion coordination, and various API response scenarios.
+// complete cleanup of sandbox resources and metadata. Enforces stop-before-delete
+// safety unless force=true, which stops running sandboxes before deletion.
 //
 // Completes sandbox lifecycle by cleaning up code execution environments and
 // freeing cluster resources. Handles deletion validation, leader redirection,
 // and cleanup confirmation with proper error handling for missing sandboxes
-// and deletion operation failures.
-func (api *PrismAPIClient) DeleteSandbox(sandboxID string) error {
+// and deletion operation failures. Mirrors Docker's stop-before-delete behavior.
+func (api *PrismAPIClient) DeleteSandbox(sandboxID string, force bool) error {
 	resp, err := api.client.R().
+		SetQueryParam("force", strconv.FormatBool(force)).
 		Delete(fmt.Sprintf("/sandboxes/%s", sandboxID))
 
 	if err != nil {

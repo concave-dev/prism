@@ -101,7 +101,7 @@ func setupCommandHandlers() {
 }
 
 // setupSandboxFlags configures flags for sandbox commands
-func setupSandboxFlags(createCmd, lsCmd, execCmd, _ /* logsCmd */, _ /* infoCmd */, stopCmd, _ /* rmCmd */ *cobra.Command) {
+func setupSandboxFlags(createCmd, lsCmd, execCmd, _ /* logsCmd */, _ /* infoCmd */, stopCmd, rmCmd *cobra.Command) {
 	// Sandbox create flags
 	createCmd.Flags().StringVar(&config.Sandbox.Name, "name", "", "Sandbox name (auto-generated if not provided)")
 	createCmd.Flags().StringSliceVar(&config.Sandbox.Metadata, "metadata", nil, "Sandbox metadata (key=value format)")
@@ -118,8 +118,11 @@ func setupSandboxFlags(createCmd, lsCmd, execCmd, _ /* logsCmd */, _ /* infoCmd 
 	// Sandbox stop flags
 	stopCmd.Flags().BoolVar(&config.Sandbox.Force, "force", false, "Force stop (non-graceful)")
 
-	// Logs, info, and rm commands use global flags only for now
-	// logsCmd, infoCmd, and rmCmd parameters reserved for future flag additions
+	// Sandbox rm flags
+	rmCmd.Flags().BoolVar(&config.Sandbox.Force, "force", false, "Force delete a running sandbox (stop then delete)")
+
+	// Logs and info commands use global flags only for now
+	// logsCmd and infoCmd parameters reserved for future flag additions
 }
 
 // main is the main entry point

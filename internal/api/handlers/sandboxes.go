@@ -31,6 +31,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/concave-dev/prism/internal/grpc"
@@ -329,14 +330,16 @@ func GetSandbox(sandboxMgr SandboxManager) gin.HandlerFunc {
 }
 
 // DeleteSandbox handles HTTP requests for deleting sandboxes from the cluster.
-// Submits sandbox deletion commands to Raft consensus and returns deletion
-// status information.
+// Enforces stop-before-delete safety by default, requiring sandboxes to be
+// stopped before deletion unless force=true query parameter is provided.
+// When force=true, stops running sandboxes via gRPC before deletion.
 //
-// DELETE /api/v1/sandboxes/{id}
+// DELETE /api/v1/sandboxes/{id}?force=true
 //
 // Essential for sandbox lifecycle management as it provides clean sandbox
-// deletion with proper state cleanup across the distributed cluster.
-func DeleteSandbox(sandboxMgr SandboxManager, nodeID string) gin.HandlerFunc {
+// deletion with proper state cleanup and safety enforcement across the
+// distributed cluster. Mirrors Docker's stop-before-delete behavior.
+func DeleteSandbox(sandboxMgr SandboxManager, nodeID string, clientPool *grpc.ClientPool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		sandboxID := c.Param("id")
 		if sandboxID == "" {
@@ -348,7 +351,9 @@ func DeleteSandbox(sandboxMgr SandboxManager, nodeID string) gin.HandlerFunc {
 			return
 		}
 
-		logging.Info("Sandbox deletion request: id=%s", logging.FormatSandboxID(sandboxID))
+		force, _ := strconv.ParseBool(c.DefaultQuery("force", "false"))
+		logging.Info("Sandbox deletion request: id=%s force=%v",
+			logging.FormatSandboxID(sandboxID), force)
 
 		// Leadership check is now handled by the leader forwarding middleware
 		// This handler only executes if we're the leader or forwarding succeeded
@@ -372,6 +377,116 @@ func DeleteSandbox(sandboxMgr SandboxManager, nodeID string) gin.HandlerFunc {
 				"details": fmt.Sprintf("No sandbox found with ID: %s", sandboxID),
 			})
 			return
+		}
+
+		// Enforce stop-before-delete safety: only allow deletion of stopped sandboxes
+		// unless force=true is provided to stop then delete atomically
+		validDeleteStates := map[string]bool{
+			"stopped": true,
+			"failed":  true,
+			"lost":    true,
+		}
+		if !validDeleteStates[sandbox.Status] && !force {
+			logging.Warn("Sandbox deletion blocked: sandbox in state %s %s", sandbox.Status, logging.FormatSandboxID(sandboxID))
+			c.JSON(http.StatusConflict, gin.H{
+				"error":   fmt.Sprintf("Sandbox is %s", sandbox.Status),
+				"details": "Stop the sandbox first or use force=true to stop then delete",
+			})
+			return
+		}
+
+		// If not in valid delete state and force=true, stop via gRPC first (non-graceful),
+		// then submit a Raft stop command before proceeding with delete
+		if !validDeleteStates[sandbox.Status] && force {
+			if sandbox.ScheduledNodeID == "" {
+				logging.Warn("Sandbox deletion force: no scheduled node for running sandbox %s", logging.FormatSandboxID(sandboxID))
+				c.JSON(http.StatusConflict, gin.H{
+					"error":   "Sandbox not scheduled",
+					"details": "Cannot stop running sandbox without scheduled node",
+				})
+				return
+			}
+			if clientPool == nil {
+				logging.Warn("Sandbox deletion force: gRPC client pool not available")
+				c.JSON(http.StatusServiceUnavailable, gin.H{
+					"error":   "Node communication unavailable",
+					"details": "gRPC client pool not initialized",
+				})
+				return
+			}
+			leaderNodeID := sandboxMgr.Leader()
+			if leaderNodeID == "" {
+				logging.Warn("Sandbox deletion force: No current leader available")
+				c.JSON(http.StatusServiceUnavailable, gin.H{
+					"error":   "No cluster leader",
+					"details": "Cannot determine current leader for stop operation",
+				})
+				return
+			}
+
+			logging.Info("Sandbox deletion force: stopping sandbox %s on node %s", sandboxID, sandbox.ScheduledNodeID)
+			stopResp, err := clientPool.StopSandboxOnNode(
+				sandbox.ScheduledNodeID,
+				sandboxID,
+				false, // non-graceful for force
+				leaderNodeID,
+			)
+			if err != nil {
+				logging.Error("Sandbox deletion force: gRPC stop failed for %s: %v", sandbox.ScheduledNodeID, err)
+				c.JSON(http.StatusBadGateway, gin.H{
+					"error":   "Node communication failed",
+					"details": fmt.Sprintf("Failed to contact node %s: %v", sandbox.ScheduledNodeID, err),
+				})
+				return
+			}
+			if !stopResp.Success {
+				logging.Error("Sandbox deletion force: stop rejected by node %s: %s", sandbox.ScheduledNodeID, stopResp.Message)
+				c.JSON(http.StatusBadGateway, gin.H{
+					"error":   "Node rejected stop request",
+					"details": fmt.Sprintf("Node %s: %s", sandbox.ScheduledNodeID, stopResp.Message),
+				})
+				return
+			}
+
+			// Submit Raft stop command after node confirmation
+			stopCmd := raft.SandboxStopCommand{
+				SandboxID: sandboxID,
+				Graceful:  false,
+			}
+			cmdData, err := json.Marshal(stopCmd)
+			if err != nil {
+				logging.Warn("Sandbox deletion force: marshal stop cmd failed: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error":   "Failed to process request",
+					"details": "Internal command serialization error",
+				})
+				return
+			}
+			command := raft.Command{
+				Type:      "sandbox",
+				Operation: "stop",
+				Data:      json.RawMessage(cmdData),
+				Timestamp: time.Now(),
+				NodeID:    nodeID,
+			}
+			commandJSON, err := json.Marshal(command)
+			if err != nil {
+				logging.Warn("Sandbox deletion force: marshal Raft stop failed: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error":   "Failed to process request",
+					"details": "Internal command serialization error",
+				})
+				return
+			}
+			if err := sandboxMgr.SubmitCommand(string(commandJSON)); err != nil {
+				logging.Warn("Sandbox deletion force: Raft stop submit failed: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error":   "Failed to update cluster state",
+					"details": fmt.Sprintf("Consensus error: %v", err),
+				})
+				return
+			}
+			logging.Info("Sandbox deletion force: sandbox %s stopped, proceeding to delete", sandboxID)
 		}
 
 		// Create Raft command for sandbox deletion

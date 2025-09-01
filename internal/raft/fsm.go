@@ -750,9 +750,20 @@ func (s *SandboxFSM) processDeleteCommand(cmd Command) any {
 	}
 
 	// Find target sandbox
-	_, exists := s.sandboxes[deleteCmd.SandboxID]
+	sandbox, exists := s.sandboxes[deleteCmd.SandboxID]
 	if !exists {
 		return fmt.Errorf("sandbox not found: %s", deleteCmd.SandboxID)
+	}
+
+	// Validate sandbox can be deleted - only allow deletion of stopped sandboxes
+	// This prevents state corruption even if HTTP handler validation is bypassed
+	validDeleteStates := map[string]bool{
+		"stopped": true,
+		"failed":  true,
+		"lost":    true,
+	}
+	if !validDeleteStates[sandbox.Status] {
+		return fmt.Errorf("cannot delete sandbox %s in status %s - must be stopped first", deleteCmd.SandboxID, sandbox.Status)
 	}
 
 	// Remove sandbox from state

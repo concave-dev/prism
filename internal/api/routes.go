@@ -71,7 +71,7 @@ func (s *Server) setupRoutes(router *gin.Engine) {
 		sandboxes.GET("", handlers.ListSandboxes(sandboxMgr))
 		sandboxes.GET("/:id", handlers.GetSandbox(sandboxMgr))
 		sandboxes.POST("/:id/stop", handlers.StopSandbox(sandboxMgr, nodeID, s.grpcClientPool))
-		sandboxes.DELETE("/:id", handlers.DeleteSandbox(sandboxMgr, nodeID))
+		sandboxes.DELETE("/:id", handlers.DeleteSandbox(sandboxMgr, nodeID, s.grpcClientPool))
 		sandboxes.POST("/:id/exec", handlers.ExecSandbox(sandboxMgr, nodeID))
 		sandboxes.GET("/:id/logs", handlers.GetSandboxLogs(sandboxMgr))
 	}
