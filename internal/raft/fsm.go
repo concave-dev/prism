@@ -839,6 +839,9 @@ func (s *SandboxFSM) processBatchCreateCommand(cmd Command) any {
 	successCount := 0
 	failureCount := 0
 
+	// Track Names seen in current batch to detect intra-batch duplicates
+	batchNames := make(map[string]struct{})
+
 	// Process each sandbox in the batch directly (single Raft operation)
 	for _, sandboxCmd := range batchCmd.Sandboxes {
 		// Validate sandbox doesn't already exist
@@ -853,6 +856,42 @@ func (s *SandboxFSM) processBatchCreateCommand(cmd Command) any {
 			failureCount++
 			continue
 		}
+
+		// Check for duplicate sandbox names against existing sandboxes
+		nameConflict := false
+		for _, existingSandbox := range s.sandboxes {
+			if existingSandbox.Name == sandboxCmd.Name {
+				logging.Warn("SandboxFSM: Sandbox name '%s' already exists in batch create",
+					sandboxCmd.Name)
+				results = append(results, map[string]any{
+					"sandbox_id": sandboxCmd.ID,
+					"status":     "failed",
+					"error":      fmt.Sprintf("sandbox name '%s' already exists", sandboxCmd.Name),
+				})
+				failureCount++
+				nameConflict = true
+				break
+			}
+		}
+		if nameConflict {
+			continue
+		}
+
+		// Check for intra-batch Name duplicates
+		if _, seen := batchNames[sandboxCmd.Name]; seen {
+			logging.Warn("SandboxFSM: Duplicate sandbox name '%s' within batch create",
+				sandboxCmd.Name)
+			results = append(results, map[string]any{
+				"sandbox_id": sandboxCmd.ID,
+				"status":     "failed",
+				"error":      fmt.Sprintf("duplicate sandbox name '%s' within batch", sandboxCmd.Name),
+			})
+			failureCount++
+			continue
+		}
+
+		// Track this Name for intra-batch duplicate detection
+		batchNames[sandboxCmd.Name] = struct{}{}
 
 		// Create new sandbox directly in "pending" state
 		sandbox := &Sandbox{
