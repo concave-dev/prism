@@ -84,6 +84,8 @@ type Batcher struct {
 	// Lifecycle management
 	stopCh chan struct{}
 	wg     sync.WaitGroup
+	// lifecycle state: 1=running, 0=stopped
+	running int32
 }
 
 // NewBatcher creates a new smart batcher with the specified configuration.
@@ -111,6 +113,7 @@ func NewBatcher(raftSubmitter RaftSubmitter, config *Config) *Batcher {
 // Essential for activating the smart batching system and enabling both
 // individual and batch processing modes based on real-time load indicators.
 func (b *Batcher) Start() {
+	atomic.StoreInt32(&b.running, 1)
 	b.wg.Add(2)
 	go b.runCreateBatcher()
 	go b.runDeleteBatcher()
@@ -124,6 +127,8 @@ func (b *Batcher) Start() {
 // Critical for proper system shutdown to prevent data loss and ensure all
 // queued operations are processed before termination.
 func (b *Batcher) Stop() {
+	// flip state first so new enqueues are rejected
+	atomic.StoreInt32(&b.running, 0)
 	close(b.stopCh)
 	b.wg.Wait()
 	logging.Info("Batcher: Stopped smart batching system")
@@ -136,6 +141,10 @@ func (b *Batcher) Stop() {
 // Essential for the intelligent batching decision that maintains low latency
 // during normal load while enabling high throughput during burst scenarios.
 func (b *Batcher) Enqueue(item Item) error {
+	// fast-fail if shutting down or not running
+	if atomic.LoadInt32(&b.running) == 0 {
+		return fmt.Errorf("batcher stopped")
+	}
 	switch item.OpType {
 	case "create":
 		return b.enqueueCreate(item)
