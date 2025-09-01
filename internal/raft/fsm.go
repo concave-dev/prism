@@ -795,14 +795,30 @@ func (s *SandboxFSM) processDeleteCommand(cmd Command) any {
 	// Remove sandbox from state
 	delete(s.sandboxes, deleteCmd.SandboxID)
 
-	logging.Info("SandboxFSM: Deleted sandbox %s", logging.FormatSandboxID(deleteCmd.SandboxID))
+	// Clean up associated executions to prevent orphaned records
+	cleanedExecCount, cleanupErr := s.execFSM.cleanupExecutionsForSandbox(deleteCmd.SandboxID)
+	if cleanupErr != nil {
+		logging.Error("SandboxFSM: Failed to cleanup executions for sandbox %s: %v",
+			logging.FormatSandboxID(deleteCmd.SandboxID), cleanupErr)
+	}
+
+	logging.Info("SandboxFSM: Deleted sandbox %s (cleaned %d executions)",
+		logging.FormatSandboxID(deleteCmd.SandboxID), cleanedExecCount)
 
 	// TODO: Coordinate with runtime system for VM cleanup and resource deallocation
 
-	return map[string]any{
-		"sandbox_id": deleteCmd.SandboxID,
-		"status":     "deleted",
+	result := map[string]any{
+		"sandbox_id":         deleteCmd.SandboxID,
+		"status":             "deleted",
+		"cleaned_executions": cleanedExecCount,
 	}
+
+	// Include cleanup error in result if it occurred
+	if cleanupErr != nil {
+		result["execution_cleanup_error"] = cleanupErr.Error()
+	}
+
+	return result
 }
 
 // processBatchCreateCommand handles batch sandbox creation by storing multiple
@@ -930,13 +946,27 @@ func (s *SandboxFSM) processBatchDeleteCommand(cmd Command) any {
 		// Remove sandbox from state
 		delete(s.sandboxes, sandboxID)
 
-		logging.Info("SandboxFSM: Deleted sandbox %s in batch",
-			logging.FormatSandboxID(sandboxID))
+		// Clean up associated executions to prevent orphaned records
+		cleanedExecCount, cleanupErr := s.execFSM.cleanupExecutionsForSandbox(sandboxID)
 
-		results = append(results, map[string]any{
-			"sandbox_id": sandboxID,
-			"status":     "deleted",
-		})
+		result := map[string]any{
+			"sandbox_id":         sandboxID,
+			"status":             "deleted",
+			"cleaned_executions": cleanedExecCount,
+		}
+
+		// Handle execution cleanup errors
+		if cleanupErr != nil {
+			logging.Error("SandboxFSM: Failed to cleanup executions for sandbox %s in batch: %v",
+				logging.FormatSandboxID(sandboxID), cleanupErr)
+			result["execution_cleanup_error"] = cleanupErr.Error()
+			// Still count as success since sandbox was deleted, but note the cleanup issue
+		}
+
+		logging.Info("SandboxFSM: Deleted sandbox %s in batch (cleaned %d executions)",
+			logging.FormatSandboxID(sandboxID), cleanedExecCount)
+
+		results = append(results, result)
 		successCount++
 	}
 
@@ -1352,6 +1382,39 @@ func (e *ExecFSM) processCompleteCommand(cmd Command) any {
 		"exit_code": completeCmd.ExitCode,
 		"duration":  completeCmd.Duration,
 	}
+}
+
+// cleanupExecutionsForSandbox removes all executions associated with a specific
+// sandbox ID from the ExecFSM state. Used during sandbox deletion to prevent
+// orphaned execution records and maintain state consistency.
+//
+// Returns the number of executions cleaned up and any errors encountered.
+// Logs each execution removal for audit trail and debugging purposes.
+func (e *ExecFSM) cleanupExecutionsForSandbox(sandboxID string) (int, error) {
+	var cleanedCount int
+	var cleanupErrors []string
+
+	// Find all executions for this sandbox
+	for execID, execution := range e.executions {
+		if execution.SandboxID == sandboxID {
+			delete(e.executions, execID)
+			cleanedCount++
+			logging.Info("ExecFSM: Cleaned up execution %s for deleted sandbox %s",
+				logging.FormatExecID(execID), logging.FormatSandboxID(sandboxID))
+		}
+	}
+
+	// Return combined error if any cleanup operations failed
+	if len(cleanupErrors) > 0 {
+		return cleanedCount, fmt.Errorf("execution cleanup errors: %v", cleanupErrors)
+	}
+
+	if cleanedCount > 0 {
+		logging.Info("ExecFSM: Cleaned up %d executions for sandbox %s",
+			cleanedCount, logging.FormatSandboxID(sandboxID))
+	}
+
+	return cleanedCount, nil
 }
 
 // processFailCommand handles execution failure by transitioning executions
