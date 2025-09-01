@@ -22,6 +22,10 @@
 package commands
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
+
 	"github.com/concave-dev/prism/cmd/prismd/config"
 	"github.com/concave-dev/prism/cmd/prismd/daemon"
 	"github.com/concave-dev/prism/cmd/prismd/utils"
@@ -29,6 +33,22 @@ import (
 	"github.com/concave-dev/prism/internal/version"
 	"github.com/spf13/cobra"
 )
+
+// Global variable to track log file handle for cleanup
+var logFileHandle *os.File
+
+// CleanupLogFile closes the log file handle if it exists
+// This function is called during daemon shutdown to ensure proper cleanup
+func CleanupLogFile() {
+	if logFileHandle != nil {
+		if err := logFileHandle.Close(); err != nil {
+			// Log to stderr since we're cleaning up the log file
+			// Use fmt.Fprintf instead of logging to avoid circular dependency
+			fmt.Fprintf(os.Stderr, "Warning: failed to close log file: %v\n", err)
+		}
+		logFileHandle = nil
+	}
+}
 
 // Root command for the Prism daemon
 var RootCmd = &cobra.Command{
@@ -60,6 +80,26 @@ Auto-configures network addresses and data directory when not explicitly specifi
 	PreRunE: func(cmd *cobra.Command, args []string) error {
 		// Check which flags were explicitly set by user
 		CheckExplicitFlags(cmd)
+
+		// Setup log file redirection if --log-file was specified
+		if config.Global.IsExplicitlySet(config.LogFileField) && config.Global.LogFile != "" {
+			// Create parent directories if they don't exist
+			logDir := filepath.Dir(config.Global.LogFile)
+			if err := os.MkdirAll(logDir, 0755); err != nil {
+				return fmt.Errorf("failed to create log directory %s: %w", logDir, err)
+			}
+
+			// Open/create log file with append mode
+			var err error
+			logFileHandle, err = os.OpenFile(config.Global.LogFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+			if err != nil {
+				return fmt.Errorf("failed to open log file %s: %w", config.Global.LogFile, err)
+			}
+
+			// Redirect all logging to the file
+			logging.SetOutput(logFileHandle)
+		}
+
 		// Configure logging level immediately after flags are parsed to prevent
 		// INFO logs during config initialization when ERROR level is requested
 		logging.SetLevel(config.Global.LogLevel)
@@ -69,6 +109,8 @@ Auto-configures network addresses and data directory when not explicitly specifi
 		return config.ValidateConfig()
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Ensure log file cleanup on exit
+		defer CleanupLogFile()
 		return daemon.Run()
 	},
 }

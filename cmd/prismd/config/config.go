@@ -56,6 +56,7 @@ const (
 	GRPCAddrField
 	APIAddrField
 	DataDirField
+	LogFileField
 )
 
 const (
@@ -84,6 +85,7 @@ type Config struct {
 	JoinAddrs       []string // List of cluster addresses to join
 	StrictJoin      bool     // Exit if cluster join fails (default: continue in isolation)
 	LogLevel        string   // Log level: DEBUG, INFO, WARN, ERROR
+	LogFile         string   // Log file path (empty = stderr, default behavior)
 	DataDir         string   // Data directory for persistent storage
 	Bootstrap       bool     // Whether to bootstrap a new Raft cluster (legacy single-node)
 	BootstrapExpect int      // Expected number of nodes for cluster formation (0 = disabled)
@@ -105,6 +107,7 @@ type Config struct {
 	grpcAddrExplicitlySet bool
 	apiAddrExplicitlySet  bool
 	dataDirExplicitlySet  bool
+	logFileExplicitlySet  bool
 }
 
 // ResourceCacheConfig holds configuration for the resource caching system.
@@ -139,6 +142,8 @@ func (c *Config) SetExplicitlySet(field ConfigField, value bool) {
 		c.apiAddrExplicitlySet = value
 	case DataDirField:
 		c.dataDirExplicitlySet = value
+	case LogFileField:
+		c.logFileExplicitlySet = value
 	}
 }
 
@@ -157,6 +162,8 @@ func (c *Config) IsExplicitlySet(field ConfigField) bool {
 		return c.apiAddrExplicitlySet
 	case DataDirField:
 		return c.dataDirExplicitlySet
+	case LogFileField:
+		return c.logFileExplicitlySet
 	}
 	return false
 }

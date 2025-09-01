@@ -79,6 +79,11 @@ func SetupFlags(cmd *cobra.Command) {
 		"Node name (defaults to generated name like 'cosmic-dragon')")
 	cmd.Flags().StringVar(&config.Global.LogLevel, "log-level", config.DefaultLogLevel,
 		"Log level: DEBUG, INFO, WARN, ERROR")
+	cmd.Flags().StringVar(&config.Global.LogFile, "log-file", "",
+		"Log file path for daemon output (e.g., /var/log/prism/prismd.log)\n"+
+			"When specified, all logs (daemon, Serf, Raft) are written to this file\n"+
+			"When not specified, logs are written to stderr (default behavior)\n"+
+			"Parent directories will be created if they don't exist")
 
 	// Smart batching flags for high-throughput scenarios
 	cmd.Flags().BoolVar(&config.Global.BatchingEnabled, "batching-enabled", true,
@@ -105,4 +110,5 @@ func CheckExplicitFlags(cmd *cobra.Command) {
 	config.Global.SetExplicitlySet(config.GRPCAddrField, cmd.Flags().Changed("grpc"))
 	config.Global.SetExplicitlySet(config.APIAddrField, cmd.Flags().Changed("api"))
 	config.Global.SetExplicitlySet(config.DataDirField, cmd.Flags().Changed("data-dir"))
+	config.Global.SetExplicitlySet(config.LogFileField, cmd.Flags().Changed("log-file"))
 }
