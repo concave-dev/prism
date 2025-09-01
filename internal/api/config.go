@@ -20,6 +20,7 @@ package api
 import (
 	"fmt"
 
+	"github.com/concave-dev/prism/internal/api/batching"
 	"github.com/concave-dev/prism/internal/grpc"
 	"github.com/concave-dev/prism/internal/raft"
 	"github.com/concave-dev/prism/internal/serf"
@@ -51,6 +52,7 @@ const (
 type Config struct {
 	BindAddr       string            // HTTP server bind address (e.g., "0.0.0.0")
 	BindPort       int               // HTTP server bind port
+	BatchingConfig *batching.Config  // Smart batching configuration for sandbox operations
 	SerfManager    *serf.SerfManager // Reference to cluster manager for data access
 	RaftManager    *raft.RaftManager // Reference to Raft manager for consensus status
 	GRPCClientPool *grpc.ClientPool  // Reference to gRPC client pool for inter-node communication
@@ -79,9 +81,10 @@ func DefaultConfig() *Config {
 		// (only when API address is not explicitly set via --api flag)
 		BindAddr:       "127.0.0.1",
 		BindPort:       DefaultAPIPort,
-		SerfManager:    nil, // Must be set by caller
-		RaftManager:    nil, // Must be set by caller
-		GRPCClientPool: nil, // Must be set by caller
+		BatchingConfig: batching.DefaultConfig(), // Default batching configuration
+		SerfManager:    nil,                      // Must be set by caller
+		RaftManager:    nil,                      // Must be set by caller
+		GRPCClientPool: nil,                      // Must be set by caller
 	}
 }
 
@@ -107,6 +110,12 @@ func (c *Config) Validate() error {
 	}
 	if err := validate.ValidatePortRange(c.BindPort); err != nil {
 		return fmt.Errorf("bind port validation failed: %w", err)
+	}
+	if c.BatchingConfig == nil {
+		return fmt.Errorf("batching config cannot be nil")
+	}
+	if err := c.BatchingConfig.Validate(); err != nil {
+		return fmt.Errorf("batching config validation failed: %w", err)
 	}
 	if c.SerfManager == nil {
 		return fmt.Errorf("serf manager cannot be nil")

@@ -92,6 +92,13 @@ type Config struct {
 	// Resource Cache configuration for performance optimization
 	ResourceCache ResourceCacheConfig `yaml:"resource_cache" mapstructure:"resource_cache"`
 
+	// Smart batching configuration for high-throughput scenarios
+	BatchingEnabled bool `yaml:"batching_enabled" mapstructure:"batching_enabled"`   // Enable smart batching system
+	CreateQueueSize int  `yaml:"create_queue_size" mapstructure:"create_queue_size"` // Create queue capacity
+	DeleteQueueSize int  `yaml:"delete_queue_size" mapstructure:"delete_queue_size"` // Delete queue capacity
+	BatchThreshold  int  `yaml:"batch_threshold" mapstructure:"batch_threshold"`     // Queue length trigger for batching
+	BatchIntervalMs int  `yaml:"batch_interval_ms" mapstructure:"batch_interval_ms"` // Time interval trigger for batching (ms)
+
 	// Flags to track if values were explicitly set by user
 	serfExplicitlySet     bool
 	raftAddrExplicitlySet bool
@@ -107,10 +114,10 @@ type Config struct {
 // Default values are optimized for typical cluster sizes (3-10 nodes) with
 // moderate network latency and high scheduling throughput requirements.
 type ResourceCacheConfig struct {
-	Enabled       bool          `yaml:"enabled" mapstructure:"enabled"`             // Global cache enable/disable
-	TTL           time.Duration `yaml:"ttl" mapstructure:"ttl"`                     // How long cache entries are valid
-	RefreshRate   time.Duration `yaml:"refresh_rate" mapstructure:"refresh_rate"`   // How often to refresh in background  
-	MaxStaleTime  time.Duration `yaml:"max_stale_time" mapstructure:"max_stale_time"` // Max time to serve stale data
+	Enabled       bool          `yaml:"enabled" mapstructure:"enabled"`                 // Global cache enable/disable
+	TTL           time.Duration `yaml:"ttl" mapstructure:"ttl"`                         // How long cache entries are valid
+	RefreshRate   time.Duration `yaml:"refresh_rate" mapstructure:"refresh_rate"`       // How often to refresh in background
+	MaxStaleTime  time.Duration `yaml:"max_stale_time" mapstructure:"max_stale_time"`   // Max time to serve stale data
 	MaxErrorCount int           `yaml:"max_error_count" mapstructure:"max_error_count"` // Max errors before marking node as failed
 }
 

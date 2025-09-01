@@ -29,11 +29,14 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"math/rand"
 	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/concave-dev/prism/internal/api/batching"
 	"github.com/concave-dev/prism/internal/grpc"
 	"github.com/concave-dev/prism/internal/logging"
 	"github.com/concave-dev/prism/internal/names"
@@ -219,6 +222,24 @@ func CreateSandbox(sandboxMgr SandboxManager, nodeID string) gin.HandlerFunc {
 
 		// Submit to Raft for consensus
 		if err := sandboxMgr.SubmitCommand(string(commandJSON)); err != nil {
+			// Check if this is a queue full error for proper HTTP status
+			var queueFullErr *batching.QueueFullError
+			if errors.As(err, &queueFullErr) {
+				// Calculate retry delay with jitter (100-300ms)
+				retryAfter := 0.1 + rand.Float64()*0.2 // 0.1 to 0.3 seconds
+
+				logging.Warn("Sandbox creation: Queue full (%s), returning 429", queueFullErr.QueueType)
+				c.Header("Retry-After", fmt.Sprintf("%.1f", retryAfter))
+				c.JSON(http.StatusTooManyRequests, gin.H{
+					"error": "System overloaded",
+					"details": fmt.Sprintf("Request queue full (%d/%d), please retry in %.1fs",
+						queueFullErr.Current, queueFullErr.Capacity, retryAfter),
+					"queue_type": queueFullErr.QueueType,
+				})
+				return
+			}
+
+			// Other errors are internal server errors
 			logging.Warn("Sandbox creation: Failed to submit Raft command: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error":   "Failed to create sandbox",
@@ -529,6 +550,24 @@ func DeleteSandbox(sandboxMgr SandboxManager, nodeID string, clientPool *grpc.Cl
 
 		// Submit to Raft for consensus
 		if err := sandboxMgr.SubmitCommand(string(commandJSON)); err != nil {
+			// Check if this is a queue full error for proper HTTP status
+			var queueFullErr *batching.QueueFullError
+			if errors.As(err, &queueFullErr) {
+				// Calculate retry delay with jitter (100-300ms)
+				retryAfter := 0.1 + rand.Float64()*0.2 // 0.1 to 0.3 seconds
+
+				logging.Warn("Sandbox deletion: Queue full (%s), returning 429", queueFullErr.QueueType)
+				c.Header("Retry-After", fmt.Sprintf("%.1f", retryAfter))
+				c.JSON(http.StatusTooManyRequests, gin.H{
+					"error": "System overloaded",
+					"details": fmt.Sprintf("Request queue full (%d/%d), please retry in %.1fs",
+						queueFullErr.Current, queueFullErr.Capacity, retryAfter),
+					"queue_type": queueFullErr.QueueType,
+				})
+				return
+			}
+
+			// Other errors are internal server errors
 			logging.Warn("Sandbox deletion: Failed to submit Raft command: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error":   "Failed to delete sandbox",

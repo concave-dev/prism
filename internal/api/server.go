@@ -25,6 +25,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/concave-dev/prism/internal/api/batching"
 	"github.com/concave-dev/prism/internal/api/handlers"
 	"github.com/concave-dev/prism/internal/grpc"
 	"github.com/concave-dev/prism/internal/logging"
@@ -38,12 +39,14 @@ import (
 //
 // This struct encapsulates all components required to run the REST API server
 // that provides external access to cluster state and distributed system information.
-// The server maintains references to core cluster services and HTTP configuration
-// needed for proper API operation and client request handling.
+// The server maintains references to core cluster services, batching configuration,
+// and HTTP configuration needed for proper API operation and client request handling.
 type Server struct {
 	serfManager    *serf.SerfManager // Cluster membership and gossip protocol manager
 	raftManager    *raft.RaftManager // Consensus protocol and leader election manager
 	grpcClientPool *grpc.ClientPool  // Inter-node communication client pool
+	batchingConfig *batching.Config  // Smart batching configuration for sandbox operations
+	sandboxManager SandboxManager    // Sandbox manager with batching capabilities
 	httpServer     *http.Server      // HTTP server instance for request handling
 	listener       net.Listener      // Pre-bound network listener (optional)
 	bindAddr       string            // Network address for HTTP server binding
@@ -73,10 +76,22 @@ func NewServerWithListener(config *Config, listener net.Listener) (*Server, erro
 		gin.SetMode(gin.ReleaseMode)
 	}
 
+	// Create sandbox manager with smart batching if enabled
+	var sandboxManager SandboxManager
+	if config.BatchingConfig.Enabled {
+		sandboxManager = NewServerSandboxManagerWithBatching(config.RaftManager, config.BatchingConfig)
+		logging.Info("Server: Smart batching enabled for sandbox operations")
+	} else {
+		sandboxManager = NewServerSandboxManager(config.RaftManager)
+		logging.Info("Server: Smart batching disabled, using direct pass-through")
+	}
+
 	return &Server{
 		serfManager:    config.SerfManager,
 		raftManager:    config.RaftManager,
 		grpcClientPool: config.GRPCClientPool,
+		batchingConfig: config.BatchingConfig,
+		sandboxManager: sandboxManager,
 		listener:       listener, // Use pre-bound listener
 		bindAddr:       config.BindAddr,
 		bindPort:       config.BindPort,
@@ -135,6 +150,14 @@ func (s *Server) Start() error {
 		IdleTimeout:  60 * time.Second,
 	}
 
+	// Start smart batching system if enabled
+	if s.batchingConfig.Enabled {
+		if ssm, ok := s.sandboxManager.(*ServerSandboxManager); ok {
+			ssm.StartBatcher()
+			logging.Info("Server: Smart batching system started")
+		}
+	}
+
 	// Start server with appropriate method
 	go func() {
 		var err error
@@ -158,9 +181,18 @@ func (s *Server) Start() error {
 // Shutdown gracefully stops the HTTP server using the provided context.
 //
 // Ensures clean server shutdown to prevent connection leaks and allow in-flight
-// requests to complete before daemon termination.
+// requests to complete before daemon termination. Also stops the smart batching
+// system to ensure all queued operations are processed.
 func (s *Server) Shutdown(ctx context.Context) error {
 	logging.Info("Shutting down HTTP API server...")
+
+	// Stop smart batching system first to process remaining items
+	if s.batchingConfig.Enabled {
+		if ssm, ok := s.sandboxManager.(*ServerSandboxManager); ok {
+			ssm.StopBatcher()
+			logging.Info("Server: Smart batching system stopped")
+		}
+	}
 
 	if s.httpServer != nil {
 		return s.httpServer.Shutdown(ctx)
@@ -276,15 +308,15 @@ func (s *Server) getHandlerRaftPeers() gin.HandlerFunc {
 // SANDBOX MANAGEMENT INTEGRATION
 // ============================================================================
 
-// GetSandboxManager returns a SandboxManager implementation for sandbox lifecycle
-// operations. Creates a bridge between the HTTP API layer and the underlying
-// Raft consensus system for distributed sandbox management.
+// GetSandboxManager returns the configured SandboxManager implementation for
+// sandbox lifecycle operations. Returns the pre-configured manager with smart
+// batching capabilities if enabled, or direct pass-through mode if disabled.
 //
 // Essential for sandbox handlers to access distributed state management
 // capabilities while maintaining clean separation of concerns between
 // HTTP handling and consensus operations.
 func (s *Server) GetSandboxManager() SandboxManager {
-	return NewServerSandboxManager(s.raftManager)
+	return s.sandboxManager
 }
 
 // GetNodeID returns the current node's unique identifier for command attribution
