@@ -25,6 +25,7 @@ import (
 	"github.com/concave-dev/prism/cmd/prismd/config"
 	"github.com/concave-dev/prism/cmd/prismd/daemon"
 	"github.com/concave-dev/prism/cmd/prismd/utils"
+	"github.com/concave-dev/prism/internal/logging"
 	"github.com/concave-dev/prism/internal/version"
 	"github.com/spf13/cobra"
 )
@@ -59,6 +60,9 @@ Auto-configures network addresses and data directory when not explicitly specifi
 	PreRunE: func(cmd *cobra.Command, args []string) error {
 		// Check which flags were explicitly set by user
 		CheckExplicitFlags(cmd)
+		// Configure logging level immediately after flags are parsed to prevent
+		// INFO logs during config initialization when ERROR level is requested
+		logging.SetLevel(config.Global.LogLevel)
 		// Initialize configuration from environment variables and defaults
 		config.InitializeConfig()
 		// Validate configuration
