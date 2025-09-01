@@ -43,6 +43,7 @@ package config
 import (
 	"time"
 
+	"github.com/concave-dev/prism/internal/api/batching"
 	configDefaults "github.com/concave-dev/prism/internal/config"
 )
 
@@ -57,12 +58,7 @@ const (
 	APIAddrField
 	DataDirField
 	LogFileField
-	// Batching configuration fields
-	BatchingEnabledField
-	CreateQueueSizeField
-	DeleteQueueSizeField
-	BatchThresholdField
-	BatchIntervalMsField
+	BatchingConfigField
 )
 
 const (
@@ -101,25 +97,16 @@ type Config struct {
 	ResourceCache ResourceCacheConfig `yaml:"resource_cache" mapstructure:"resource_cache"`
 
 	// Smart batching configuration for high-throughput scenarios
-	BatchingEnabled bool `yaml:"batching_enabled" mapstructure:"batching_enabled"`   // Enable smart batching system
-	CreateQueueSize int  `yaml:"create_queue_size" mapstructure:"create_queue_size"` // Create queue capacity
-	DeleteQueueSize int  `yaml:"delete_queue_size" mapstructure:"delete_queue_size"` // Delete queue capacity
-	BatchThreshold  int  `yaml:"batch_threshold" mapstructure:"batch_threshold"`     // Queue length trigger for batching
-	BatchIntervalMs int  `yaml:"batch_interval_ms" mapstructure:"batch_interval_ms"` // Time interval trigger for batching (ms)
+	BatchingConfig *batching.Config `yaml:"batching" mapstructure:"batching"`
 
 	// Flags to track if values were explicitly set by user
-	serfExplicitlySet     bool
-	raftAddrExplicitlySet bool
-	grpcAddrExplicitlySet bool
-	apiAddrExplicitlySet  bool
-	dataDirExplicitlySet  bool
-	logFileExplicitlySet  bool
-	// Batching flags explicit tracking
-	batchingEnabledExplicitlySet bool
-	createQueueSizeExplicitlySet bool
-	deleteQueueSizeExplicitlySet bool
-	batchThresholdExplicitlySet  bool
-	batchIntervalMsExplicitlySet bool
+	serfExplicitlySet           bool
+	raftAddrExplicitlySet       bool
+	grpcAddrExplicitlySet       bool
+	apiAddrExplicitlySet        bool
+	dataDirExplicitlySet        bool
+	logFileExplicitlySet        bool
+	batchingConfigExplicitlySet bool
 }
 
 // ResourceCacheConfig holds configuration for the resource caching system.
@@ -139,6 +126,11 @@ type ResourceCacheConfig struct {
 // Global configuration instance
 var Global Config
 
+func init() {
+	// Initialize BatchingConfig early so flags can bind to it
+	Global.BatchingConfig = batching.DefaultConfig()
+}
+
 // SetExplicitlySet marks a configuration field as explicitly set by the user.
 // Enables intelligent address inheritance and atomic port binding strategies
 // that respect user preferences versus automatic configuration defaults.
@@ -156,16 +148,8 @@ func (c *Config) SetExplicitlySet(field ConfigField, value bool) {
 		c.dataDirExplicitlySet = value
 	case LogFileField:
 		c.logFileExplicitlySet = value
-	case BatchingEnabledField:
-		c.batchingEnabledExplicitlySet = value
-	case CreateQueueSizeField:
-		c.createQueueSizeExplicitlySet = value
-	case DeleteQueueSizeField:
-		c.deleteQueueSizeExplicitlySet = value
-	case BatchThresholdField:
-		c.batchThresholdExplicitlySet = value
-	case BatchIntervalMsField:
-		c.batchIntervalMsExplicitlySet = value
+	case BatchingConfigField:
+		c.batchingConfigExplicitlySet = value
 	}
 }
 
@@ -186,16 +170,8 @@ func (c *Config) IsExplicitlySet(field ConfigField) bool {
 		return c.dataDirExplicitlySet
 	case LogFileField:
 		return c.logFileExplicitlySet
-	case BatchingEnabledField:
-		return c.batchingEnabledExplicitlySet
-	case CreateQueueSizeField:
-		return c.createQueueSizeExplicitlySet
-	case DeleteQueueSizeField:
-		return c.deleteQueueSizeExplicitlySet
-	case BatchThresholdField:
-		return c.batchThresholdExplicitlySet
-	case BatchIntervalMsField:
-		return c.batchIntervalMsExplicitlySet
+	case BatchingConfigField:
+		return c.batchingConfigExplicitlySet
 	}
 	return false
 }
