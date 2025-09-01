@@ -53,6 +53,8 @@ delete-dir:
 	@rm -rf $(BIN_DIR) data
 	@echo "=== Cleaning coverage files ==="
 	@rm -f coverage.out coverage.html *.prof *.pprof
+	@echo "=== Cleaning stress test results ==="
+	@rm -rf massive_stress_test_*
 
 clean: stop delete-dir
 
