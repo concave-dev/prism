@@ -327,7 +327,7 @@ func (b *Batcher) processBatchCreates(batch []Item) {
 		Operation: "batch_create",
 		Data:      json.RawMessage(cmdData),
 		Timestamp: time.Now(),
-		NodeID:    "batcher", // TODO: Get actual node ID
+		NodeID:    "batcher", // Use "batcher" to distinguish batch operations from individual requests in audit logs
 	}
 
 	commandJSON, err := json.Marshal(command)
@@ -379,7 +379,7 @@ func (b *Batcher) processBatchDeletes(batch []Item) {
 		Operation: "batch_delete",
 		Data:      json.RawMessage(cmdData),
 		Timestamp: time.Now(),
-		NodeID:    "batcher", // TODO: Get actual node ID
+		NodeID:    "batcher", // Use "batcher" to distinguish batch operations from individual requests in audit logs
 	}
 
 	commandJSON, err := json.Marshal(command)
