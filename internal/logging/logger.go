@@ -47,6 +47,9 @@ var (
 
 	// Track if logging has been explicitly configured by CLI tools
 	cliConfigured = false
+
+	// Track the current output destination for Success function
+	currentLogOutput io.Writer = os.Stderr
 )
 
 // setupCustomStyles configures custom color schemes for log levels to improve
@@ -89,6 +92,12 @@ func init() {
 	logger.SetStyles(setupCustomStyles())
 }
 
+// getLoggerOutput returns the current output destination for the logger.
+// Used by Success function to respect log file redirection.
+func getLoggerOutput() io.Writer {
+	return currentLogOutput
+}
+
 // Info logs informational messages for cluster operations and status updates.
 func Info(format string, v ...any) {
 	logger.Info(fmt.Sprintf(format, v...))
@@ -105,12 +114,16 @@ func Error(format string, v ...any) {
 }
 
 // Success logs successful operations in green using INFO level with custom styling.
-// Implements a custom SUCCESS level that respects INFO level filtering.
+// Implements a custom SUCCESS level that respects INFO level filtering and
+// uses the same output destination as the global logger (file or stderr).
 func Success(format string, v ...any) {
 	// Check if INFO level logs are enabled (Success uses INFO level internally)
 	if logger.GetLevel() > log.InfoLevel {
 		return // Skip if INFO level is suppressed
 	}
+
+	// Get the current logger's output destination to respect log file redirection
+	currentOutput := getLoggerOutput()
 
 	// Create a temporary logger with custom styling for success messages
 	// We override the INFO level to display "SUCCESS" in light green
@@ -119,7 +132,7 @@ func Success(format string, v ...any) {
 		SetString("SUCCESS").
 		Foreground(lipgloss.Color("#60F281")) // Light green
 
-	tempLogger := log.NewWithOptions(os.Stderr, log.Options{
+	tempLogger := log.NewWithOptions(currentOutput, log.Options{
 		ReportTimestamp: true,
 		TimeFormat:      time.RFC3339,
 	})
@@ -168,12 +181,14 @@ func SetOutput(w *os.File) {
 	if w == nil {
 		// Suppress output by setting level to a high value
 		logger.SetLevel(log.FatalLevel + 1)
+		currentLogOutput = os.Stderr // Keep stderr as fallback for suppressed mode
 	} else {
 		logger = log.NewWithOptions(w, log.Options{
 			ReportTimestamp: true,
 			TimeFormat:      time.RFC3339,
 		})
 		logger.SetStyles(setupCustomStyles())
+		currentLogOutput = w // Track the current output destination
 	}
 }
 
@@ -195,6 +210,7 @@ func RestoreOutput() {
 	})
 	logger.SetStyles(setupCustomStyles())
 	logger.SetLevel(log.InfoLevel)
+	currentLogOutput = os.Stderr // Track the restored output destination
 	cliConfigured = true
 }
 
