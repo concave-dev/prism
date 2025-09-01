@@ -144,7 +144,11 @@ func (s *Server) Start() error {
 	s.httpServer = &http.Server{
 		Addr:    serverAddr,
 		Handler: router,
-		// Timeouts for production
+		// Production timeouts to prevent resource exhaustion and ensure responsive behavior
+		// ReadTimeout: Maximum time to read entire request (headers + body) - prevents slow clients
+		// WriteTimeout: Maximum time to write response - prevents hanging on slow/unresponsive clients
+		// IdleTimeout: Maximum time to wait for next request on keep-alive connections
+		// TODO: Make these configurable via Config struct (see config.go TODO on line 50)
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
