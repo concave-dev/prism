@@ -116,10 +116,10 @@ func setupSandboxFlags(createCmd, lsCmd, execCmd, _ /* logsCmd */, _ /* infoCmd 
 	execCmd.MarkFlagRequired("command")
 
 	// Sandbox stop flags
-	stopCmd.Flags().BoolVar(&config.Sandbox.Force, "force", false, "Force stop (non-graceful)")
+	stopCmd.Flags().BoolVarP(&config.Sandbox.Force, "force", "f", false, "Force stop (non-graceful)")
 
 	// Sandbox rm flags
-	rmCmd.Flags().BoolVar(&config.Sandbox.Force, "force", false, "Force delete a running sandbox (stop then delete)")
+	rmCmd.Flags().BoolVarP(&config.Sandbox.Force, "force", "f", false, "Force delete a running sandbox (stop then delete)")
 
 	// Logs and info commands use global flags only for now
 	// logsCmd and infoCmd parameters reserved for future flag additions

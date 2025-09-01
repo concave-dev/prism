@@ -202,7 +202,10 @@ The sandbox can be resumed later (future feature) or deleted permanently.`,
   prismctl sandbox stop abc123def456
 
   # Force stop (non-graceful)
-  prismctl sandbox stop my-sandbox --force`,
+  prismctl sandbox stop my-sandbox --force
+
+  # Force stop using shorthand
+  prismctl sandbox stop my-sandbox -f`,
 	Args: func(cmd *cobra.Command, args []string) error {
 		if len(args) != 1 {
 			cmd.Help()
@@ -234,7 +237,10 @@ Partial ID matching is disabled for deletion operations.`,
   prismctl sandbox rm my-sandbox-name
 
   # Force delete a running sandbox (stop then delete)
-  prismctl sandbox rm my-sandbox-name --force`,
+  prismctl sandbox rm my-sandbox-name --force
+
+  # Force delete using shorthand
+  prismctl sandbox rm my-sandbox-name -f`,
 	Args: func(cmd *cobra.Command, args []string) error {
 		if len(args) != 1 {
 			cmd.Help()
