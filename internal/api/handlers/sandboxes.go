@@ -225,16 +225,18 @@ func CreateSandbox(sandboxMgr SandboxManager, nodeID string) gin.HandlerFunc {
 			// Check if this is a queue full error for proper HTTP status
 			var queueFullErr *batching.QueueFullError
 			if errors.As(err, &queueFullErr) {
-				// Calculate retry delay with jitter (100-300ms)
-				retryAfter := 0.1 + rand.Float64()*0.2 // 0.1 to 0.3 seconds
+				// Calculate retry delay: 1 second + jitter (100-300ms)
+				retrySeconds := 1
+				jitterMs := 100 + rand.Intn(201) // 100-300ms
 
 				logging.Warn("Sandbox creation: Queue full (%s), returning 429", queueFullErr.QueueType)
-				c.Header("Retry-After", fmt.Sprintf("%.1f", retryAfter))
+				c.Header("Retry-After", strconv.Itoa(retrySeconds))
 				c.JSON(http.StatusTooManyRequests, gin.H{
 					"error": "System overloaded",
-					"details": fmt.Sprintf("Request queue full (%d/%d), please retry in %.1fs",
-						queueFullErr.Current, queueFullErr.Capacity, retryAfter),
-					"queue_type": queueFullErr.QueueType,
+					"details": fmt.Sprintf("Request queue full (%d/%d), please retry in %ds",
+						queueFullErr.Current, queueFullErr.Capacity, retrySeconds),
+					"queue_type":      queueFullErr.QueueType,
+					"retry_jitter_ms": jitterMs,
 				})
 				return
 			}
