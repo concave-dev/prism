@@ -126,12 +126,22 @@ func buildAPIConfig(serfManager *serf.SerfManager, raftManager *raft.RaftManager
 	apiConfig.RaftManager = raftManager
 	apiConfig.GRPCClientPool = grpcClientPool
 
-	// Configure smart batching from daemon config
-	apiConfig.BatchingConfig.Enabled = config.Global.BatchingEnabled
-	apiConfig.BatchingConfig.CreateQueueSize = config.Global.CreateQueueSize
-	apiConfig.BatchingConfig.DeleteQueueSize = config.Global.DeleteQueueSize
-	apiConfig.BatchingConfig.QueueThreshold = config.Global.BatchThreshold
-	apiConfig.BatchingConfig.IntervalThresholdMs = config.Global.BatchIntervalMs
+	// Configure smart batching from daemon config (only override when explicitly set)
+	if config.Global.IsExplicitlySet(config.BatchingEnabledField) {
+		apiConfig.BatchingConfig.Enabled = config.Global.BatchingEnabled
+	}
+	if config.Global.IsExplicitlySet(config.CreateQueueSizeField) {
+		apiConfig.BatchingConfig.CreateQueueSize = config.Global.CreateQueueSize
+	}
+	if config.Global.IsExplicitlySet(config.DeleteQueueSizeField) {
+		apiConfig.BatchingConfig.DeleteQueueSize = config.Global.DeleteQueueSize
+	}
+	if config.Global.IsExplicitlySet(config.BatchThresholdField) {
+		apiConfig.BatchingConfig.QueueThreshold = config.Global.BatchThreshold
+	}
+	if config.Global.IsExplicitlySet(config.BatchIntervalMsField) {
+		apiConfig.BatchingConfig.IntervalThresholdMs = config.Global.BatchIntervalMs
+	}
 
 	return apiConfig
 }

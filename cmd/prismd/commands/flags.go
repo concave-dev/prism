@@ -89,17 +89,17 @@ func SetupFlags(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&config.Global.BatchingEnabled, "batching-enabled", true,
 		"Enable smart batching system for sandbox operations (default: true)\n"+
 			"Automatically switches between direct pass-through and batching based on load")
-	cmd.Flags().IntVar(&config.Global.CreateQueueSize, "create-queue-size", 5000,
-		"Create queue capacity for batching system (default: 5000)\n"+
+	cmd.Flags().IntVar(&config.Global.CreateQueueSize, "create-queue-size", 10000,
+		"Create queue capacity for batching system (default: 10000)\n"+
 			"Larger values handle bigger bursts but use more memory")
-	cmd.Flags().IntVar(&config.Global.DeleteQueueSize, "delete-queue-size", 10000,
-		"Delete queue capacity for batching system (default: 10000)\n"+
+	cmd.Flags().IntVar(&config.Global.DeleteQueueSize, "delete-queue-size", 20000,
+		"Delete queue capacity for batching system (default: 20000)\n"+
 			"Larger values handle cleanup bursts but use more memory")
-	cmd.Flags().IntVar(&config.Global.BatchThreshold, "batch-threshold", 50,
-		"Queue length trigger for enabling batching (default: 50)\n"+
+	cmd.Flags().IntVar(&config.Global.BatchThreshold, "batch-threshold", 10,
+		"Queue length trigger for enabling batching (default: 10)\n"+
 			"Start batching when queue length exceeds this value")
-	cmd.Flags().IntVar(&config.Global.BatchIntervalMs, "batch-interval-ms", 200,
-		"Time interval trigger for enabling batching in milliseconds (default: 200)\n"+
+	cmd.Flags().IntVar(&config.Global.BatchIntervalMs, "batch-interval-ms", 100,
+		"Time interval trigger for enabling batching in milliseconds (default: 100)\n"+
 			"Start batching when requests arrive faster than this interval")
 }
 
@@ -111,4 +111,10 @@ func CheckExplicitFlags(cmd *cobra.Command) {
 	config.Global.SetExplicitlySet(config.APIAddrField, cmd.Flags().Changed("api"))
 	config.Global.SetExplicitlySet(config.DataDirField, cmd.Flags().Changed("data-dir"))
 	config.Global.SetExplicitlySet(config.LogFileField, cmd.Flags().Changed("log-file"))
+	// Check batching flags
+	config.Global.SetExplicitlySet(config.BatchingEnabledField, cmd.Flags().Changed("batching-enabled"))
+	config.Global.SetExplicitlySet(config.CreateQueueSizeField, cmd.Flags().Changed("create-queue-size"))
+	config.Global.SetExplicitlySet(config.DeleteQueueSizeField, cmd.Flags().Changed("delete-queue-size"))
+	config.Global.SetExplicitlySet(config.BatchThresholdField, cmd.Flags().Changed("batch-threshold"))
+	config.Global.SetExplicitlySet(config.BatchIntervalMsField, cmd.Flags().Changed("batch-interval-ms"))
 }

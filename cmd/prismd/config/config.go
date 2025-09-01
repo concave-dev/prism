@@ -57,6 +57,12 @@ const (
 	APIAddrField
 	DataDirField
 	LogFileField
+	// Batching configuration fields
+	BatchingEnabledField
+	CreateQueueSizeField
+	DeleteQueueSizeField
+	BatchThresholdField
+	BatchIntervalMsField
 )
 
 const (
@@ -108,6 +114,12 @@ type Config struct {
 	apiAddrExplicitlySet  bool
 	dataDirExplicitlySet  bool
 	logFileExplicitlySet  bool
+	// Batching flags explicit tracking
+	batchingEnabledExplicitlySet bool
+	createQueueSizeExplicitlySet bool
+	deleteQueueSizeExplicitlySet bool
+	batchThresholdExplicitlySet  bool
+	batchIntervalMsExplicitlySet bool
 }
 
 // ResourceCacheConfig holds configuration for the resource caching system.
@@ -144,6 +156,16 @@ func (c *Config) SetExplicitlySet(field ConfigField, value bool) {
 		c.dataDirExplicitlySet = value
 	case LogFileField:
 		c.logFileExplicitlySet = value
+	case BatchingEnabledField:
+		c.batchingEnabledExplicitlySet = value
+	case CreateQueueSizeField:
+		c.createQueueSizeExplicitlySet = value
+	case DeleteQueueSizeField:
+		c.deleteQueueSizeExplicitlySet = value
+	case BatchThresholdField:
+		c.batchThresholdExplicitlySet = value
+	case BatchIntervalMsField:
+		c.batchIntervalMsExplicitlySet = value
 	}
 }
 
@@ -164,6 +186,16 @@ func (c *Config) IsExplicitlySet(field ConfigField) bool {
 		return c.dataDirExplicitlySet
 	case LogFileField:
 		return c.logFileExplicitlySet
+	case BatchingEnabledField:
+		return c.batchingEnabledExplicitlySet
+	case CreateQueueSizeField:
+		return c.createQueueSizeExplicitlySet
+	case DeleteQueueSizeField:
+		return c.deleteQueueSizeExplicitlySet
+	case BatchThresholdField:
+		return c.batchThresholdExplicitlySet
+	case BatchIntervalMsField:
+		return c.batchIntervalMsExplicitlySet
 	}
 	return false
 }
