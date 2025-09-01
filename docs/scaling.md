@@ -19,27 +19,13 @@ Comprehensive guide for scaling Prism clusters from development to production de
 
 Prism includes intelligent request batching for high-throughput scenarios. Batching is **enabled by default** and automatically switches between pass-through and batching modes based on load.
 
-**Default Settings** (optimized for most deployments):
+**Default Settings** (optimized for high-throughput scenarios):
 ```bash
 --batching-enabled=true          # Enable smart batching (default)
---create-queue-size=10000        # Create queue capacity
---delete-queue-size=20000        # Delete queue capacity  
---batch-threshold=10             # Start batching when queue > 10 items
---batch-interval-ms=100          # Start batching when requests < 100ms apart
-```
-
-**High-Throughput Tuning**:
-```bash
---create-queue-size=20000        # Larger burst capacity
---delete-queue-size=40000        # Larger cleanup capacity
---batch-threshold=5              # More aggressive batching
---batch-interval-ms=50           # Faster batching trigger
-```
-
-**Low-Latency Tuning**:
-```bash
---batch-threshold=50             # Less aggressive batching
---batch-interval-ms=200          # Slower batching trigger
+--create-queue-size=12000        # Create queue capacity (validated with 10k sandbox stress test)
+--delete-queue-size=22000        # Delete queue capacity  
+--batch-threshold=50             # Start batching when queue > 50 items (conservative trigger)
+--batch-interval-ms=250          # Start batching when requests < 250ms apart (relaxed timing)
 ```
 
 ## Scaling Patterns

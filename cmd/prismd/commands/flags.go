@@ -91,17 +91,17 @@ func SetupFlags(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&config.Global.BatchingConfig.Enabled, "batching-enabled", true,
 		"Enable smart batching system for sandbox operations (default: true)\n"+
 			"Automatically switches between direct pass-through and batching based on load")
-	cmd.Flags().IntVar(&config.Global.BatchingConfig.CreateQueueSize, "create-queue-size", 10000,
-		"Create queue capacity for batching system (default: 10000)\n"+
+	cmd.Flags().IntVar(&config.Global.BatchingConfig.CreateQueueSize, "create-queue-size", 12000,
+		"Create queue capacity for batching system (default: 12000)\n"+
 			"Larger values handle bigger bursts but use more memory")
-	cmd.Flags().IntVar(&config.Global.BatchingConfig.DeleteQueueSize, "delete-queue-size", 20000,
-		"Delete queue capacity for batching system (default: 20000)\n"+
+	cmd.Flags().IntVar(&config.Global.BatchingConfig.DeleteQueueSize, "delete-queue-size", 22000,
+		"Delete queue capacity for batching system (default: 22000)\n"+
 			"Larger values handle cleanup bursts but use more memory")
-	cmd.Flags().IntVar(&config.Global.BatchingConfig.QueueThreshold, "batch-threshold", 10,
-		"Queue length trigger for enabling batching (default: 10)\n"+
+	cmd.Flags().IntVar(&config.Global.BatchingConfig.QueueThreshold, "batch-threshold", 50,
+		"Queue length trigger for enabling batching (default: 50)\n"+
 			"Start batching when queue length exceeds this value")
-	cmd.Flags().IntVar(&config.Global.BatchingConfig.IntervalThresholdMs, "batch-interval-ms", 100,
-		"Time interval trigger for enabling batching in milliseconds (default: 100)\n"+
+	cmd.Flags().IntVar(&config.Global.BatchingConfig.IntervalThresholdMs, "batch-interval-ms", 250,
+		"Time interval trigger for enabling batching in milliseconds (default: 250)\n"+
 			"Start batching when requests arrive faster than this interval")
 }
 

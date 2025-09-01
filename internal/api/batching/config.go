@@ -38,10 +38,10 @@ type Config struct {
 func DefaultConfig() *Config {
 	return &Config{
 		Enabled:             true,  // Enable batching by default for production readiness
-		CreateQueueSize:     10000, // Large queue for create bursts (1000 VM requests)
-		DeleteQueueSize:     20000, // Larger queue for cleanup operations
-		QueueThreshold:      10,    // Start batching when queue > 10 items
-		IntervalThresholdMs: 100,   // Start batching when requests < 100ms apart
+		CreateQueueSize:     12000, // Large queue for create bursts (validated with 10k sandbox stress test)
+		DeleteQueueSize:     22000, // Larger queue for cleanup operations
+		QueueThreshold:      50,    // Start batching when queue > 50 items (conservative trigger)
+		IntervalThresholdMs: 250,   // Start batching when requests < 250ms apart (relaxed timing)
 	}
 }
 
