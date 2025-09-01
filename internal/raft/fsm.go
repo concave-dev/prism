@@ -137,7 +137,7 @@ type Sandbox struct {
 	// Core identification and metadata
 	ID      string    `json:"id"`      // Unique sandbox identifier
 	Name    string    `json:"name"`    // Human-readable sandbox name
-	Status  string    `json:"status"`  // Current status: "pending", "assigned", "ready", "stopped", "failed", "lost", "destroyed"
+	Status  string    `json:"status"`  // Current status: "pending", "assigned", "ready", "stopped", "failed", "lost", "deleted"
 	Created time.Time `json:"created"` // Sandbox creation timestamp
 	Updated time.Time `json:"updated"` // Last status update timestamp
 
@@ -679,8 +679,8 @@ func (s *SandboxFSM) processCommand(cmd Command) any {
 		return s.processStatusUpdateCommand(cmd)
 	case "stop":
 		return s.processStopCommand(cmd)
-	case "destroy":
-		return s.processDestroyCommand(cmd)
+	case "delete":
+		return s.processDeleteCommand(cmd)
 	default:
 		return fmt.Errorf("unknown sandbox operation: %s", cmd.Operation)
 	}
@@ -734,44 +734,44 @@ func (s *SandboxFSM) processCreateCommand(cmd Command) any {
 	}
 }
 
-// processDestroyCommand handles sandbox destruction requests by removing sandbox
+// processDeleteCommand handles sandbox deletion requests by removing sandbox
 // records from the distributed state and cleaning up associated execution
 // history and runtime resources.
 //
 // Provides clean sandbox removal with proper state cleanup across the cluster.
 // Removes execution history and coordinates with runtime system for VM cleanup
 // to maintain accurate cluster resource accounting and operational state.
-func (s *SandboxFSM) processDestroyCommand(cmd Command) any {
-	var destroyCmd struct {
+func (s *SandboxFSM) processDeleteCommand(cmd Command) any {
+	var deleteCmd struct {
 		SandboxID string `json:"sandbox_id"`
 	}
-	if err := json.Unmarshal(cmd.Data, &destroyCmd); err != nil {
-		return fmt.Errorf("failed to unmarshal destroy command: %w", err)
+	if err := json.Unmarshal(cmd.Data, &deleteCmd); err != nil {
+		return fmt.Errorf("failed to unmarshal delete command: %w", err)
 	}
 
 	// Find target sandbox
-	_, exists := s.sandboxes[destroyCmd.SandboxID]
+	_, exists := s.sandboxes[deleteCmd.SandboxID]
 	if !exists {
-		return fmt.Errorf("sandbox not found: %s", destroyCmd.SandboxID)
+		return fmt.Errorf("sandbox not found: %s", deleteCmd.SandboxID)
 	}
 
 	// Remove sandbox from state
-	delete(s.sandboxes, destroyCmd.SandboxID)
+	delete(s.sandboxes, deleteCmd.SandboxID)
 
 	// Clean up associated executions
 	for execID, execution := range s.execFSM.executions {
-		if execution.SandboxID == destroyCmd.SandboxID {
+		if execution.SandboxID == deleteCmd.SandboxID {
 			delete(s.execFSM.executions, execID)
 		}
 	}
 
-	logging.Info("SandboxFSM: Destroyed sandbox %s", logging.FormatSandboxID(destroyCmd.SandboxID))
+	logging.Info("SandboxFSM: Deleted sandbox %s", logging.FormatSandboxID(deleteCmd.SandboxID))
 
 	// TODO: Coordinate with runtime system for VM cleanup and resource deallocation
 
 	return map[string]any{
-		"sandbox_id": destroyCmd.SandboxID,
-		"status":     "destroyed",
+		"sandbox_id": deleteCmd.SandboxID,
+		"status":     "deleted",
 	}
 }
 

@@ -2,7 +2,7 @@
 //
 // This file implements sandbox lifecycle management commands for the distributed
 // sandbox orchestration platform. Provides CLI interfaces for creating, executing,
-// monitoring, and destroying code sandboxes across the Prism cluster through
+// monitoring, and deleting code sandboxes across the Prism cluster through
 // REST API calls.
 //
 // SANDBOX COMMAND STRUCTURE:
@@ -11,7 +11,7 @@
 //   - sandbox ls: List all sandboxes with filtering and status information
 //   - sandbox exec: Execute commands within existing sandboxes
 //   - sandbox logs: View execution logs from sandbox environments
-//   - sandbox destroy: Remove sandboxes from the cluster
+//   - sandbox rm: Remove sandboxes from the cluster
 //
 // EXECUTION SAFETY:
 // The exec command requires exact ID or name matching for safety since it
@@ -37,7 +37,7 @@ var sandboxCmd = &cobra.Command{
 	Long: `Commands for managing code execution sandboxes in the Prism cluster.
 
 This command group provides operations for creating, executing commands within,
-monitoring, and destroying sandboxes. Sandboxes are secure, isolated environments
+monitoring, and deleting sandboxes. Sandboxes are secure, isolated environments
 for running AI-generated code and user workflows within Firecracker VMs.`,
 }
 
@@ -192,9 +192,9 @@ var sandboxStopCmd = &cobra.Command{
 
 Transitions the sandbox to stopped state, pausing execution while preserving
 state for future resume operations. This enables resource management by
-temporarily halting unused sandboxes without destroying them.
+temporarily halting unused sandboxes without deleting them.
 
-The sandbox can be resumed later (future feature) or destroyed permanently.`,
+The sandbox can be resumed later (future feature) or deleted permanently.`,
 	Example: `  # Stop a sandbox by name
   prismctl sandbox stop my-sandbox
 
@@ -215,22 +215,22 @@ The sandbox can be resumed later (future feature) or destroyed permanently.`,
 	// RunE will be set by the main package that imports this
 }
 
-// Sandbox destroy command
-var sandboxDestroyCmd = &cobra.Command{
-	Use:   "destroy SANDBOX_ID_OR_NAME",
-	Short: "Destroy a sandbox from the cluster",
-	Long: `Destroy a sandbox from the Prism cluster.
+// Sandbox rm command
+var sandboxRmCmd = &cobra.Command{
+	Use:   "rm SANDBOX_ID_OR_NAME",
+	Short: "Delete a sandbox from the cluster",
+	Long: `Delete a sandbox from the Prism cluster.
 
 Removes the sandbox and cleans up all associated state including execution
 history, file system, and resource tracking. This operation cannot be undone.
 
 SAFETY: You can specify either the exact sandbox ID or exact sandbox name.
-Partial ID matching is disabled for destructive operations.`,
-	Example: `  # Destroy by exact sandbox ID
-  prismctl sandbox destroy a1b2c3d4e5f6
+Partial ID matching is disabled for deletion operations.`,
+	Example: `  # Delete by exact sandbox ID
+  prismctl sandbox rm a1b2c3d4e5f6
 
-  # Destroy by exact sandbox name
-  prismctl sandbox destroy my-sandbox-name`,
+  # Delete by exact sandbox name
+  prismctl sandbox rm my-sandbox-name`,
 	Args: func(cmd *cobra.Command, args []string) error {
 		if len(args) != 1 {
 			cmd.Help()
@@ -251,10 +251,10 @@ func SetupSandboxCommands() {
 	sandboxCmd.AddCommand(sandboxLogsCmd)
 	sandboxCmd.AddCommand(sandboxInfoCmd)
 	sandboxCmd.AddCommand(sandboxStopCmd)
-	sandboxCmd.AddCommand(sandboxDestroyCmd)
+	sandboxCmd.AddCommand(sandboxRmCmd)
 }
 
 // GetSandboxCommands returns the sandbox command structures for handler assignment
 func GetSandboxCommands() (*cobra.Command, *cobra.Command, *cobra.Command, *cobra.Command, *cobra.Command, *cobra.Command, *cobra.Command) {
-	return sandboxCreateCmd, sandboxLsCmd, sandboxExecCmd, sandboxLogsCmd, sandboxInfoCmd, sandboxStopCmd, sandboxDestroyCmd
+	return sandboxCreateCmd, sandboxLsCmd, sandboxExecCmd, sandboxLogsCmd, sandboxInfoCmd, sandboxStopCmd, sandboxRmCmd
 }

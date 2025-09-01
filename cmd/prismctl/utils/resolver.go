@@ -24,7 +24,7 @@
 // Partial ID matching introduces a potential collision risk where hex-like resource names
 // (e.g., "abc123", "deadbeef") could accidentally match as partial ID prefixes. To mitigate:
 //   - Exact name matching takes precedence over partial ID matching
-//   - Destructive operations (exec, destroy) use exact-only resolution helpers
+//   - Destructive operations (exec, delete) use exact-only resolution helpers
 //   - Clear error messages help users identify and resolve ambiguous identifiers
 //
 // RESOLVER TYPES:
@@ -60,7 +60,7 @@ type SandboxLike interface {
 
 // Note: resolvers support Docker-style hex prefix matching.
 // Hex-like names can collide with ID prefixes.
-// Prefer exact matching for mutating ops (exec/destroy) to avoid mistakes.
+// Prefer exact matching for mutating ops (exec/delete) to avoid mistakes.
 
 // ResolveNodeIdentifierFromMembers resolves a node identifier from a pre-fetched list
 // of cluster members using Docker-style partial ID matching for user convenience.

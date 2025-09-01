@@ -341,16 +341,16 @@ func HandleSandboxLogs(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// HandleSandboxDestroy handles the sandbox destroy subcommand for removing
+// HandleSandboxDelete handles the sandbox rm subcommand for removing
 // sandbox environments from the cluster. Implements strict safety requirements
-// by requiring exact ID or name matching to prevent accidental destruction of
+// by requiring exact ID or name matching to prevent accidental deletion of
 // unintended sandbox environments and associated execution state.
 //
-// SAFETY CRITICAL: Uses exact matching only (no partial IDs) since destruction
+// SAFETY CRITICAL: Uses exact matching only (no partial IDs) since deletion
 // is irreversible and could result in loss of important execution environments
 // or data. This prevents operational errors during partial ID resolution that
-// could lead to accidental destruction of active sandbox environments.
-func HandleSandboxDestroy(cmd *cobra.Command, args []string) error {
+// could lead to accidental deletion of active sandbox environments.
+func HandleSandboxDelete(cmd *cobra.Command, args []string) error {
 	utils.SetupLogging()
 
 	// args[0] is safe - argument validation handled by Cobra command definition
@@ -373,16 +373,16 @@ func HandleSandboxDestroy(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	logging.Info("Destroying sandbox '%s' (%s) from API server: %s", sandboxName, logging.FormatSandboxID(resolvedSandboxID), config.Global.APIAddr)
+	logging.Info("Deleting sandbox '%s' (%s) from API server: %s", sandboxName, logging.FormatSandboxID(resolvedSandboxID), config.Global.APIAddr)
 
-	// Destroy sandbox using resolved ID
+	// Delete sandbox using resolved ID
 	if err := apiClient.DeleteSandbox(resolvedSandboxID); err != nil {
-		logging.Error("Failed to destroy sandbox '%s': %v", sandboxName, err)
-		return fmt.Errorf("failed to destroy sandbox '%s': %w", sandboxName, err)
+		logging.Error("Failed to delete sandbox '%s': %v", sandboxName, err)
+		return fmt.Errorf("failed to delete sandbox '%s': %w", sandboxName, err)
 	}
 
-	fmt.Printf("Sandbox '%s' (%s) destroyed successfully\n", sandboxName, resolvedSandboxID)
-	logging.Success("Successfully destroyed sandbox '%s' (%s)", sandboxName, logging.FormatSandboxID(resolvedSandboxID))
+	fmt.Printf("Sandbox '%s' (%s) deleted successfully\n", sandboxName, resolvedSandboxID)
+	logging.Success("Successfully deleted sandbox '%s' (%s)", sandboxName, logging.FormatSandboxID(resolvedSandboxID))
 	return nil
 }
 

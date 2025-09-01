@@ -7,7 +7,7 @@
 // COMMAND STRUCTURE:
 //   - node: Node discovery and resource monitoring (ls, info, top)
 //   - peer: Cluster membership and consensus management (ls, info)
-//   - sandbox: Container lifecycle operations (create, ls, exec, logs, destroy)
+//   - sandbox: Container lifecycle operations (create, ls, exec, logs, stop, rm)
 //
 // All commands follow consistent patterns with standardized flag handling, error
 // messages, and output formatting for reliable cluster management operations.

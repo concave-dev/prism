@@ -597,12 +597,12 @@ func (api *PrismAPIClient) GetRaftPeers() (*RaftPeersResponse, error) {
 }
 
 // GetClusterResources fetches comprehensive resource utilization data for all cluster
-// nodes from the daemon API with optional sorting and caching capabilities. Validates 
+// nodes from the daemon API with optional sorting and caching capabilities. Validates
 // sort parameters and handles complex resource data parsing for capacity management operations.
 //
 // Provides complete cluster resource visibility enabling capacity planning, performance
 // monitoring, and workload placement decisions. Supports multiple sorting options for
-// operational convenience and cache bypass for debugging. Handles API communication 
+// operational convenience and cache bypass for debugging. Handles API communication
 // errors gracefully with detailed error messages for resource monitoring troubleshooting.
 func (api *PrismAPIClient) GetClusterResources(sortBy string, noCache bool) ([]NodeResources, error) {
 	var response APIResponse
@@ -681,7 +681,7 @@ func (api *PrismAPIClient) GetClusterResources(sortBy string, noCache bool) ([]N
 
 // GetNodeResources fetches detailed resource utilization and capacity information
 // for a specific cluster node from the daemon API with optional cache bypass.
-// Handles node identification, API response parsing, and error conditions including 
+// Handles node identification, API response parsing, and error conditions including
 // node-not-found scenarios.
 //
 // Enables targeted node resource monitoring and capacity assessment for individual
@@ -980,14 +980,14 @@ func (api *PrismAPIClient) GetSandboxLogs(sandboxID string) ([]string, error) {
 	return response.Logs, nil
 }
 
-// DeleteSandbox destroys a code execution sandbox via the daemon API performing
+// DeleteSandbox deletes a code execution sandbox via the daemon API performing
 // complete cleanup of sandbox resources and metadata. Handles sandbox identification,
-// destruction coordination, and various API response scenarios.
+// deletion coordination, and various API response scenarios.
 //
 // Completes sandbox lifecycle by cleaning up code execution environments and
-// freeing cluster resources. Handles destruction validation, leader redirection,
+// freeing cluster resources. Handles deletion validation, leader redirection,
 // and cleanup confirmation with proper error handling for missing sandboxes
-// and destruction operation failures.
+// and deletion operation failures.
 func (api *PrismAPIClient) DeleteSandbox(sandboxID string) error {
 	resp, err := api.client.R().
 		Delete(fmt.Sprintf("/sandboxes/%s", sandboxID))

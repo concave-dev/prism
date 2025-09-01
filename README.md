@@ -31,7 +31,7 @@ Prism is a high-performance distributed sandbox runtime designed specifically fo
 - [x] **Resource monitoring** - Real-time CPU, memory, disk tracking across nodes
 - [x] **CLI management** - Complete cluster control via `prismctl` commands
 - [x] **REST API** - HTTP endpoints for all cluster operations
-- [x] **Sandbox state tracking** - Create, list, destroy, exec sandboxes with distributed state
+- [x] **Sandbox state tracking** - Create, list, delete, exec sandboxes with distributed state
 - [x] **V0 distributed scheduler** - gRPC-based placement with leader verification and simulated responses
 
 ### What's Next
@@ -128,7 +128,7 @@ Use the CLI:
 ./bin/prismctl sandbox exec <sandbox-name-or-id> --command="python -c 'print(42)'"
 ./bin/prismctl sandbox logs <sandbox-name-or-id>
 ./bin/prismctl sandbox stop <sandbox-name-or-id>
-./bin/prismctl sandbox destroy <sandbox-name-or-id>
+./bin/prismctl sandbox rm <sandbox-name-or-id>
 
 # Connect to remote cluster
 ./bin/prismctl --api=192.168.46.110:8008 info
@@ -137,7 +137,7 @@ Use the CLI:
 DEBUG=true ./bin/prismctl info
 ```
 
-**Safety Note**: Commands like `exec`, `stop`, and `destroy` require exact ID or name matches - no partial matching for safety.
+**Safety Note**: Commands like `exec`, `stop`, and `rm` require exact ID or name matches - no partial matching for safety.
 
 ## Security Considerations
 

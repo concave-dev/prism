@@ -12,7 +12,7 @@
 //   - POST /api/v1/sandboxes: Create new sandboxes for code execution
 //   - GET /api/v1/sandboxes: List all sandboxes with filtering and pagination
 //   - GET /api/v1/sandboxes/{id}: Get detailed sandbox information
-//   - DELETE /api/v1/sandboxes/{id}: Destroy sandboxes from the cluster
+//   - DELETE /api/v1/sandboxes/{id}: Delete sandboxes from the cluster
 //   - POST /api/v1/sandboxes/{id}/exec: Execute commands within sandboxes
 //   - GET /api/v1/sandboxes/{id}/logs: Retrieve execution logs and output
 //
@@ -328,14 +328,14 @@ func GetSandbox(sandboxMgr SandboxManager) gin.HandlerFunc {
 	}
 }
 
-// DeleteSandbox handles HTTP requests for destroying sandboxes from the cluster.
-// Submits sandbox destruction commands to Raft consensus and returns destruction
+// DeleteSandbox handles HTTP requests for deleting sandboxes from the cluster.
+// Submits sandbox deletion commands to Raft consensus and returns deletion
 // status information.
 //
 // DELETE /api/v1/sandboxes/{id}
 //
 // Essential for sandbox lifecycle management as it provides clean sandbox
-// destruction with proper state cleanup across the distributed cluster.
+// deletion with proper state cleanup across the distributed cluster.
 func DeleteSandbox(sandboxMgr SandboxManager, nodeID string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		sandboxID := c.Param("id")
@@ -348,15 +348,15 @@ func DeleteSandbox(sandboxMgr SandboxManager, nodeID string) gin.HandlerFunc {
 			return
 		}
 
-		logging.Info("Sandbox destruction request: id=%s", logging.FormatSandboxID(sandboxID))
+		logging.Info("Sandbox deletion request: id=%s", logging.FormatSandboxID(sandboxID))
 
 		// Leadership check is now handled by the leader forwarding middleware
 		// This handler only executes if we're the leader or forwarding succeeded
 
-		// Check if sandbox exists before destruction
+		// Check if sandbox exists before deletion
 		fsm := sandboxMgr.GetFSM()
 		if fsm == nil {
-			logging.Warn("Sandbox destruction: FSM not available")
+			logging.Warn("Sandbox deletion: FSM not available")
 			c.JSON(http.StatusServiceUnavailable, gin.H{
 				"error":   "Cluster state not available",
 				"details": "FSM not initialized",
@@ -366,7 +366,7 @@ func DeleteSandbox(sandboxMgr SandboxManager, nodeID string) gin.HandlerFunc {
 
 		sandbox := fsm.GetSandbox(sandboxID)
 		if sandbox == nil {
-			logging.Warn("Sandbox destruction: Sandbox not found: %s", logging.FormatSandboxID(sandboxID))
+			logging.Warn("Sandbox deletion: Sandbox not found: %s", logging.FormatSandboxID(sandboxID))
 			c.JSON(http.StatusNotFound, gin.H{
 				"error":   "Sandbox not found",
 				"details": fmt.Sprintf("No sandbox found with ID: %s", sandboxID),
@@ -374,17 +374,17 @@ func DeleteSandbox(sandboxMgr SandboxManager, nodeID string) gin.HandlerFunc {
 			return
 		}
 
-		// Create Raft command for sandbox destruction
-		destroyCmd := struct {
+		// Create Raft command for sandbox deletion
+		deleteCmd := struct {
 			SandboxID string `json:"sandbox_id"`
 		}{
 			SandboxID: sandboxID,
 		}
 
 		// Marshal command data
-		cmdData, err := json.Marshal(destroyCmd)
+		cmdData, err := json.Marshal(deleteCmd)
 		if err != nil {
-			logging.Warn("Sandbox destruction: Failed to marshal command: %v", err)
+			logging.Warn("Sandbox deletion: Failed to marshal command: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error":   "Failed to process request",
 				"details": "Internal command serialization error",
@@ -395,7 +395,7 @@ func DeleteSandbox(sandboxMgr SandboxManager, nodeID string) gin.HandlerFunc {
 		// Create Raft command wrapper
 		command := raft.Command{
 			Type:      "sandbox",
-			Operation: "destroy",
+			Operation: "delete",
 			Data:      json.RawMessage(cmdData),
 			Timestamp: time.Now(),
 			NodeID:    nodeID,
@@ -404,7 +404,7 @@ func DeleteSandbox(sandboxMgr SandboxManager, nodeID string) gin.HandlerFunc {
 		// Marshal complete command
 		commandJSON, err := json.Marshal(command)
 		if err != nil {
-			logging.Warn("Sandbox destruction: Failed to marshal Raft command: %v", err)
+			logging.Warn("Sandbox deletion: Failed to marshal Raft command: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error":   "Failed to process request",
 				"details": "Internal command serialization error",
@@ -414,20 +414,20 @@ func DeleteSandbox(sandboxMgr SandboxManager, nodeID string) gin.HandlerFunc {
 
 		// Submit to Raft for consensus
 		if err := sandboxMgr.SubmitCommand(string(commandJSON)); err != nil {
-			logging.Warn("Sandbox destruction: Failed to submit Raft command: %v", err)
+			logging.Warn("Sandbox deletion: Failed to submit Raft command: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{
-				"error":   "Failed to destroy sandbox",
+				"error":   "Failed to delete sandbox",
 				"details": fmt.Sprintf("Consensus error: %v", err),
 			})
 			return
 		}
 
-		logging.Success("Sandbox destruction command submitted to Raft consensus")
+		logging.Success("Sandbox deletion command submitted to Raft consensus")
 
 		c.JSON(http.StatusOK, gin.H{
 			"sandbox_id": sandboxID,
-			"status":     "destroyed",
-			"message":    "Sandbox destruction submitted to cluster",
+			"status":     "deleted",
+			"message":    "Sandbox deletion submitted to cluster",
 		})
 	}
 }
