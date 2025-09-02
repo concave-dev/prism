@@ -49,10 +49,12 @@ stop:
 		pids=$$(lsof -ti tcp:$$start-$$end -sTCP:LISTEN 2>/dev/null); [ -n "$$pids" ] && kill -9 $$pids 2>/dev/null || true
 
 delete-dir:
-	@echo "=== Deleting bin and data directories ==="
-	@rm -rf $(BIN_DIR) data
+	@echo "=== Deleting bin, data, and logs directories ==="
+	@rm -rf $(BIN_DIR) data .logs
 	@echo "=== Cleaning coverage files ==="
 	@rm -f coverage.out coverage.html *.prof *.pprof
+	@echo "=== Cleaning stress test results ==="
+	@rm -rf massive_stress_test_*
 
 clean: stop delete-dir
 
@@ -98,43 +100,33 @@ run-cluster: build stop
 		echo "Error: NODES must be at least 1"; \
 		exit 1; \
 	fi; \
+	echo "=== Creating .logs directory ==="; \
+	mkdir -p .logs; \
 	echo "=== Starting Prism cluster with $$NODES nodes (MAX_PORTS: $$MAX_PORTS) ==="; \
 	if [ $$NODES -eq 1 ]; then \
 		echo "Starting single bootstrap node..."; \
-		DEBUG=true MAX_PORTS=$$MAX_PORTS $(PRISMD) --bootstrap & \
-		echo "Single node cluster started! Use 'make stop' to stop."; \
+		DEBUG=true MAX_PORTS=$$MAX_PORTS $(PRISMD) --bootstrap --log-file=.logs/prismd-$$(date +%Y%m%d-%H%M%S)-$$RANDOM.log & \
+		echo "Single node cluster started! Logs: .logs/prismd-*.log | Use 'make stop' to stop."; \
 	else \
 		echo "Using bootstrap-expect mode for $$NODES nodes..."; \
 		echo "Starting first 3 nodes (bootstrap cluster)..."; \
-		DEBUG=true MAX_PORTS=$$MAX_PORTS $(PRISMD) --serf=0.0.0.0:4200 --bootstrap-expect=3 --join=0.0.0.0:4200,0.0.0.0:4201,0.0.0.0:4202 & \
+		DEBUG=true MAX_PORTS=$$MAX_PORTS $(PRISMD) --serf=0.0.0.0:4200 --bootstrap-expect=3 --join=0.0.0.0:4200,0.0.0.0:4201,0.0.0.0:4202 --log-file=.logs/prismd-$$(date +%Y%m%d-%H%M%S)-$$RANDOM.log & \
 		sleep 5; \
-		DEBUG=true MAX_PORTS=$$MAX_PORTS $(PRISMD) --serf=0.0.0.0:4201 --bootstrap-expect=3 --join=0.0.0.0:4200,0.0.0.0:4201,0.0.0.0:4202 & \
+		DEBUG=true MAX_PORTS=$$MAX_PORTS $(PRISMD) --serf=0.0.0.0:4201 --bootstrap-expect=3 --join=0.0.0.0:4200,0.0.0.0:4201,0.0.0.0:4202 --log-file=.logs/prismd-$$(date +%Y%m%d-%H%M%S)-$$RANDOM.log & \
 		sleep 5; \
-		DEBUG=true MAX_PORTS=$$MAX_PORTS $(PRISMD) --serf=0.0.0.0:4202 --bootstrap-expect=3 --join=0.0.0.0:4200,0.0.0.0:4201,0.0.0.0:4202 & \
+		DEBUG=true MAX_PORTS=$$MAX_PORTS $(PRISMD) --serf=0.0.0.0:4202 --bootstrap-expect=3 --join=0.0.0.0:4200,0.0.0.0:4201,0.0.0.0:4202 --log-file=.logs/prismd-$$(date +%Y%m%d-%H%M%S)-$$RANDOM.log & \
 		echo "Waiting 15 seconds for initial 3-node cluster to form and elect leader..."; \
 		sleep 15; \
 		if [ $$NODES -gt 3 ]; then \
 			echo "Adding remaining $$(($$NODES-3)) nodes to established cluster..."; \
 			for i in $$(seq 4 $$NODES); do \
 				echo "Starting node $$i/$$NODES (joining established cluster)..."; \
-				DEBUG=true MAX_PORTS=$$MAX_PORTS $(PRISMD) --join=0.0.0.0:4200 & \
+				DEBUG=true MAX_PORTS=$$MAX_PORTS $(PRISMD) --join=0.0.0.0:4200 --log-file=.logs/prismd-$$(date +%Y%m%d-%H%M%S)-$$RANDOM.log & \
 				sleep 4; \
 			done; \
 		fi; \
-		echo "Cluster will form once all $$NODES nodes are discovered. Use 'make stop' to stop all nodes."; \
+		echo "Cluster will form once all $$NODES nodes are discovered. Logs: .logs/prismd-*.log | Use 'make stop' to stop all nodes."; \
 	fi
-
-bootstrap-expect: build stop
-	@echo "=== Starting Prism cluster with bootstrap-expect (3 nodes) ==="
-	@echo "Starting first node (bootstrap seed)..."
-	@$(PRISMD) --bootstrap-expect=3 &
-	@sleep 5
-	@echo "Starting second node (joining cluster)..."
-	@$(PRISMD) --bootstrap-expect=3 --join=0.0.0.0:4200 &
-	@sleep 5
-	@echo "Starting third node (joining cluster)..."
-	@$(PRISMD) --bootstrap-expect=3 --join=0.0.0.0:4200 &
-	@echo "Cluster will form once all 3 nodes are discovered. Use 'make stop' to stop all nodes."
 
 # Pattern rule for any number of nodes: make run-N
 run-%:

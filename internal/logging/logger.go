@@ -39,14 +39,28 @@ import (
 )
 
 var (
-	// Default logger instance with readable timestamp format
-	logger = log.NewWithOptions(os.Stderr, log.Options{
+	// Logger for INFO/SUCCESS messages (stdout by default, follows Unix conventions)
+	stdoutLogger = log.NewWithOptions(os.Stdout, log.Options{
+		ReportTimestamp: true,
+		TimeFormat:      time.RFC3339,
+	})
+
+	// Logger for WARN/ERROR/DEBUG messages (stderr by default, follows Unix conventions)
+	stderrLogger = log.NewWithOptions(os.Stderr, log.Options{
 		ReportTimestamp: true,
 		TimeFormat:      time.RFC3339,
 	})
 
 	// Track if logging has been explicitly configured by CLI tools
 	cliConfigured = false
+
+	// Track the current output destinations for different log levels
+	currentStdoutOutput io.Writer = os.Stdout // For INFO/SUCCESS
+	currentStderrOutput io.Writer = os.Stderr // For WARN/ERROR/DEBUG
+
+	// Track if we're using a single log file (overrides stdout/stderr separation)
+	usingLogFile  = false
+	logFileHandle io.Writer
 )
 
 // setupCustomStyles configures custom color schemes for log levels to improve
@@ -86,31 +100,58 @@ func setupCustomStyles() *log.Styles {
 // init sets up custom color styling on package initialization for consistent
 // visual formatting across all cluster logging output.
 func init() {
-	logger.SetStyles(setupCustomStyles())
+	styles := setupCustomStyles()
+	stdoutLogger.SetStyles(styles)
+	stderrLogger.SetStyles(styles)
+}
+
+// getStdoutLoggerOutput returns the current output destination for stdout logger.
+// Used by Success function to respect log file redirection.
+func getStdoutLoggerOutput() io.Writer {
+	if usingLogFile {
+		return logFileHandle
+	}
+	return currentStdoutOutput
+}
+
+// getStderrLoggerOutput returns the current output destination for stderr logger.
+// Used by error/warn/debug functions to respect log file redirection.
+func getStderrLoggerOutput() io.Writer {
+	if usingLogFile {
+		return logFileHandle
+	}
+	return currentStderrOutput
 }
 
 // Info logs informational messages for cluster operations and status updates.
+// Uses stdout following Unix conventions (or log file when specified).
 func Info(format string, v ...any) {
-	logger.Info(fmt.Sprintf(format, v...))
+	stdoutLogger.Info(fmt.Sprintf(format, v...))
 }
 
 // Warn logs warning messages for non-critical issues requiring attention.
+// Uses stderr following Unix conventions (or log file when specified).
 func Warn(format string, v ...any) {
-	logger.Warn(fmt.Sprintf(format, v...))
+	stderrLogger.Warn(fmt.Sprintf(format, v...))
 }
 
 // Error logs error messages for failures and critical issues in cluster operations.
+// Uses stderr following Unix conventions (or log file when specified).
 func Error(format string, v ...any) {
-	logger.Error(fmt.Sprintf(format, v...))
+	stderrLogger.Error(fmt.Sprintf(format, v...))
 }
 
 // Success logs successful operations in green using INFO level with custom styling.
+// Uses stdout following Unix conventions (or log file when specified).
 // Implements a custom SUCCESS level that respects INFO level filtering.
 func Success(format string, v ...any) {
 	// Check if INFO level logs are enabled (Success uses INFO level internally)
-	if logger.GetLevel() > log.InfoLevel {
+	if stdoutLogger.GetLevel() > log.InfoLevel {
 		return // Skip if INFO level is suppressed
 	}
+
+	// Get the current stdout logger's output destination to respect log file redirection
+	currentOutput := getStdoutLoggerOutput()
 
 	// Create a temporary logger with custom styling for success messages
 	// We override the INFO level to display "SUCCESS" in light green
@@ -119,7 +160,7 @@ func Success(format string, v ...any) {
 		SetString("SUCCESS").
 		Foreground(lipgloss.Color("#60F281")) // Light green
 
-	tempLogger := log.NewWithOptions(os.Stderr, log.Options{
+	tempLogger := log.NewWithOptions(currentOutput, log.Options{
 		ReportTimestamp: true,
 		TimeFormat:      time.RFC3339,
 	})
@@ -130,9 +171,9 @@ func Success(format string, v ...any) {
 }
 
 // Debug logs detailed debugging information for development and troubleshooting.
-// Debug logs detailed diagnostic information for development and troubleshooting.
+// Uses stderr following Unix conventions (or log file when specified).
 func Debug(format string, v ...any) {
-	logger.Debug(fmt.Sprintf(format, v...))
+	stderrLogger.Debug(fmt.Sprintf(format, v...))
 }
 
 // SetLevel configures the minimum logging level for filtering log output across all
@@ -143,58 +184,98 @@ func Debug(format string, v ...any) {
 // to adjust logging granularity based on operational needs from minimal error-only
 // logging in production to verbose debug logging during troubleshooting sessions.
 func SetLevel(level string) {
+	var logLevel log.Level
 	switch level {
 	case "DEBUG":
-		logger.SetLevel(log.DebugLevel)
+		logLevel = log.DebugLevel
 	case "INFO":
-		logger.SetLevel(log.InfoLevel)
+		logLevel = log.InfoLevel
 	case "WARN":
-		logger.SetLevel(log.WarnLevel)
+		logLevel = log.WarnLevel
 	case "ERROR":
-		logger.SetLevel(log.ErrorLevel)
+		logLevel = log.ErrorLevel
 	default:
-		logger.SetLevel(log.InfoLevel)
+		logLevel = log.InfoLevel
 	}
+
+	// Apply level to both loggers
+	stdoutLogger.SetLevel(logLevel)
+	stderrLogger.SetLevel(logLevel)
 }
 
 // SetOutput configures log output destination for operational log management.
-// Accepts file handles for log redirection or nil to suppress output entirely
-// by setting log level high enough to disable all output effectively.
+// When a file is specified, all logs go to the file (overriding Unix stdout/stderr separation).
+// When nil, suppresses all output. When not called, uses Unix conventions (INFO/SUCCESS->stdout, others->stderr).
 //
 // Enables flexible log management for different operational scenarios including
 // file-based logging for production deployments, output suppression for CLI tools,
-// and development logging to stderr for interactive debugging sessions.
+// and development logging following Unix conventions for interactive debugging sessions.
 func SetOutput(w *os.File) {
 	if w == nil {
 		// Suppress output by setting level to a high value
-		logger.SetLevel(log.FatalLevel + 1)
+		stdoutLogger.SetLevel(log.FatalLevel + 1)
+		stderrLogger.SetLevel(log.FatalLevel + 1)
+		usingLogFile = false
 	} else {
-		logger = log.NewWithOptions(w, log.Options{
+		// When using a log file, all logs go to the same file (production mode)
+		usingLogFile = true
+		logFileHandle = w
+
+		// Recreate both loggers to use the file
+		stdoutLogger = log.NewWithOptions(w, log.Options{
 			ReportTimestamp: true,
 			TimeFormat:      time.RFC3339,
 		})
-		logger.SetStyles(setupCustomStyles())
+		stderrLogger = log.NewWithOptions(w, log.Options{
+			ReportTimestamp: true,
+			TimeFormat:      time.RFC3339,
+		})
+
+		// Apply custom styles to both loggers
+		styles := setupCustomStyles()
+		stdoutLogger.SetStyles(styles)
+		stderrLogger.SetStyles(styles)
 	}
 }
 
 // SuppressOutput disables INFO/WARN/DEBUG logs while keeping ERROR logs visible.
 // Used by CLI tools to reduce output noise during normal operations.
 func SuppressOutput() {
-	logger.SetLevel(log.ErrorLevel) // Only show ERROR level and above
+	stdoutLogger.SetLevel(log.ErrorLevel) // Only show ERROR level and above
+	stderrLogger.SetLevel(log.ErrorLevel) // Only show ERROR level and above
 	cliConfigured = true
 }
 
-// RestoreOutput restores normal logging to stderr at INFO level and above.
-// Recreates the logger with default settings and custom color styling.
+// RestoreOutput restores normal logging with Unix conventions at INFO level and above.
+// Recreates both loggers with default settings and custom color styling.
+// INFO/SUCCESS go to stdout, WARN/ERROR/DEBUG go to stderr.
 //
 // Used by CLI tools to re-enable logging after suppression during operations.
 func RestoreOutput() {
-	logger = log.NewWithOptions(os.Stderr, log.Options{
+	// Reset to Unix conventions: stdout for INFO/SUCCESS, stderr for others
+	usingLogFile = false
+
+	stdoutLogger = log.NewWithOptions(os.Stdout, log.Options{
 		ReportTimestamp: true,
 		TimeFormat:      time.RFC3339,
 	})
-	logger.SetStyles(setupCustomStyles())
-	logger.SetLevel(log.InfoLevel)
+	stderrLogger = log.NewWithOptions(os.Stderr, log.Options{
+		ReportTimestamp: true,
+		TimeFormat:      time.RFC3339,
+	})
+
+	// Apply custom styles to both loggers
+	styles := setupCustomStyles()
+	stdoutLogger.SetStyles(styles)
+	stderrLogger.SetStyles(styles)
+
+	// Set INFO level for both
+	stdoutLogger.SetLevel(log.InfoLevel)
+	stderrLogger.SetLevel(log.InfoLevel)
+
+	// Track the restored output destinations
+	currentStdoutOutput = os.Stdout
+	currentStderrOutput = os.Stderr
 	cliConfigured = true
 }
 

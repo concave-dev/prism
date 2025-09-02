@@ -270,6 +270,28 @@ type SandboxStopCommand struct {
 	Graceful  bool   `json:"graceful,omitempty"` // Whether to stop gracefully (default: true)
 }
 
+// BatchSandboxCreateCommand represents a batch request to create multiple
+// sandboxes in a single Raft operation. Reduces consensus overhead during
+// high-load scenarios by grouping multiple create operations together.
+//
+// Processed by the SandboxFSM by storing all sandboxes in "pending" state
+// within one distributed state change. Background scheduler handles actual
+// placement and resource allocation asynchronously for better throughput.
+type BatchSandboxCreateCommand struct {
+	Sandboxes []SandboxCreateCommand `json:"sandboxes"` // List of sandboxes to create
+}
+
+// BatchSandboxDeleteCommand represents a batch request to delete multiple
+// sandboxes in a single Raft operation. Reduces consensus overhead during
+// cleanup operations by grouping multiple delete operations together.
+//
+// Processed by the SandboxFSM by removing all specified sandboxes from
+// cluster state within one distributed operation. Maintains consistency
+// while improving performance during bulk cleanup scenarios.
+type BatchSandboxDeleteCommand struct {
+	SandboxIDs []string `json:"sandbox_ids"` // List of sandbox IDs to delete
+}
+
 // ExecCreateCommand represents a request to create a new execution within
 // a sandbox environment. Contains the command to execute and target sandbox.
 //
@@ -673,6 +695,8 @@ func (s *SandboxFSM) processCommand(cmd Command) any {
 	switch cmd.Operation {
 	case "create":
 		return s.processCreateCommand(cmd)
+	case "batch_create":
+		return s.processBatchCreateCommand(cmd)
 	case "schedule":
 		return s.processScheduleCommand(cmd)
 	case "status_update":
@@ -681,6 +705,8 @@ func (s *SandboxFSM) processCommand(cmd Command) any {
 		return s.processStopCommand(cmd)
 	case "delete":
 		return s.processDeleteCommand(cmd)
+	case "batch_delete":
+		return s.processBatchDeleteCommand(cmd)
 	default:
 		return fmt.Errorf("unknown sandbox operation: %s", cmd.Operation)
 	}
@@ -769,20 +795,229 @@ func (s *SandboxFSM) processDeleteCommand(cmd Command) any {
 	// Remove sandbox from state
 	delete(s.sandboxes, deleteCmd.SandboxID)
 
-	// Clean up associated executions
-	for execID, execution := range s.execFSM.executions {
-		if execution.SandboxID == deleteCmd.SandboxID {
-			delete(s.execFSM.executions, execID)
-		}
+	// Clean up associated executions to prevent orphaned records
+	cleanedExecCount, cleanupErr := s.execFSM.cleanupExecutionsForSandbox(deleteCmd.SandboxID)
+	if cleanupErr != nil {
+		logging.Error("SandboxFSM: Failed to cleanup executions for sandbox %s: %v",
+			logging.FormatSandboxID(deleteCmd.SandboxID), cleanupErr)
 	}
 
-	logging.Info("SandboxFSM: Deleted sandbox %s", logging.FormatSandboxID(deleteCmd.SandboxID))
+	logging.Info("SandboxFSM: Deleted sandbox %s (cleaned %d executions)",
+		logging.FormatSandboxID(deleteCmd.SandboxID), cleanedExecCount)
 
 	// TODO: Coordinate with runtime system for VM cleanup and resource deallocation
 
+	result := map[string]any{
+		"sandbox_id":         deleteCmd.SandboxID,
+		"status":             "deleted",
+		"cleaned_executions": cleanedExecCount,
+	}
+
+	// Include cleanup error in result if it occurred
+	if cleanupErr != nil {
+		result["execution_cleanup_error"] = cleanupErr.Error()
+	}
+
+	return result
+}
+
+// processBatchCreateCommand handles batch sandbox creation by storing multiple
+// sandboxes in "pending" state within a single Raft operation. Provides
+// significant performance improvements during high-load scenarios by reducing
+// consensus overhead while maintaining consistency guarantees.
+//
+// Essential for high-throughput ingestion where multiple sandboxes need to be
+// accepted quickly. Background scheduler handles actual placement and resource
+// allocation asynchronously for better system responsiveness under load.
+func (s *SandboxFSM) processBatchCreateCommand(cmd Command) any {
+	var batchCmd BatchSandboxCreateCommand
+	if err := json.Unmarshal(cmd.Data, &batchCmd); err != nil {
+		return fmt.Errorf("failed to unmarshal batch create command: %w", err)
+	}
+
+	results := make([]map[string]any, 0, len(batchCmd.Sandboxes))
+	successCount := 0
+	failureCount := 0
+
+	// Track Names seen in current batch to detect intra-batch duplicates
+	batchNames := make(map[string]struct{})
+
+	// Process each sandbox in the batch directly (single Raft operation)
+	for _, sandboxCmd := range batchCmd.Sandboxes {
+		// Validate sandbox doesn't already exist
+		if _, exists := s.sandboxes[sandboxCmd.ID]; exists {
+			logging.Warn("SandboxFSM: Sandbox %s already exists in batch create",
+				logging.FormatSandboxID(sandboxCmd.ID))
+			results = append(results, map[string]any{
+				"sandbox_id": sandboxCmd.ID,
+				"status":     "failed",
+				"error":      "sandbox already exists",
+			})
+			failureCount++
+			continue
+		}
+
+		// Check for duplicate sandbox names against existing sandboxes
+		nameConflict := false
+		for _, existingSandbox := range s.sandboxes {
+			if existingSandbox.Name == sandboxCmd.Name {
+				logging.Warn("SandboxFSM: Sandbox name '%s' already exists in batch create",
+					sandboxCmd.Name)
+				results = append(results, map[string]any{
+					"sandbox_id": sandboxCmd.ID,
+					"status":     "failed",
+					"error":      fmt.Sprintf("sandbox name '%s' already exists", sandboxCmd.Name),
+				})
+				failureCount++
+				nameConflict = true
+				break
+			}
+		}
+		if nameConflict {
+			continue
+		}
+
+		// Check for intra-batch Name duplicates
+		if _, seen := batchNames[sandboxCmd.Name]; seen {
+			logging.Warn("SandboxFSM: Duplicate sandbox name '%s' within batch create",
+				sandboxCmd.Name)
+			results = append(results, map[string]any{
+				"sandbox_id": sandboxCmd.ID,
+				"status":     "failed",
+				"error":      fmt.Sprintf("duplicate sandbox name '%s' within batch", sandboxCmd.Name),
+			})
+			failureCount++
+			continue
+		}
+
+		// Track this Name for intra-batch duplicate detection
+		batchNames[sandboxCmd.Name] = struct{}{}
+
+		// Create new sandbox directly in "pending" state
+		sandbox := &Sandbox{
+			ID:       sandboxCmd.ID,
+			Name:     sandboxCmd.Name,
+			Status:   "pending", // Background scheduler will handle placement
+			Metadata: sandboxCmd.Metadata,
+			Created:  cmd.Timestamp,
+			Updated:  cmd.Timestamp,
+		}
+
+		// Add to FSM state
+		s.sandboxes[sandboxCmd.ID] = sandbox
+
+		logging.Info("SandboxFSM: Created sandbox %s (name: %s) in batch",
+			logging.FormatSandboxID(sandboxCmd.ID), sandboxCmd.Name)
+
+		results = append(results, map[string]any{
+			"sandbox_id":   sandboxCmd.ID,
+			"sandbox_name": sandboxCmd.Name,
+			"status":       "pending",
+		})
+		successCount++
+	}
+
+	logging.Info("SandboxFSM: Processed batch create - %d succeeded, %d failed",
+		successCount, failureCount)
+
 	return map[string]any{
-		"sandbox_id": deleteCmd.SandboxID,
-		"status":     "deleted",
+		"operation":     "batch_create",
+		"total":         len(batchCmd.Sandboxes),
+		"success_count": successCount,
+		"failure_count": failureCount,
+		"results":       results,
+	}
+}
+
+// processBatchDeleteCommand handles batch sandbox deletion by removing multiple
+// sandboxes from cluster state within a single Raft operation. Maintains
+// consistency while improving performance during bulk cleanup scenarios.
+//
+// Essential for efficient cleanup operations where multiple sandboxes need to
+// be removed simultaneously. Validates each deletion and maintains the same
+// semantic guarantees as individual deletes while reducing consensus overhead.
+func (s *SandboxFSM) processBatchDeleteCommand(cmd Command) any {
+	var batchCmd BatchSandboxDeleteCommand
+	if err := json.Unmarshal(cmd.Data, &batchCmd); err != nil {
+		return fmt.Errorf("failed to unmarshal batch delete command: %w", err)
+	}
+
+	results := make([]map[string]any, 0, len(batchCmd.SandboxIDs))
+	successCount := 0
+	failureCount := 0
+
+	// Validate delete states (same as individual delete logic)
+	validDeleteStates := map[string]bool{
+		"stopped": true,
+		"failed":  true,
+		"lost":    true,
+	}
+
+	// Process each sandbox deletion in the batch directly
+	for _, sandboxID := range batchCmd.SandboxIDs {
+		// Find target sandbox
+		sandbox, exists := s.sandboxes[sandboxID]
+		if !exists {
+			logging.Warn("SandboxFSM: Sandbox %s not found in batch delete",
+				logging.FormatSandboxID(sandboxID))
+			results = append(results, map[string]any{
+				"sandbox_id": sandboxID,
+				"status":     "failed",
+				"error":      "sandbox not found",
+			})
+			failureCount++
+			continue
+		}
+
+		// Validate sandbox can be deleted
+		if !validDeleteStates[sandbox.Status] {
+			logging.Warn("SandboxFSM: Cannot delete sandbox %s in status %s",
+				logging.FormatSandboxID(sandboxID), sandbox.Status)
+			results = append(results, map[string]any{
+				"sandbox_id": sandboxID,
+				"status":     "failed",
+				"error":      fmt.Sprintf("cannot delete sandbox in status %s", sandbox.Status),
+			})
+			failureCount++
+			continue
+		}
+
+		// Remove sandbox from state
+		delete(s.sandboxes, sandboxID)
+
+		// Clean up associated executions to prevent orphaned records
+		cleanedExecCount, cleanupErr := s.execFSM.cleanupExecutionsForSandbox(sandboxID)
+
+		result := map[string]any{
+			"sandbox_id":         sandboxID,
+			"status":             "deleted",
+			"cleaned_executions": cleanedExecCount,
+		}
+
+		// Handle execution cleanup errors
+		if cleanupErr != nil {
+			logging.Error("SandboxFSM: Failed to cleanup executions for sandbox %s in batch: %v",
+				logging.FormatSandboxID(sandboxID), cleanupErr)
+			result["execution_cleanup_error"] = cleanupErr.Error()
+			// Still count as success since sandbox was deleted, but note the cleanup issue
+		}
+
+		logging.Info("SandboxFSM: Deleted sandbox %s in batch (cleaned %d executions)",
+			logging.FormatSandboxID(sandboxID), cleanedExecCount)
+
+		results = append(results, result)
+		successCount++
+	}
+
+	logging.Info("SandboxFSM: Processed batch delete - %d succeeded, %d failed",
+		successCount, failureCount)
+
+	return map[string]any{
+		"operation":     "batch_delete",
+		"total":         len(batchCmd.SandboxIDs),
+		"success_count": successCount,
+		"failure_count": failureCount,
+		"results":       results,
 	}
 }
 
@@ -1186,6 +1421,39 @@ func (e *ExecFSM) processCompleteCommand(cmd Command) any {
 		"exit_code": completeCmd.ExitCode,
 		"duration":  completeCmd.Duration,
 	}
+}
+
+// cleanupExecutionsForSandbox removes all executions associated with a specific
+// sandbox ID from the ExecFSM state. Used during sandbox deletion to prevent
+// orphaned execution records and maintain state consistency.
+//
+// Returns the number of executions cleaned up and any errors encountered.
+// Logs each execution removal for audit trail and debugging purposes.
+func (e *ExecFSM) cleanupExecutionsForSandbox(sandboxID string) (int, error) {
+	var cleanedCount int
+	var cleanupErrors []string
+
+	// Find all executions for this sandbox
+	for execID, execution := range e.executions {
+		if execution.SandboxID == sandboxID {
+			delete(e.executions, execID)
+			cleanedCount++
+			logging.Info("ExecFSM: Cleaned up execution %s for deleted sandbox %s",
+				logging.FormatExecID(execID), logging.FormatSandboxID(sandboxID))
+		}
+	}
+
+	// Return combined error if any cleanup operations failed
+	if len(cleanupErrors) > 0 {
+		return cleanedCount, fmt.Errorf("execution cleanup errors: %v", cleanupErrors)
+	}
+
+	if cleanedCount > 0 {
+		logging.Info("ExecFSM: Cleaned up %d executions for sandbox %s",
+			cleanedCount, logging.FormatSandboxID(sandboxID))
+	}
+
+	return cleanedCount, nil
 }
 
 // processFailCommand handles execution failure by transitioning executions

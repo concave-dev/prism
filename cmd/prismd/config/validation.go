@@ -53,14 +53,14 @@ func InitializeConfig() {
 	// Initialize Resource Cache configuration with performance-optimized defaults
 	if Global.ResourceCache.TTL == 0 {
 		Global.ResourceCache.Enabled = true
-		Global.ResourceCache.TTL = 10 * time.Second      // Cache entries valid for 10 seconds
-		Global.ResourceCache.RefreshRate = 5 * time.Second  // Refresh every 5 seconds to keep cache warm
+		Global.ResourceCache.TTL = 10 * time.Second          // Cache entries valid for 10 seconds
+		Global.ResourceCache.RefreshRate = 5 * time.Second   // Refresh every 5 seconds to keep cache warm
 		Global.ResourceCache.MaxStaleTime = 30 * time.Second // Serve stale data up to 30 seconds during failures
-		Global.ResourceCache.MaxErrorCount = 3           // Mark node as failed after 3 consecutive errors
-		logging.Debug("Resource cache initialized with defaults: TTL=%v, RefreshRate=%v, MaxStaleTime=%v", 
+		Global.ResourceCache.MaxErrorCount = 3               // Mark node as failed after 3 consecutive errors
+		logging.Debug("Resource cache initialized with defaults: TTL=%v, RefreshRate=%v, MaxStaleTime=%v",
 			Global.ResourceCache.TTL, Global.ResourceCache.RefreshRate, Global.ResourceCache.MaxStaleTime)
 	}
-	
+
 	// Environment variable overrides for resource cache
 	if cacheEnabledEnv := os.Getenv("PRISM_CACHE_ENABLED"); cacheEnabledEnv != "" {
 		if cacheEnabled, err := strconv.ParseBool(cacheEnabledEnv); err == nil {
@@ -70,7 +70,7 @@ func InitializeConfig() {
 			logging.Warn("Invalid PRISM_CACHE_ENABLED environment variable '%s', using default: %v", cacheEnabledEnv, Global.ResourceCache.Enabled)
 		}
 	}
-	
+
 	if cacheTTLEnv := os.Getenv("PRISM_CACHE_TTL"); cacheTTLEnv != "" {
 		if cacheTTL, err := time.ParseDuration(cacheTTLEnv); err == nil {
 			Global.ResourceCache.TTL = cacheTTL
@@ -79,6 +79,10 @@ func InitializeConfig() {
 			logging.Warn("Invalid PRISM_CACHE_TTL environment variable '%s', using default: %v", cacheTTLEnv, Global.ResourceCache.TTL)
 		}
 	}
+
+	// BatchingConfig is already initialized in init(), just log the current state
+	logging.Debug("Batching config: Enabled=%v, CreateQueue=%d, DeleteQueue=%d",
+		Global.BatchingConfig.Enabled, Global.BatchingConfig.CreateQueueSize, Global.BatchingConfig.DeleteQueueSize)
 }
 
 // ValidateConfig performs comprehensive validation and normalization of all daemon
@@ -284,6 +288,12 @@ func ValidateConfig() error {
 	if Global.DataDir == "" {
 		logging.Error("Data directory cannot be empty")
 		return fmt.Errorf("data directory cannot be empty")
+	}
+
+	// Validate batching configuration
+	if err := Global.BatchingConfig.Validate(); err != nil {
+		logging.Error("Invalid batching configuration: %v", err)
+		return fmt.Errorf("invalid batching configuration: %w", err)
 	}
 
 	return nil

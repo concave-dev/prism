@@ -126,6 +126,11 @@ func buildAPIConfig(serfManager *serf.SerfManager, raftManager *raft.RaftManager
 	apiConfig.RaftManager = raftManager
 	apiConfig.GRPCClientPool = grpcClientPool
 
+	// Use embedded batching config directly (only override when explicitly set)
+	if config.Global.IsExplicitlySet(config.BatchingConfigField) {
+		apiConfig.BatchingConfig = config.Global.BatchingConfig
+	}
+
 	return apiConfig
 }
 
@@ -173,9 +178,7 @@ func buildAPIConfig(serfManager *serf.SerfManager, raftManager *raft.RaftManager
 // prismd instances may start simultaneously, eliminating the traditional race condition
 // where ports could be claimed between discovery and actual service binding.
 func Run() error {
-	// Apply logging level early to respect --log-level flag before any log output
-	// This ensures --log-level=ERROR suppresses early Info logs
-	logging.SetLevel(config.Global.LogLevel)
+	// Logging level is already configured in PreRunE before config initialization
 	logging.Info("Starting Prism daemon v%s", version.PrismdVersion)
 
 	// Generate node name only after validation has passed
@@ -457,9 +460,9 @@ func Run() error {
 
 	// Initialize resource cache if enabled for improved scheduling performance
 	if config.Global.ResourceCache.Enabled {
-		logging.Info("Initializing resource cache (TTL: %v, RefreshRate: %v)", 
+		logging.Info("Initializing resource cache (TTL: %v, RefreshRate: %v)",
 			config.Global.ResourceCache.TTL, config.Global.ResourceCache.RefreshRate)
-		
+
 		cacheConfig := resources.CacheConfig{
 			TTL:           config.Global.ResourceCache.TTL,
 			RefreshRate:   config.Global.ResourceCache.RefreshRate,
@@ -467,16 +470,16 @@ func Run() error {
 			MaxErrorCount: config.Global.ResourceCache.MaxErrorCount,
 			Enabled:       true,
 		}
-		
+
 		resources.SetGlobalCache(cacheConfig)
-		
+
 		// Start background refresh with node discovery and resource fetching
 		cache := resources.GetGlobalCache()
 		if cache != nil {
 			// Create context for background operations (will be cancelled on daemon shutdown)
 			cacheCtx, cancelCache := context.WithCancel(context.Background())
 			defer cancelCache()
-			
+
 			// Start background refresh goroutine
 			go func() {
 				// Node discovery function for the cache
@@ -488,60 +491,60 @@ func Run() error {
 					}
 					return result
 				}
-				
+
 				// Resource fetch function for the cache
 				resourceFetch := func(nodeID string) (*resources.NodeResources, error) {
 					resp, err := grpcClientPool.GetResourcesFromNode(nodeID)
 					if err != nil {
 						return nil, err
 					}
-					
+
 					// Convert proto response to NodeResources (reuse existing conversion logic)
 					return &resources.NodeResources{
 						NodeID:    resp.NodeId,
 						NodeName:  resp.NodeName,
 						Timestamp: resp.Timestamp.AsTime(),
-						
+
 						// CPU Information
 						CPUCores:     int(resp.CpuCores),
 						CPUUsage:     resp.CpuUsage,
 						CPUAvailable: resp.CpuAvailable,
-						
+
 						// Memory Information
 						MemoryTotal:     resp.MemoryTotal,
 						MemoryUsed:      resp.MemoryUsed,
 						MemoryAvailable: resp.MemoryAvailable,
 						MemoryUsage:     resp.MemoryUsage,
-						
+
 						// Disk Information
 						DiskTotal:     resp.DiskTotal,
 						DiskUsed:      resp.DiskUsed,
 						DiskAvailable: resp.DiskAvailable,
 						DiskUsage:     resp.DiskUsage,
-						
+
 						// Go Runtime Information
 						GoRoutines: int(resp.GoRoutines),
 						GoMemAlloc: resp.GoMemAlloc,
 						GoMemSys:   resp.GoMemSys,
 						GoGCCycles: resp.GoGcCycles,
 						GoGCPause:  resp.GoGcPause,
-						
+
 						// Node Status
 						Uptime: time.Duration(resp.UptimeSeconds) * time.Second,
 						Load1:  resp.Load1,
 						Load5:  resp.Load5,
 						Load15: resp.Load15,
-						
+
 						// Capacity Limits
 						MaxJobs:        int(resp.MaxJobs),
 						CurrentJobs:    int(resp.CurrentJobs),
 						AvailableSlots: int(resp.AvailableSlots),
-						
+
 						// Resource Score
 						Score: resp.Score,
 					}, nil
 				}
-				
+
 				// Start background refresh
 				cache.StartBackgroundRefresh(cacheCtx, nodeDiscovery, resourceFetch)
 			}()

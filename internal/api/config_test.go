@@ -3,6 +3,7 @@ package api
 import (
 	"testing"
 
+	"github.com/concave-dev/prism/internal/api/batching"
 	"github.com/concave-dev/prism/internal/grpc"
 	"github.com/concave-dev/prism/internal/raft"
 	"github.com/concave-dev/prism/internal/serf"
@@ -13,6 +14,7 @@ func TestConfig_Validate_Valid(t *testing.T) {
 	config := &Config{
 		BindAddr:       "127.0.0.1",
 		BindPort:       8080,
+		BatchingConfig: batching.DefaultConfig(),
 		SerfManager:    &serf.SerfManager{},
 		RaftManager:    &raft.RaftManager{},
 		GRPCClientPool: &grpc.ClientPool{},
@@ -35,6 +37,7 @@ func TestConfig_Validate_Invalid(t *testing.T) {
 			config: &Config{
 				BindAddr:       "",
 				BindPort:       8080,
+				BatchingConfig: batching.DefaultConfig(),
 				SerfManager:    &serf.SerfManager{},
 				RaftManager:    &raft.RaftManager{},
 				GRPCClientPool: &grpc.ClientPool{},
@@ -45,6 +48,7 @@ func TestConfig_Validate_Invalid(t *testing.T) {
 			config: &Config{
 				BindAddr:       "127.0.0.1",
 				BindPort:       0,
+				BatchingConfig: batching.DefaultConfig(),
 				SerfManager:    &serf.SerfManager{},
 				RaftManager:    &raft.RaftManager{},
 				GRPCClientPool: &grpc.ClientPool{},
@@ -55,6 +59,18 @@ func TestConfig_Validate_Invalid(t *testing.T) {
 			config: &Config{
 				BindAddr:       "127.0.0.1",
 				BindPort:       99999,
+				BatchingConfig: batching.DefaultConfig(),
+				SerfManager:    &serf.SerfManager{},
+				RaftManager:    &raft.RaftManager{},
+				GRPCClientPool: &grpc.ClientPool{},
+			},
+		},
+		{
+			name: "nil batching config",
+			config: &Config{
+				BindAddr:       "127.0.0.1",
+				BindPort:       8080,
+				BatchingConfig: nil,
 				SerfManager:    &serf.SerfManager{},
 				RaftManager:    &raft.RaftManager{},
 				GRPCClientPool: &grpc.ClientPool{},
@@ -65,6 +81,7 @@ func TestConfig_Validate_Invalid(t *testing.T) {
 			config: &Config{
 				BindAddr:       "127.0.0.1",
 				BindPort:       8080,
+				BatchingConfig: batching.DefaultConfig(),
 				SerfManager:    nil,
 				RaftManager:    &raft.RaftManager{},
 				GRPCClientPool: &grpc.ClientPool{},
@@ -75,6 +92,7 @@ func TestConfig_Validate_Invalid(t *testing.T) {
 			config: &Config{
 				BindAddr:       "127.0.0.1",
 				BindPort:       8080,
+				BatchingConfig: batching.DefaultConfig(),
 				SerfManager:    &serf.SerfManager{},
 				RaftManager:    nil,
 				GRPCClientPool: &grpc.ClientPool{},
@@ -85,6 +103,7 @@ func TestConfig_Validate_Invalid(t *testing.T) {
 			config: &Config{
 				BindAddr:       "127.0.0.1",
 				BindPort:       8080,
+				BatchingConfig: batching.DefaultConfig(),
 				SerfManager:    &serf.SerfManager{},
 				RaftManager:    &raft.RaftManager{},
 				GRPCClientPool: nil,

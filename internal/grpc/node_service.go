@@ -108,12 +108,13 @@ func (n *NodeServiceImpl) SetGRPCServer(server *Server) {
 // GetResources returns current resource utilization for this node
 // This replaces the serf query mechanism for faster inter-node communication
 func (n *NodeServiceImpl) GetResources(ctx context.Context, req *proto.GetResourcesRequest) (*proto.GetResourcesResponse, error) {
-	// Gather current node resources directly via resources package
-	nodeResources := resources.GatherSystemResources(
+	// Gather current node resources directly via resources package with caching
+	nodeResources := resources.CachedGatherSystemResources(
 		n.serfManager.NodeID,
 		n.serfManager.NodeName,
 		n.serfManager.GetStartTime(),
 		n.raftManager,
+		true, // useCache = true
 	)
 
 	// Convert serf.NodeResources to protobuf response
@@ -827,12 +828,13 @@ func (n *NodeServiceImpl) checkCPUResourceHealth(ctx context.Context, now time.T
 		}
 	}
 
-	// Gather current system resources including CPU metrics
-	nodeResources := resources.GatherSystemResources(
+	// Gather current system resources including CPU metrics with caching
+	nodeResources := resources.CachedGatherSystemResources(
 		n.serfManager.NodeID,
 		n.serfManager.NodeName,
 		n.serfManager.GetStartTime(),
 		n.raftManager,
+		true, // useCache = true
 	)
 
 	// Define health thresholds for CPU monitoring
@@ -921,12 +923,13 @@ func (n *NodeServiceImpl) checkMemoryResourceHealth(ctx context.Context, now tim
 		}
 	}
 
-	// Gather current system resources including memory metrics
-	nodeResources := resources.GatherSystemResources(
+	// Gather current system resources including memory metrics with caching
+	nodeResources := resources.CachedGatherSystemResources(
 		n.serfManager.NodeID,
 		n.serfManager.NodeName,
 		n.serfManager.GetStartTime(),
 		n.raftManager,
+		true, // useCache = true
 	)
 
 	// Define health thresholds for memory monitoring
@@ -1004,12 +1007,13 @@ func (n *NodeServiceImpl) checkDiskResourceHealth(ctx context.Context, now time.
 		}
 	}
 
-	// Gather current system resources including disk metrics
-	nodeResources := resources.GatherSystemResources(
+	// Gather current system resources including disk metrics with caching
+	nodeResources := resources.CachedGatherSystemResources(
 		n.serfManager.NodeID,
 		n.serfManager.NodeName,
 		n.serfManager.GetStartTime(),
 		n.raftManager,
+		true, // useCache = true
 	)
 
 	// Define health thresholds for disk monitoring

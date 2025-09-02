@@ -82,3 +82,7 @@ data/
 
 # Cursor editor artifacts
 .cursor/
+
+# Logs
+.logs/
+massive_stress_test_*/

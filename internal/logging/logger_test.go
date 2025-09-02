@@ -8,28 +8,40 @@ import (
 	"github.com/charmbracelet/log"
 )
 
-// captureLogOutput is a test helper to capture log output
+// captureLogOutput is a test helper to capture log output from both stdout and stderr loggers
 func captureLogOutput(level string, fn func()) string {
-	var buf bytes.Buffer
+	var stdoutBuf, stderrBuf bytes.Buffer
 
-	// Save original logger
-	originalLogger := logger
+	// Save original loggers
+	originalStdoutLogger := stdoutLogger
+	originalStderrLogger := stderrLogger
+	originalUsingLogFile := usingLogFile
 
-	// Create new logger with buffer
-	logger = log.NewWithOptions(&buf, log.Options{
-		ReportTimestamp: false, // Disable timestamps for easier testing
+	// Create test loggers with buffers (no timestamps for easier testing)
+	stdoutLogger = log.NewWithOptions(&stdoutBuf, log.Options{
+		ReportTimestamp: false,
+	})
+	stderrLogger = log.NewWithOptions(&stderrBuf, log.Options{
+		ReportTimestamp: false,
 	})
 
-	// Set the level on our test logger
+	// Ensure we're not in log file mode for testing
+	usingLogFile = false
+
+	// Set the level on both test loggers
 	SetLevel(level)
 
 	// Execute function
 	fn()
 
-	// Restore original logger
-	logger = originalLogger
+	// Restore original loggers
+	stdoutLogger = originalStdoutLogger
+	stderrLogger = originalStderrLogger
+	usingLogFile = originalUsingLogFile
 
-	return strings.TrimSpace(buf.String())
+	// Combine output from both buffers
+	combined := stdoutBuf.String() + stderrBuf.String()
+	return strings.TrimSpace(combined)
 }
 
 // TestLogLevels tests that logging functions work at different levels

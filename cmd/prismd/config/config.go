@@ -43,6 +43,7 @@ package config
 import (
 	"time"
 
+	"github.com/concave-dev/prism/internal/api/batching"
 	configDefaults "github.com/concave-dev/prism/internal/config"
 )
 
@@ -56,6 +57,8 @@ const (
 	GRPCAddrField
 	APIAddrField
 	DataDirField
+	LogFileField
+	BatchingConfigField
 )
 
 const (
@@ -84,6 +87,7 @@ type Config struct {
 	JoinAddrs       []string // List of cluster addresses to join
 	StrictJoin      bool     // Exit if cluster join fails (default: continue in isolation)
 	LogLevel        string   // Log level: DEBUG, INFO, WARN, ERROR
+	LogFile         string   // Log file path (empty = stderr, default behavior)
 	DataDir         string   // Data directory for persistent storage
 	Bootstrap       bool     // Whether to bootstrap a new Raft cluster (legacy single-node)
 	BootstrapExpect int      // Expected number of nodes for cluster formation (0 = disabled)
@@ -92,12 +96,17 @@ type Config struct {
 	// Resource Cache configuration for performance optimization
 	ResourceCache ResourceCacheConfig `yaml:"resource_cache" mapstructure:"resource_cache"`
 
+	// Smart batching configuration for high-throughput scenarios
+	BatchingConfig *batching.Config `yaml:"batching" mapstructure:"batching"`
+
 	// Flags to track if values were explicitly set by user
-	serfExplicitlySet     bool
-	raftAddrExplicitlySet bool
-	grpcAddrExplicitlySet bool
-	apiAddrExplicitlySet  bool
-	dataDirExplicitlySet  bool
+	serfExplicitlySet           bool
+	raftAddrExplicitlySet       bool
+	grpcAddrExplicitlySet       bool
+	apiAddrExplicitlySet        bool
+	dataDirExplicitlySet        bool
+	logFileExplicitlySet        bool
+	batchingConfigExplicitlySet bool
 }
 
 // ResourceCacheConfig holds configuration for the resource caching system.
@@ -107,15 +116,20 @@ type Config struct {
 // Default values are optimized for typical cluster sizes (3-10 nodes) with
 // moderate network latency and high scheduling throughput requirements.
 type ResourceCacheConfig struct {
-	Enabled       bool          `yaml:"enabled" mapstructure:"enabled"`             // Global cache enable/disable
-	TTL           time.Duration `yaml:"ttl" mapstructure:"ttl"`                     // How long cache entries are valid
-	RefreshRate   time.Duration `yaml:"refresh_rate" mapstructure:"refresh_rate"`   // How often to refresh in background  
-	MaxStaleTime  time.Duration `yaml:"max_stale_time" mapstructure:"max_stale_time"` // Max time to serve stale data
+	Enabled       bool          `yaml:"enabled" mapstructure:"enabled"`                 // Global cache enable/disable
+	TTL           time.Duration `yaml:"ttl" mapstructure:"ttl"`                         // How long cache entries are valid
+	RefreshRate   time.Duration `yaml:"refresh_rate" mapstructure:"refresh_rate"`       // How often to refresh in background
+	MaxStaleTime  time.Duration `yaml:"max_stale_time" mapstructure:"max_stale_time"`   // Max time to serve stale data
 	MaxErrorCount int           `yaml:"max_error_count" mapstructure:"max_error_count"` // Max errors before marking node as failed
 }
 
 // Global configuration instance
 var Global Config
+
+func init() {
+	// Initialize BatchingConfig early so flags can bind to it
+	Global.BatchingConfig = batching.DefaultConfig()
+}
 
 // SetExplicitlySet marks a configuration field as explicitly set by the user.
 // Enables intelligent address inheritance and atomic port binding strategies
@@ -132,6 +146,10 @@ func (c *Config) SetExplicitlySet(field ConfigField, value bool) {
 		c.apiAddrExplicitlySet = value
 	case DataDirField:
 		c.dataDirExplicitlySet = value
+	case LogFileField:
+		c.logFileExplicitlySet = value
+	case BatchingConfigField:
+		c.batchingConfigExplicitlySet = value
 	}
 }
 
@@ -150,6 +168,10 @@ func (c *Config) IsExplicitlySet(field ConfigField) bool {
 		return c.apiAddrExplicitlySet
 	case DataDirField:
 		return c.dataDirExplicitlySet
+	case LogFileField:
+		return c.logFileExplicitlySet
+	case BatchingConfigField:
+		return c.batchingConfigExplicitlySet
 	}
 	return false
 }

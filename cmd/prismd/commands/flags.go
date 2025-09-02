@@ -79,6 +79,30 @@ func SetupFlags(cmd *cobra.Command) {
 		"Node name (defaults to generated name like 'cosmic-dragon')")
 	cmd.Flags().StringVar(&config.Global.LogLevel, "log-level", config.DefaultLogLevel,
 		"Log level: DEBUG, INFO, WARN, ERROR")
+	cmd.Flags().StringVar(&config.Global.LogFile, "log-file", "",
+		"Log file path for daemon output (e.g., /var/log/prism/prismd.log)\n"+
+			"When specified, all logs (daemon, Serf, Raft) are written to this file\n"+
+			"When not specified, logs are written to stderr (default behavior)\n"+
+			"Parent directories will be created if they don't exist")
+
+	// Smart batching flags for high-throughput scenarios
+	// Note: These flags bind directly to the embedded batching config fields
+	// and require BatchingConfig to be initialized before flag parsing
+	cmd.Flags().BoolVar(&config.Global.BatchingConfig.Enabled, "batching-enabled", true,
+		"Enable smart batching system for sandbox operations (default: true)\n"+
+			"Automatically switches between direct pass-through and batching based on load")
+	cmd.Flags().IntVar(&config.Global.BatchingConfig.CreateQueueSize, "create-queue-size", 12000,
+		"Create queue capacity for batching system (default: 12000)\n"+
+			"Larger values handle bigger bursts but use more memory")
+	cmd.Flags().IntVar(&config.Global.BatchingConfig.DeleteQueueSize, "delete-queue-size", 22000,
+		"Delete queue capacity for batching system (default: 22000)\n"+
+			"Larger values handle cleanup bursts but use more memory")
+	cmd.Flags().IntVar(&config.Global.BatchingConfig.QueueThreshold, "batch-threshold", 50,
+		"Queue length trigger for enabling batching (default: 50)\n"+
+			"Start batching when queue length exceeds this value")
+	cmd.Flags().IntVar(&config.Global.BatchingConfig.IntervalThresholdMs, "batch-interval-ms", 250,
+		"Time interval trigger for enabling batching in milliseconds (default: 250)\n"+
+			"Start batching when requests arrive faster than this interval")
 }
 
 // CheckExplicitFlags checks if flags were explicitly set by the user
@@ -88,4 +112,13 @@ func CheckExplicitFlags(cmd *cobra.Command) {
 	config.Global.SetExplicitlySet(config.GRPCAddrField, cmd.Flags().Changed("grpc"))
 	config.Global.SetExplicitlySet(config.APIAddrField, cmd.Flags().Changed("api"))
 	config.Global.SetExplicitlySet(config.DataDirField, cmd.Flags().Changed("data-dir"))
+	config.Global.SetExplicitlySet(config.LogFileField, cmd.Flags().Changed("log-file"))
+
+	// Check if any batching flags were explicitly set
+	batchingExplicit := cmd.Flags().Changed("batching-enabled") ||
+		cmd.Flags().Changed("create-queue-size") ||
+		cmd.Flags().Changed("delete-queue-size") ||
+		cmd.Flags().Changed("batch-threshold") ||
+		cmd.Flags().Changed("batch-interval-ms")
+	config.Global.SetExplicitlySet(config.BatchingConfigField, batchingExplicit)
 }

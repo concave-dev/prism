@@ -21,8 +21,8 @@
 package logging
 
 import (
-	"github.com/concave-dev/prism/internal/utils"
 	"github.com/charmbracelet/log"
+	"github.com/concave-dev/prism/internal/utils"
 )
 
 // FormatID formats an ID for logging based on the current log level context.
@@ -34,10 +34,11 @@ import (
 // while balancing operational readability with debugging detail requirements.
 func FormatID(id string) string {
 	// If debug level is enabled, show full IDs for complete traceability
-	if logger.GetLevel() <= log.DebugLevel {
+	// Use stderr logger since debug messages go to stderr
+	if stderrLogger.GetLevel() <= log.DebugLevel {
 		return id
 	}
-	
+
 	// For info/warn/error/success contexts, use truncated IDs for readability
 	return utils.TruncateIDSafe(id)
 }

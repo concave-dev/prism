@@ -24,8 +24,12 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
+	"time"
 
+	"github.com/concave-dev/prism/internal/api/batching"
+	"github.com/concave-dev/prism/internal/logging"
 	"github.com/concave-dev/prism/internal/raft"
 )
 
@@ -56,14 +60,17 @@ type SandboxManager interface {
 }
 
 // ServerSandboxManager implements the SandboxManager interface by delegating
-// to the underlying Raft manager. This is the concrete implementation that
-// bridges the HTTP API layer with the distributed consensus system.
+// to the underlying Raft manager with smart batching capabilities. This is the
+// concrete implementation that bridges the HTTP API layer with the distributed
+// consensus system while providing intelligent batching for high-throughput scenarios.
 //
 // DESIGN PATTERN:
 // This follows the "Interface Adapter" pattern where ServerSandboxManager acts
-// as a thin wrapper that translates API-layer calls into RaftManager calls.
+// as a smart wrapper that provides both individual and batch processing modes.
 // This enables:
 //
+//   - Smart batching: Automatically switches between pass-through and batching
+//     based on real-time load indicators for optimal performance
 //   - Future extensibility: Sandbox-specific coordination logic can be added
 //     without breaking API consumers or affecting other resource managers
 //   - Clean testing: API components can be tested with mock implementations
@@ -71,39 +78,148 @@ type SandboxManager interface {
 //   - Resource isolation: Sandbox operations are logically separated from
 //     other operations while sharing the same underlying consensus mechanism
 //
-// DELEGATION STRATEGY:
-// Most methods are simple pass-through calls to RaftManager, but this layer
-// provides the architectural boundary where sandbox-specific coordination
-// logic can be added in the future without breaking API consumers.
+// BATCHING STRATEGY:
+// The manager intelligently routes commands through either direct Raft submission
+// or smart batching queues based on current load patterns. This provides low
+// latency during normal operations and high throughput during burst scenarios.
 type ServerSandboxManager struct {
 	raftManager *raft.RaftManager // Underlying Raft consensus manager
+	batcher     *batching.Batcher // Smart batching system for high-load scenarios
 }
 
 // NewServerSandboxManager creates a new ServerSandboxManager with the provided
-// Raft manager. Establishes the bridge between HTTP API operations and
-// distributed consensus for sandbox lifecycle management.
+// Raft manager but without batching capabilities. This is maintained for backward
+// compatibility and testing scenarios where batching is not desired.
 //
-// Essential for creating the sandbox management layer that handles the
-// coordination between HTTP requests and distributed state operations
-// while maintaining clean separation of concerns.
+// Essential for creating the basic sandbox management layer that handles direct
+// coordination between HTTP requests and distributed state operations.
 func NewServerSandboxManager(raftManager *raft.RaftManager) *ServerSandboxManager {
 	return &ServerSandboxManager{
 		raftManager: raftManager,
+		batcher:     nil, // No batching
+	}
+}
+
+// NewServerSandboxManagerWithBatching creates a new ServerSandboxManager with
+// smart batching capabilities enabled. Provides intelligent load-based switching
+// between direct pass-through and batching modes for optimal performance.
+//
+// Essential for production deployments where high-throughput scenarios require
+// efficient batching while maintaining low latency for normal operations.
+// The batcher is started automatically and must be stopped during shutdown.
+func NewServerSandboxManagerWithBatching(raftManager *raft.RaftManager, batchingConfig *batching.Config) *ServerSandboxManager {
+	// Create batcher with raft manager as submitter
+	batcher := batching.NewBatcher(raftManager, batchingConfig)
+
+	return &ServerSandboxManager{
+		raftManager: raftManager,
+		batcher:     batcher,
+	}
+}
+
+// StartBatcher starts the smart batching system if it exists. Should be called
+// after creating the manager with batching enabled to activate background
+// processing goroutines.
+//
+// Essential for enabling the smart batching capabilities that provide high
+// throughput during burst scenarios while maintaining system responsiveness.
+func (ssm *ServerSandboxManager) StartBatcher() {
+	if ssm.batcher != nil {
+		ssm.batcher.Start()
+	}
+}
+
+// StopBatcher gracefully stops the smart batching system if it exists. Should
+// be called during server shutdown to ensure all queued operations are processed
+// and background goroutines are properly terminated.
+//
+// Critical for clean shutdown to prevent data loss and ensure all pending
+// operations are completed before system termination.
+func (ssm *ServerSandboxManager) StopBatcher() {
+	if ssm.batcher != nil {
+		ssm.batcher.Stop()
 	}
 }
 
 // SubmitCommand submits a command to Raft consensus for distributed state changes.
-// Implements the SandboxManager interface to enable sandbox handlers to perform
-// write operations through the Raft consensus protocol.
+// Implements the SandboxManager interface with intelligent routing through either
+// direct submission or smart batching based on current load and command type.
+//
+// SMART ROUTING:
+// - If batching is disabled: Direct pass-through to Raft (backward compatibility)
+// - If batching is enabled: Route sandbox commands through smart batching system
+// - Non-sandbox commands: Always pass through directly regardless of batching
 //
 // Essential for sandbox lifecycle operations that require strong consistency
-// across the cluster. Routes commands through the Raft manager to ensure
-// all nodes apply the same state changes in the same order.
+// while providing optimal performance through intelligent load-based routing.
 func (ssm *ServerSandboxManager) SubmitCommand(data string) error {
 	if ssm.raftManager == nil {
 		return fmt.Errorf("Raft manager not available")
 	}
-	return ssm.raftManager.SubmitCommand(data)
+
+	// If batching is disabled, use direct pass-through
+	if ssm.batcher == nil {
+		return ssm.raftManager.SubmitCommand(data)
+	}
+
+	// Parse command to determine if it's a sandbox operation
+	var cmd raft.Command
+	if err := json.Unmarshal([]byte(data), &cmd); err != nil {
+		// If parsing fails, pass through directly
+		return ssm.raftManager.SubmitCommand(data)
+	}
+
+	// Only batch sandbox operations
+	if cmd.Type != "sandbox" {
+		return ssm.raftManager.SubmitCommand(data)
+	}
+
+	// Extract sandbox ID and operation type for batching
+	sandboxID, opType, err := ssm.parseSandboxCommand(cmd)
+	if err != nil {
+		logging.Debug("SandboxManager: Failed to parse sandbox command: %v", err)
+		// If parsing fails, pass through directly
+		return ssm.raftManager.SubmitCommand(data)
+	}
+
+	// Route through smart batching system
+	item := batching.Item{
+		CommandJSON: data,
+		OpType:      opType,
+		SandboxID:   sandboxID,
+		Timestamp:   time.Now(),
+	}
+
+	return ssm.batcher.Enqueue(item)
+}
+
+// parseSandboxCommand extracts sandbox ID and operation type from a sandbox command.
+// Used by the smart batching system to determine routing and deduplication logic.
+//
+// Essential for enabling intelligent batching decisions and proper deduplication
+// of sandbox operations within batch windows.
+func (ssm *ServerSandboxManager) parseSandboxCommand(cmd raft.Command) (sandboxID, opType string, err error) {
+	switch cmd.Operation {
+	case "create":
+		var createCmd raft.SandboxCreateCommand
+		if err := json.Unmarshal(cmd.Data, &createCmd); err != nil {
+			return "", "", fmt.Errorf("failed to parse create command: %w", err)
+		}
+		return createCmd.ID, "create", nil
+
+	case "delete":
+		var deleteCmd struct {
+			SandboxID string `json:"sandbox_id"`
+		}
+		if err := json.Unmarshal(cmd.Data, &deleteCmd); err != nil {
+			return "", "", fmt.Errorf("failed to parse delete command: %w", err)
+		}
+		return deleteCmd.SandboxID, "delete", nil
+
+	default:
+		// Non-batchable operations (schedule, status_update, stop, etc.)
+		return "", "", fmt.Errorf("operation %s not supported for batching", cmd.Operation)
+	}
 }
 
 // IsLeader checks if this node is the current Raft leader for write operations.
